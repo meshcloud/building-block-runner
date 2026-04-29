@@ -1,8 +1,6 @@
 module github.com/meshcloud/meshfed-release/buildingblocks/tf-block-runner
 
-go 1.24.0
-
-toolchain go1.24.5
+go 1.25.0
 
 require (
 	github.com/go-git/go-git/v5 v5.16.4

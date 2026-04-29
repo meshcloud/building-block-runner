@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  run-controller:
+    name: run-controller – test & build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: run-controller
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: run-controller/go.mod
+          cache-dependency-path: run-controller/go.sum
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build
+        run: go build -o run-controller .
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: run-controller
+          push: false
+          tags: run-controller:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  tf-block-runner:
+    name: tf-block-runner – test & build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tf-block-runner
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tf-block-runner/go.mod
+          cache-dependency-path: tf-block-runner/go.sum
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build
+        run: go build -o tfrunner .
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: tf-block-runner
+          push: false
+          tags: tf-block-runner:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

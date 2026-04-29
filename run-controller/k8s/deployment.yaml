@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: run-controller
+  namespace: default
+  labels:
+    app: run-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: run-controller
+  template:
+    metadata:
+      labels:
+        app: run-controller
+    spec:
+      serviceAccountName: run-controller
+      containers:
+        - name: run-controller
+          image: run-controller-local
+          # Never pull from a registry — this image was loaded via 'minikube image load'
+          imagePullPolicy: Never
+          workingDir: /app
+          volumeMounts:
+            - name: config
+              mountPath: /app/application.yml
+              subPath: application.yml
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: run-controller-config

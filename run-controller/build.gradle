@@ -1,0 +1,269 @@
+plugins {
+  id('io.meshcloud.meshstack.golang')
+}
+
+description = "run-controller"
+
+golang {
+  binaryName = "run-controller"
+}
+
+def hostArch       = System.getProperty("os.arch")
+def dockerPlatform = (hostArch == "aarch64") ? "linux/arm64" : "linux/amd64"
+
+def repoRoot   = rootProject.projectDir.absolutePath
+def containers = "${repoRoot}/containers"
+
+def manualImage = "manual-block-runner-local"
+def githubImage = "github-block-runner-local"
+def gitlabImage = "gitlab-block-runner-local"
+def azdoImage   = "azure-devops-block-runner-local"
+def tfImage     = "tf-block-runner-local"
+def rcImage     = "run-controller-local"
+
+tasks.register("assertMinikubeContext") {
+  group = "minikube"
+  description = "Abort if active kubectl context is not 'minikube'"
+
+  doLast {
+    def stdout = new ByteArrayOutputStream()
+    exec {
+      commandLine "kubectl", "config", "current-context"
+      standardOutput = stdout
+    }
+    def currentContext = stdout.toString().trim()
+    if (currentContext != "minikube") {
+      throw new GradleException(
+        "Refusing to run: active kubectl context is '${currentContext}', expected 'minikube'.\n" +
+        "Switch context with:  kubectl config use-context minikube"
+      )
+    }
+  }
+}
+
+tasks.register("buildJvmRunnerImages") {
+  group = "docker"
+  description = "Build JVM runner Docker images (manual, github, gitlab, azure-devops)"
+
+  dependsOn(
+    ":buildingblocks:manual-block-runner:build",
+    ":buildingblocks:github-block-runner:build",
+    ":buildingblocks:gitlab-block-runner:build",
+    ":buildingblocks:azure-devops-block-runner:build"
+  )
+
+  inputs.file("${containers}/jvm.Dockerfile")
+  inputs.dir("${containers}/scripts")
+  inputs.files(
+    "${repoRoot}/buildingblocks/manual-block-runner/build/libs/manual-block-runner.jar",
+    "${repoRoot}/buildingblocks/github-block-runner/build/libs/github-block-runner.jar",
+    "${repoRoot}/buildingblocks/gitlab-block-runner/build/libs/gitlab-block-runner.jar",
+    "${repoRoot}/buildingblocks/azure-devops-block-runner/build/libs/azure-devops-block-runner.jar"
+  )
+
+  def stampFile = layout.buildDirectory.file("docker-stamps/jvm-runners.stamp")
+  outputs.file(stampFile)
+
+  doLast {
+    [
+      [name: "manual-block-runner",       tag: manualImage],
+      [name: "github-block-runner",       tag: githubImage],
+      [name: "gitlab-block-runner",       tag: gitlabImage],
+      [name: "azure-devops-block-runner", tag: azdoImage],
+    ].each { runner ->
+      exec {
+        commandLine "docker", "build",
+          "--platform", dockerPlatform,
+          "-f", "${containers}/jvm.Dockerfile",
+          "--build-arg", "DROP=buildingblocks/${runner.name}/build/libs/${runner.name}.jar",
+          "-t", runner.tag,
+          repoRoot
+      }
+    }
+    def f = stampFile.get().asFile
+    f.parentFile.mkdirs()
+    f.text = String.valueOf(System.currentTimeMillis())
+  }
+}
+
+tasks.register("buildTfRunnerImage") {
+  group = "docker"
+  description = "Build tf-block-runner Docker image"
+
+  dependsOn(":buildingblocks:tf-block-runner:goBuild")
+
+  inputs.file("${containers}/go.Dockerfile")
+  inputs.dir("${containers}/scripts")
+  inputs.files("${repoRoot}/buildingblocks/tf-block-runner/build/go/tfrunner")
+
+  def stampFile = layout.buildDirectory.file("docker-stamps/tf-runner.stamp")
+  outputs.file(stampFile)
+
+  doLast {
+    exec {
+      commandLine "docker", "build",
+        "--platform", dockerPlatform,
+        "-f", "${containers}/go.Dockerfile",
+        "--build-arg", "DROP=buildingblocks/tf-block-runner/build/go/tfrunner",
+        "-t", tfImage,
+        repoRoot
+    }
+    def f = stampFile.get().asFile
+    f.parentFile.mkdirs()
+    f.text = String.valueOf(System.currentTimeMillis())
+  }
+}
+
+tasks.register("buildRunnerImages") {
+  group = "docker"
+  description = "Build all runner Docker images"
+  dependsOn("buildJvmRunnerImages", "buildTfRunnerImage")
+}
+
+tasks.register("loadRunnersIntoMinikube") {
+  group = "minikube"
+  description = "Build runner images and load into minikube"
+  dependsOn("assertMinikubeContext", "buildRunnerImages")
+
+  inputs.files(layout.buildDirectory.file("docker-stamps/tf-runner.stamp"))
+  inputs.files(layout.buildDirectory.file("docker-stamps/jvm-runners.stamp"))
+  def runnersLoadedStamp = layout.buildDirectory.file("docker-stamps/runners-loaded-into-minikube.stamp")
+  outputs.file(runnersLoadedStamp)
+
+  doLast {
+    [manualImage, githubImage, gitlabImage, azdoImage, tfImage].each { image ->
+      exec {
+        commandLine "minikube", "image", "load", "--overwrite", image
+      }
+    }
+    def f = runnersLoadedStamp.get().asFile
+    f.parentFile.mkdirs()
+    f.text = String.valueOf(System.currentTimeMillis())
+  }
+}
+
+tasks.named("start").configure {
+  description = "Build runner images, load into minikube, run controller on host"
+  dependsOn("loadRunnersIntoMinikube")
+}
+
+tasks.register("buildRcImage") {
+  group = "docker"
+  description = "Build run-controller Docker image"
+
+  dependsOn("goBuild")
+
+  inputs.file("${containers}/go.Dockerfile")
+  inputs.dir("${containers}/scripts")
+  inputs.files(layout.buildDirectory.file("go/run-controller"))
+
+  def stampFile = layout.buildDirectory.file("docker-stamps/run-controller.stamp")
+  outputs.file(stampFile)
+
+  doLast {
+    exec {
+      commandLine "docker", "build",
+        "--platform", dockerPlatform,
+        "-f", "${containers}/go.Dockerfile",
+        "--build-arg", "DROP=buildingblocks/run-controller/build/go/run-controller",
+        "-t", rcImage,
+        repoRoot
+    }
+    def f = stampFile.get().asFile
+    f.parentFile.mkdirs()
+    f.text = String.valueOf(System.currentTimeMillis())
+  }
+}
+
+tasks.register("loadRcImage") {
+  group = "minikube"
+  description = "Load run-controller image into minikube"
+  dependsOn("assertMinikubeContext", "buildRcImage")
+
+  inputs.files(layout.buildDirectory.file("docker-stamps/run-controller.stamp"))
+  def stampFile = layout.buildDirectory.file("docker-stamps/rc-loaded-into-minikube.stamp")
+  outputs.file(stampFile)
+
+  doLast {
+    exec {
+      commandLine "minikube", "image", "load", "--overwrite", rcImage
+    }
+    def f = stampFile.get().asFile
+    f.parentFile.mkdirs()
+    f.text = String.valueOf(System.currentTimeMillis())
+  }
+}
+
+tasks.register("createConfigMap") {
+  group = "minikube"
+  description = "Create/update run-controller ConfigMap from application.yml"
+  dependsOn("assertMinikubeContext")
+
+  inputs.file("${projectDir}/application.yml")
+
+  doLast {
+    exec {
+      commandLine "bash", "-c",
+        "kubectl create configmap run-controller-config" +
+        " --from-file=application.yml=${projectDir}/application.yml" +
+        " --dry-run=client -o yaml | kubectl apply -f -"
+    }
+  }
+}
+
+tasks.register("startInCluster") {
+  group = "application"
+  description = "Build all images, deploy and run controller as a Pod inside minikube"
+  dependsOn("loadRunnersIntoMinikube", "loadRcImage", "createConfigMap")
+
+  inputs.dir("${projectDir}/k8s")
+  def stampFile = layout.buildDirectory.file("docker-stamps/start-in-cluster.stamp")
+  outputs.file(stampFile)
+
+  doLast {
+    exec {
+      commandLine "kubectl", "apply", "-f", "${projectDir}/k8s/"
+    }
+    def f = stampFile.get().asFile
+    f.parentFile.mkdirs()
+    f.text = String.valueOf(System.currentTimeMillis())
+    logger.lifecycle("run-controller deployed. Watch logs: kubectl logs -l app=run-controller -f")
+  }
+}
+
+tasks.register("reloadRc") {
+  group = "minikube"
+  description = "Rebuild and reload run-controller image, then restart the deployment"
+  dependsOn("assertMinikubeContext", "loadRcImage")
+
+  inputs.files(layout.buildDirectory.file("docker-stamps/rc-loaded-into-minikube.stamp"))
+  def stampFile = layout.buildDirectory.file("docker-stamps/reload-rc.stamp")
+  outputs.file(stampFile)
+
+  doLast {
+    exec {
+      commandLine "kubectl", "rollout", "restart", "deployment/run-controller"
+    }
+    def f = stampFile.get().asFile
+    f.parentFile.mkdirs()
+    f.text = String.valueOf(System.currentTimeMillis())
+  }
+}
+
+tasks.register("undeployFromCluster") {
+  group = "minikube"
+  description = "Remove run-controller Deployment, RBAC, and ConfigMap from minikube"
+  dependsOn("assertMinikubeContext")
+
+  doLast {
+    exec {
+      commandLine "kubectl", "delete", "-f", "${projectDir}/k8s/", "--ignore-not-found=true"
+      ignoreExitValue = true
+    }
+    exec {
+      commandLine "kubectl", "delete", "configmap", "run-controller-config", "--ignore-not-found=true"
+      ignoreExitValue = true
+    }
+  }
+}
+

@@ -1,0 +1,20 @@
+FROM alpine:3
+
+# NOTE: we need to manually keep this in sync 
+# with the base image used in containers/go.Dockerfile which is used for the actual deployment
+# TODO: we should unify this, and maybe make the whole "tf-block-runner + run-controller local development"
+# experience use gradle instead of instructions + manual commands... see :panel:startNginx for a similar case
+RUN apk update
+RUN apk upgrade
+RUN apk add bash
+RUN apk add git
+RUN apk add jq
+RUN apk add openssh
+
+COPY tfrunner /tfrunner
+COPY application.yml /.
+COPY resources/known_hosts /tmp/.
+
+ENV SSH_KNOWN_HOSTS=/tmp/known_hosts
+
+ENTRYPOINT [ "./tfrunner", "-workerCount=1" ]

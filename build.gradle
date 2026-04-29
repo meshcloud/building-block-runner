@@ -1,0 +1,10 @@
+plugins {
+  id('io.meshcloud.meshstack.golang')
+}
+
+description = "tfrunner"
+
+golang {
+  binaryName = "tfrunner"
+}
+

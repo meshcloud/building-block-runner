@@ -1,0 +1,78 @@
+package main
+
+import (
+	"context"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
+
+	controller "github.com/meshcloud/meshfed-release/buildingblocks/run-controller/controller"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+)
+
+func main() {
+	logger := log.New(os.Stdout, "[RUN CONTROLLER] ", log.LstdFlags)
+	controller.ReadConfig(logger)
+
+	// Start Prometheus metrics endpoint
+	metricsPort := ":2112"
+	http.Handle("/metrics", promhttp.Handler())
+
+	go func() {
+		logger.Printf("Starting metrics endpoint on %s", metricsPort)
+		if err := http.ListenAndServe(metricsPort, nil); err != nil {
+			logger.Printf("Failed to start HTTP server: %v", err)
+		}
+	}()
+
+	// Auto-discover OIDC issuer from Kubernetes API for WIF configuration
+	logger.Println("Discovering OIDC issuer from Kubernetes API...")
+	controller.DiscoveredOidcIssuer = controller.DiscoverOIDCIssuer(logger)
+	if controller.DiscoveredOidcIssuer != "" {
+		logger.Printf("WIF enabled with OIDC issuer: %s", controller.DiscoveredOidcIssuer)
+	} else {
+		logger.Println("OIDC issuer discovery failed - WIF will not be configured for runners")
+	}
+
+	// Self-register all configured runners on startup.
+	// Meshfed may not be available yet, so retry with a timeout.
+	timeout := 10 * time.Minute
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	retryInterval := 10 * time.Second
+	for {
+		if err := controller.RegisterAllRunners(logger); err != nil {
+			logger.Printf("Runner registration failed, retrying in %s: %v", retryInterval, err)
+			select {
+			case <-ctx.Done():
+				logger.Fatalf("Failed to register runners after %s: %v", timeout, err)
+			case <-time.After(retryInterval):
+				continue
+			}
+		}
+		break
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	// start controller
+	ctrl := controller.NewController()
+	ctrl.Start(&wg)
+
+	// listen for os signals to be able to shutdown gracefully
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-signalChan
+		ctrl.Stop()
+	}()
+
+	wg.Wait()
+	os.Exit(0)
+}

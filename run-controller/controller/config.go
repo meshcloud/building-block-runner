@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 
+	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
 	"gopkg.in/yaml.v2"
 )
 
@@ -291,12 +292,12 @@ func checkDuplicateRunnerUUIDs(runners []RunnerConfig) error {
 
 // isValidImplementationType checks if the given implementation type is valid
 func isValidImplementationType(implType string) bool {
-	switch RunnerImplementationType(implType) {
-	case RunnerTypeTerraform,
-		RunnerTypeGitHubWorkflow,
-		RunnerTypeGitLabPipeline,
-		RunnerTypeAzureDevOpsPipeline,
-		RunnerTypeManual:
+	switch meshapi.RunnerImplementationType(implType) {
+	case meshapi.RunnerTypeTerraform,
+		meshapi.RunnerTypeGitHubWorkflow,
+		meshapi.RunnerTypeGitLabPipeline,
+		meshapi.RunnerTypeAzureDevOpsPipeline,
+		meshapi.RunnerTypeManual:
 		return true
 	default:
 		return false

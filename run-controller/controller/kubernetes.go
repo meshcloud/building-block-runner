@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -57,7 +58,7 @@ func getKubernetesConfig() (*rest.Config, error) {
 	return kubeConfig.ClientConfig()
 }
 
-func (k *KubernetesClient) CreateRunnerJob(runInfo RunInfo, runJsonBase64 string, runner *RunnerConfig, metrics *MetricsCollector) error {
+func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase64 string, runner *RunnerConfig, metrics *MetricsCollector) error {
 	k.logger.Printf("Preparing to create runner job for run %s", runInfo.Uuid)
 
 	// Measure job creation duration

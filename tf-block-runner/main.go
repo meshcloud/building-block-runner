@@ -8,7 +8,8 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/meshcloud/meshfed-release/buildingblocks/tf-block-runner/crypto"
+	meshcrypto "github.com/meshcloud/building-block-runner/go-meshapi-client/crypto"
+	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
 	"github.com/meshcloud/meshfed-release/buildingblocks/tf-block-runner/tfrun"
 )
 
@@ -29,7 +30,7 @@ func main() {
 	// init crypto only when NOT in single-run mode
 	// In single-run mode, decryption is handled by the controller
 	if !singleRunMode && tfrun.AppConfig.PrivateKey != "" {
-		crypto.Crypto, _ = crypto.NewCertBasedDecryptor(tfrun.AppConfig.PrivateKey)
+		meshcrypto.Crypto, _ = meshcrypto.NewCertBasedDecryptor(tfrun.AppConfig.PrivateKey)
 		logger.Println("Crypto initialized for polling mode")
 	} else if singleRunMode {
 		logger.Println("Single-run mode: skipping crypto initialization (controller handles decryption)")
@@ -88,13 +89,13 @@ func executeSingleRun(logger *log.Logger, tfBinaryProvider *tfrun.TfBinaries) {
 	}
 
 	// Parse JSON into RunDetailsDTO
-	var runDetails tfrun.RunDetailsDTO
+	var runDetails meshapi.RunDetailsDTO
 	if err := json.Unmarshal(runJsonBytes, &runDetails); err != nil {
 		logger.Fatalf("Failed to parse run JSON: %v", err)
 	}
 
 	// Convert to internal Run structure (without decryption)
-	run, err := runDetails.ToInternalWithoutDecryption()
+	run, err := tfrun.ToInternalWithoutDecryption(&runDetails)
 	if err != nil {
 		logger.Fatalf("Failed to convert run details: %v", err)
 	}

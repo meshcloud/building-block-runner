@@ -15,12 +15,14 @@ const (
 	RSK_LENGTH = 16
 )
 
+// Crypto is a package-level default instance, used by the tf-block-runner in polling mode.
+// It is nil in single-run mode where the controller pre-decrypts all sensitive fields.
 var Crypto *MeshCertBasedCrypto = nil
 
 //
 // This is designed to decrypt MeshCertBasedEncryption-encrypted
 // stuff. The plaintext has been encrypted with help of our public key
-// and a asymmetric+symmetric encrpytion combination using a RSA-4096
+// and a asymmetric+symmetric encryption combination using a RSA-4096
 // based certificate and AES-128
 //
 
@@ -29,6 +31,8 @@ type MeshCertBasedCrypto struct {
 	privateKey *rsa.PrivateKey
 }
 
+// NewCertBasedCrypto creates a MeshCertBasedCrypto from a private key file path and a public key PEM byte slice.
+// Returns the instance and two separate errors for public key and private key failures.
 func NewCertBasedCrypto(privateKeyFile string, publicKey []byte) (*MeshCertBasedCrypto, error, error) {
 	pubKey, pubKeyError := readRSAPublicKeyFromString(publicKey)
 	privKey, privateKeyError := readRSAPrivateKeyFromPemFile(privateKeyFile)
@@ -48,6 +52,7 @@ func NewCertBasedCrypto(privateKeyFile string, publicKey []byte) (*MeshCertBased
 	return crypto, pubKeyError, privateKeyError
 }
 
+// NewCertBasedDecryptor creates a decryptor-only instance from a private key PEM string.
 func NewCertBasedDecryptor(privateKeyContent string) (*MeshCertBasedCrypto, error) {
 	privKey, privateKeyError := readRSAPrivateKey([]byte(privateKeyContent))
 
@@ -58,7 +63,7 @@ func NewCertBasedDecryptor(privateKeyContent string) (*MeshCertBasedCrypto, erro
 }
 
 // NewCertBasedDecryptorWithValidation creates a decryptor and validates that the provided
-// public key matches the private key
+// public key matches the private key.
 func NewCertBasedDecryptorWithValidation(privateKeyContent string, publicKeyContent []byte) (*MeshCertBasedCrypto, error) {
 	privKey, privateKeyError := readRSAPrivateKey([]byte(privateKeyContent))
 	if privateKeyError != nil {
@@ -129,7 +134,7 @@ func (c *MeshCertBasedCrypto) DecryptMeshCertBased(encrypted string) (string, er
 	// the result of the symmetric encryption is the rest
 	symEncrResult := cipherBytes[encryptedRSKLen:]
 
-	// decrypt encrypted-RK with asym decryption using the private
+	// decrypt encrypted-RK with asym decryption using the private key
 	RSK, err := rsa.DecryptOAEP(sha1.New(), rand.Reader, c.privateKey, encryptedRSK, nil)
 	if err != nil {
 		return "", err
@@ -194,7 +199,7 @@ func readRSAPrivateKey(pemContent []byte) (*rsa.PrivateKey, error) {
 }
 
 // validateKeyPair validates that a public and private key pair match
-// by comparing the public key from the certificate with the public key embedded in the private key
+// by comparing the public key from the certificate with the public key embedded in the private key.
 func validateKeyPair(publicKey *rsa.PublicKey, privateKey *rsa.PrivateKey) error {
 	// First validate the private key structure itself
 	if err := privateKey.Validate(); err != nil {

@@ -11,6 +11,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
+
+	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
 )
 
 type ApiTestSuite struct {
@@ -89,13 +91,16 @@ func (suite *ApiTestSuite) SetupSuite() {
 	}))
 
 	// create runApi with basic auth for testing
-	basicAuth := base64.StdEncoding.EncodeToString([]byte("test-username:test-password"))
+	sAuth := &runApiAuth{
+		basic: meshapi.BasicAuth{Username: "test-username", Password: "test-password"}.AuthHeader(),
+	}
+	hc := suite.meshfed.Client()
 	suite.api = &RunApiClient{
-		rid:      AppConfig.RunnerUuid,
-		url:      suite.meshfed.URL,
-		auth:     "Basic " + basicAuth,
-		client:   suite.meshfed.Client(),
-		runToken: nil, // Will be set when fetching run details
+		rid:        AppConfig.RunnerUuid,
+		baseURL:    suite.meshfed.URL,
+		auth:       sAuth,
+		client:     meshapi.NewClientWithHTTP(suite.meshfed.URL, AppConfig.RunnerUuid, sAuth, hc),
+		httpClient: hc,
 	}
 }
 
@@ -251,12 +256,12 @@ func (suite *ApiTestSuite) Test_RegisterSource() {
 	acceptHeader, exists := req.header["Accept"]
 	assert.True(suite.T(), exists)
 	assert.Len(suite.T(), acceptHeader, 1)
-	assert.Equal(suite.T(), BlockRun_Type_V1, acceptHeader[0])
+	assert.Equal(suite.T(), meshapi.BlockRunMediaTypeV1, acceptHeader[0])
 
 	contentTypeHeader, exists := req.header["Content-Type"]
 	assert.True(suite.T(), exists)
 	assert.Len(suite.T(), contentTypeHeader, 1)
-	assert.Equal(suite.T(), BlockRun_Type_V1, contentTypeHeader[0])
+	assert.Equal(suite.T(), meshapi.BlockRunMediaTypeV1, contentTypeHeader[0])
 
 	runnerIdHeader, exists := req.header["X-Block-Runner-Node-Id"]
 	assert.True(suite.T(), exists)
@@ -329,12 +334,12 @@ func (suite *ApiTestSuite) Test_UpdateState() {
 	acceptHeader, exists := req.header["Accept"]
 	assert.True(suite.T(), exists)
 	assert.Len(suite.T(), acceptHeader, 1)
-	assert.Equal(suite.T(), BlockRun_Type_V1, acceptHeader[0])
+	assert.Equal(suite.T(), meshapi.BlockRunMediaTypeV1, acceptHeader[0])
 
 	contentTypeHeader, exists := req.header["Content-Type"]
 	assert.True(suite.T(), exists)
 	assert.Len(suite.T(), contentTypeHeader, 1)
-	assert.Equal(suite.T(), BlockRun_Type_V1, contentTypeHeader[0])
+	assert.Equal(suite.T(), meshapi.BlockRunMediaTypeV1, contentTypeHeader[0])
 
 	runnerIdHeader, exists := req.header["X-Block-Runner-Node-Id"]
 	assert.True(suite.T(), exists)
@@ -348,7 +353,7 @@ func (suite *ApiTestSuite) Test_UpdateState() {
 	assertJsonEqual(suite.T(), root, "$.source", "runApi_test")
 	assertJsonEqual(suite.T(), root, "$.status", "IN_PROGRESS")
 	assertJsonEqual(suite.T(), root, "$.summary", "run summary")
-	assertJsonEqual(suite.T(), root, "$.type", RUN_TYPE_TF)
+	assertJsonEqual(suite.T(), root, "$.type", string(meshapi.RunTypeTerraform))
 
 	assertJsonExists(suite.T(), root, "$.steps")
 	assertJsonLen(suite.T(), root, "$.steps[*]", 3)
@@ -425,7 +430,7 @@ func (suite *ApiTestSuite) Test_UpdateStateOutputs() {
 
 func GetStatusUpdateResponseForTest() []byte {
 	body, _ := json.Marshal(
-		&RunUpdateResponseDTO{
+		&meshapi.RunUpdateResponseDTO{
 			Abort: false,
 		},
 	)
@@ -562,12 +567,12 @@ func (suite *ApiTestSuite) Test_UseCustomPredicate_V2MediaType() {
 	acceptHeader, exists := req.header["Accept"]
 	assert.True(suite.T(), exists)
 	assert.Len(suite.T(), acceptHeader, 1)
-	assert.Equal(suite.T(), BlockRun_Type_V1, acceptHeader[0])
+	assert.Equal(suite.T(), meshapi.BlockRunMediaTypeV1, acceptHeader[0])
 
 	contentTypeHeader, exists := req.header["Content-Type"]
 	assert.True(suite.T(), exists)
 	assert.Len(suite.T(), contentTypeHeader, 1)
-	assert.Equal(suite.T(), BlockRun_Type_V1, contentTypeHeader[0])
+	assert.Equal(suite.T(), meshapi.BlockRunMediaTypeV1, contentTypeHeader[0])
 }
 
 func (suite *ApiTestSuite) Test_UseCustomPredicate_Null_UsesV1MediaType() {
@@ -606,12 +611,12 @@ func (suite *ApiTestSuite) Test_UseCustomPredicate_Null_UsesV1MediaType() {
 	acceptHeader, exists := req.header["Accept"]
 	assert.True(suite.T(), exists)
 	assert.Len(suite.T(), acceptHeader, 1)
-	assert.Equal(suite.T(), BlockRun_Type_V1, acceptHeader[0])
+	assert.Equal(suite.T(), meshapi.BlockRunMediaTypeV1, acceptHeader[0])
 
 	contentTypeHeader, exists := req.header["Content-Type"]
 	assert.True(suite.T(), exists)
 	assert.Len(suite.T(), contentTypeHeader, 1)
-	assert.Equal(suite.T(), BlockRun_Type_V1, contentTypeHeader[0])
+	assert.Equal(suite.T(), meshapi.BlockRunMediaTypeV1, contentTypeHeader[0])
 }
 
 func (suite *ApiTestSuite) Test_UseCustomPredicate_Empty_UsesV1MediaType() {
@@ -651,12 +656,12 @@ func (suite *ApiTestSuite) Test_UseCustomPredicate_Empty_UsesV1MediaType() {
 	acceptHeader, exists := req.header["Accept"]
 	assert.True(suite.T(), exists)
 	assert.Len(suite.T(), acceptHeader, 1)
-	assert.Equal(suite.T(), BlockRun_Type_V1, acceptHeader[0])
+	assert.Equal(suite.T(), meshapi.BlockRunMediaTypeV1, acceptHeader[0])
 
 	contentTypeHeader, exists := req.header["Content-Type"]
 	assert.True(suite.T(), exists)
 	assert.Len(suite.T(), contentTypeHeader, 1)
-	assert.Equal(suite.T(), BlockRun_Type_V1, contentTypeHeader[0])
+	assert.Equal(suite.T(), meshapi.BlockRunMediaTypeV1, contentTypeHeader[0])
 }
 
 func (suite *ApiTestSuite) Test_FetchRunDetails_UseCustomPredicate_UsesCreateEndpoint() {
@@ -696,12 +701,12 @@ func (suite *ApiTestSuite) Test_FetchRunDetails_UseCustomPredicate_UsesCreateEnd
 	acceptHeader, exists := req.header["Accept"]
 	assert.True(suite.T(), exists)
 	assert.Len(suite.T(), acceptHeader, 1)
-	assert.Equal(suite.T(), BlockRun_Type_V1, acceptHeader[0])
+	assert.Equal(suite.T(), meshapi.BlockRunMediaTypeV1, acceptHeader[0])
 
 	contentTypeHeader, exists := req.header["Content-Type"]
 	assert.True(suite.T(), exists)
 	assert.Len(suite.T(), contentTypeHeader, 1)
-	assert.Equal(suite.T(), BlockRun_Type_V1, contentTypeHeader[0])
+	assert.Equal(suite.T(), meshapi.BlockRunMediaTypeV1, contentTypeHeader[0])
 }
 
 func (suite *ApiTestSuite) Test_FetchRunDetails_NoCustomPredicate_UsesDefaultEndpoint() {
@@ -739,12 +744,14 @@ func (suite *ApiTestSuite) Test_FetchRunDetails_NoCustomPredicate_UsesDefaultEnd
 func (suite *ApiTestSuite) Test_ClearRunToken_ResetsToBasicAuth() {
 	// Setup: Create API client with basic auth
 	basicAuth := base64.StdEncoding.EncodeToString([]byte("test-user:test-pass"))
+	tAuth := &runApiAuth{basic: "Basic " + basicAuth}
+	hc := suite.meshfed.Client()
 	api := &RunApiClient{
-		rid:      "test-runner",
-		url:      suite.meshfed.URL,
-		auth:     "Basic " + basicAuth,
-		client:   suite.meshfed.Client(),
-		runToken: nil,
+		rid:        "test-runner",
+		baseURL:    suite.meshfed.URL,
+		auth:       tAuth,
+		client:     meshapi.NewClientWithHTTP(suite.meshfed.URL, "test-runner", tAuth, hc),
+		httpClient: hc,
 	}
 
 	// Reset caught requests
@@ -762,8 +769,8 @@ func (suite *ApiTestSuite) Test_ClearRunToken_ResetsToBasicAuth() {
 	assert.Equal(suite.T(), "Basic "+basicAuth, authHeader1[0])
 
 	// Now the runToken should be set from the fetched run
-	assert.NotNil(suite.T(), api.runToken)
-	assert.NotEmpty(suite.T(), *api.runToken)
+	assert.NotNil(suite.T(), api.auth.runToken)
+	assert.NotEmpty(suite.T(), *api.auth.runToken)
 
 	// Create a status update (should use Bearer token)
 	status := &RunStatus{
@@ -790,7 +797,7 @@ func (suite *ApiTestSuite) Test_ClearRunToken_ResetsToBasicAuth() {
 	api.ClearRunToken()
 
 	// Verify: runToken is now nil
-	assert.Nil(suite.T(), api.runToken)
+	assert.Nil(suite.T(), api.auth.runToken)
 
 	// Reset caught requests for next call
 	suite.caughtRequests = make([]*CaughtRequest, 0)
@@ -807,8 +814,8 @@ func (suite *ApiTestSuite) Test_ClearRunToken_ResetsToBasicAuth() {
 	assert.Equal(suite.T(), "Basic "+basicAuth, authHeader3[0])
 
 	// Verify: runToken is set again from the new run
-	assert.NotNil(suite.T(), api.runToken)
-	assert.NotEmpty(suite.T(), *api.runToken)
+	assert.NotNil(suite.T(), api.auth.runToken)
+	assert.NotEmpty(suite.T(), *api.auth.runToken)
 }
 
 func (suite *ApiTestSuite) Test_ClearRunToken_MultipleRunCycle() {
@@ -816,12 +823,14 @@ func (suite *ApiTestSuite) Test_ClearRunToken_MultipleRunCycle() {
 	// Simulating multiple runs being processed by a worker
 
 	basicAuth := base64.StdEncoding.EncodeToString([]byte("worker-user:worker-pass"))
+	wAuth := &runApiAuth{basic: "Basic " + basicAuth}
+	hc := suite.meshfed.Client()
 	api := &RunApiClient{
-		rid:      "worker-001",
-		url:      suite.meshfed.URL,
-		auth:     "Basic " + basicAuth,
-		client:   suite.meshfed.Client(),
-		runToken: nil,
+		rid:        "worker-001",
+		baseURL:    suite.meshfed.URL,
+		auth:       wAuth,
+		client:     meshapi.NewClientWithHTTP(suite.meshfed.URL, "worker-001", wAuth, hc),
+		httpClient: hc,
 	}
 
 	for i := 1; i <= 3; i++ {
@@ -840,7 +849,7 @@ func (suite *ApiTestSuite) Test_ClearRunToken_MultipleRunCycle() {
 			"Iteration %d: Fetch should use Basic auth", i)
 
 		// Verify runToken is set
-		assert.NotNil(suite.T(), api.runToken, "Iteration %d: runToken should be set after fetch", i)
+		assert.NotNil(suite.T(), api.auth.runToken, "Iteration %d: runToken should be set after fetch", i)
 
 		// Simulate run operations (Register, UpdateState) - should use Bearer token
 		suite.caughtRequests = make([]*CaughtRequest, 0)
@@ -860,7 +869,7 @@ func (suite *ApiTestSuite) Test_ClearRunToken_MultipleRunCycle() {
 
 		// Clear token after run completes (simulating worker behavior)
 		api.ClearRunToken()
-		assert.Nil(suite.T(), api.runToken,
+		assert.Nil(suite.T(), api.auth.runToken,
 			"Iteration %d: runToken should be nil after clearing", i)
 	}
 }

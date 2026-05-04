@@ -7,7 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/meshcloud/meshfed-release/buildingblocks/run-controller/crypto"
+	meshcrypto "github.com/meshcloud/building-block-runner/go-meshapi-client/crypto"
+	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
 )
 
 type Controller struct {
@@ -15,7 +16,7 @@ type Controller struct {
 	shutdownCalled bool
 	runApi         RunApi
 	k8sClient      *KubernetesClient
-	cryptoMap      map[string]*crypto.MeshCertBasedCrypto // Map runner UUID to crypto instance
+	cryptoMap      map[string]*meshcrypto.MeshCertBasedCrypto // Map runner UUID to crypto instance
 	metrics        *MetricsCollector
 }
 
@@ -27,9 +28,9 @@ func NewController() *Controller {
 	}
 
 	// Initialize crypto instances for each runner
-	cryptoMap := make(map[string]*crypto.MeshCertBasedCrypto)
+	cryptoMap := make(map[string]*meshcrypto.MeshCertBasedCrypto)
 	for _, runner := range AppConfig.Runners {
-		cryptoInstance, err := crypto.NewCertBasedDecryptorWithValidation(
+		cryptoInstance, err := meshcrypto.NewCertBasedDecryptorWithValidation(
 			runner.Crypto.PrivateKey,
 			[]byte(runner.Crypto.PublicKey),
 		)
@@ -158,8 +159,8 @@ func (c *Controller) processRunsForRunner(runner *RunnerConfig) {
 
 func isNoRunError(err error) bool {
 	// Check if this is a "no runs available" error (HTTP 404)
-	if statusError, ok := err.(*StatusError); ok {
-		return statusError.status == 404
+	if statusError, ok := err.(*meshapi.StatusError); ok {
+		return statusError.Status == 404
 	}
 	return false
 }

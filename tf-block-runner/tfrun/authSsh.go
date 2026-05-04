@@ -11,7 +11,7 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	gogitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
-	"github.com/meshcloud/meshfed-release/buildingblocks/tf-block-runner/crypto"
+	meshcrypto "github.com/meshcloud/building-block-runner/go-meshapi-client/crypto"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
@@ -44,11 +44,11 @@ type KnownHost struct {
 
 func (sshAuth *SshAuth) unwrapCert() (string, error) {
 	// If crypto is not initialized (single-run mode), the cert is already decrypted
-	if crypto.Crypto == nil {
+	if meshcrypto.Crypto == nil {
 		return sshAuth.certStr, nil
 	}
 	// Otherwise, decrypt it (polling mode)
-	r, e := crypto.Crypto.DecryptMeshCertBased(sshAuth.certStr)
+	r, e := meshcrypto.Crypto.DecryptMeshCertBased(sshAuth.certStr)
 	return r, e
 }
 

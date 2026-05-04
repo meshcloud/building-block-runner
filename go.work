@@ -1,0 +1,7 @@
+go 1.26
+
+use (
+	./go-meshapi-client
+	./run-controller
+	./tf-block-runner
+)

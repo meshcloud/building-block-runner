@@ -7,6 +7,7 @@ require (
 	github.com/hashicorp/hc-install v0.9.2
 	github.com/hashicorp/hcl/v2 v2.24.0
 	github.com/hashicorp/terraform-exec v0.24.0
+	github.com/meshcloud/building-block-runner/go-meshapi-client v0.0.0
 	github.com/opentofu/tofudl v0.0.1
 	github.com/sebdah/goldie/v2 v2.8.0
 	github.com/stretchr/testify v1.11.1
@@ -58,3 +59,5 @@ require (
 	golang.org/x/text v0.25.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0
 )
+
+replace github.com/meshcloud/building-block-runner/go-meshapi-client => ../go-meshapi-client

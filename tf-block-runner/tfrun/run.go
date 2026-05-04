@@ -4,15 +4,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/meshcloud/meshfed-release/buildingblocks/tf-block-runner/crypto"
+	meshcrypto "github.com/meshcloud/building-block-runner/go-meshapi-client/crypto"
 )
 
 const (
-	RUN_TYPE_TF    = "TERRAFORM"
 	DEFAULT_TF_VER = "1.4.4"
 )
-
-type RunType string
 
 type Run struct {
 	Id                     string
@@ -42,7 +39,7 @@ type Variable struct {
 }
 
 // add more "decryptable" types here, once we support them
-func (variable Variable) decryptIfSensitive(crypto *crypto.MeshCertBasedCrypto) (result any, err error) {
+func (variable Variable) decryptIfSensitive(crypto *meshcrypto.MeshCertBasedCrypto) (result any, err error) {
 	result = variable.value
 	if variable.isSensitive {
 		switch variable.Type {

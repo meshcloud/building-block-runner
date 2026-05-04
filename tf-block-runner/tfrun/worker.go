@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
 )
 
 type Worker struct {
@@ -62,10 +64,10 @@ func (w *Worker) work() {
 }
 
 func (w *Worker) handleFetchRunError(err error) {
-	statusError, isStatusError := err.(*StatusError)
+	statusError, isStatusError := err.(*meshapi.StatusError)
 
 	if isStatusError {
-		switch statusError.status {
+		switch statusError.Status {
 		case 404:
 			w.workerOut <- norun
 		case 409:

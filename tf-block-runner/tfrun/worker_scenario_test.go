@@ -19,6 +19,8 @@ import (
 	"github.com/hashicorp/terraform-exec/tfexec"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
+
+	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
 )
 
 type WorkerTestSuite struct {
@@ -109,6 +111,8 @@ func (suite *WorkerTestSuite) SetupTest() {
 
 	// Create basic auth for test API client
 	basicAuth := base64.StdEncoding.EncodeToString([]byte("test-user:test-pass"))
+	scenarioAuth := &runApiAuth{basic: "Basic " + basicAuth}
+	mockHC := &http.Client{Transport: testRoundTripper(suite.scenarioClientBehavior)}
 
 	suite.w = &Worker{
 		workerNumber: 1,
@@ -116,13 +120,11 @@ func (suite *WorkerTestSuite) SetupTest() {
 		workerIn:     make(chan workerToken, 2),
 		workerOut:    make(chan workerToken, 2),
 		runApi: &RunApiClient{
-			rid:  "scenario-runner",
-			url:  "",
-			auth: "Basic " + basicAuth,
-			client: &http.Client{
-				Transport: testRoundTripper(suite.scenarioClientBehavior),
-			},
-			runToken: nil, // Will be set after fetching run details
+			rid:        "scenario-runner",
+			baseURL:    "",
+			auth:       scenarioAuth,
+			client:     meshapi.NewClientWithHTTP("", "scenario-runner", scenarioAuth, mockHC),
+			httpClient: mockHC,
 		},
 		log:                  log.New(io.Discard, "", log.LstdFlags),
 		timeout:              30 * time.Second,
@@ -154,7 +156,7 @@ func (suite *WorkerTestSuite) runWorker() {
 
 // findStep returns the step with the given ID from a status update.
 // It immediately fails the test if no matching step is found.
-func findStep(t testing.TB, update RunStatusUpdateDTO, stepId string) StepUpdateDTO {
+func findStep(t testing.TB, update meshapi.RunStatusUpdateDTO, stepId string) meshapi.StepStatusUpdateDTO {
 	t.Helper()
 	if s := findStepOrNil(update, stepId); s != nil {
 		return *s
@@ -164,12 +166,12 @@ func findStep(t testing.TB, update RunStatusUpdateDTO, stepId string) StepUpdate
 		ids[i] = s.Id
 	}
 	t.Fatalf("step %q not found; available step IDs: %v", stepId, ids)
-	return StepUpdateDTO{}
+	return meshapi.StepStatusUpdateDTO{}
 }
 
 // findStepOrNil returns the step with the given ID, or nil if not present.
 // Prefer findStep in tests that require the step to exist.
-func findStepOrNil(update RunStatusUpdateDTO, stepId string) *StepUpdateDTO {
+func findStepOrNil(update meshapi.RunStatusUpdateDTO, stepId string) *meshapi.StepStatusUpdateDTO {
 	for i := range update.Steps {
 		if update.Steps[i].Id == stepId {
 			return &update.Steps[i]
@@ -194,7 +196,7 @@ func (suite *WorkerTestSuite) Test_MissingAuth() {
 	assert.Equal(suite.T(), 1, len(updateCalls))
 
 	data, _ := io.ReadAll(updateCalls[0].Body)
-	var update RunStatusUpdateDTO
+	var update meshapi.RunStatusUpdateDTO
 	json.Unmarshal(data, &update)
 
 	assert.Equal(suite.T(), FAILED.str(), *update.Status)
@@ -234,7 +236,7 @@ func (suite *WorkerTestSuite) Test_ApplySucceeded() {
 	// Check the final update call
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, _ := io.ReadAll(lastUpdate.Body)
-	var update RunStatusUpdateDTO
+	var update meshapi.RunStatusUpdateDTO
 	json.Unmarshal(data, &update)
 
 	assert.Equal(suite.T(), SUCCEEDED.str(), *update.Status)
@@ -275,7 +277,7 @@ func (suite *WorkerTestSuite) Test_RegistrationConflict_ContinuesExecution() {
 		// Restore body for later reads
 		req.Body = io.NopCloser(bytes.NewBuffer(data))
 
-		var update RunStatusUpdateDTO
+		var update meshapi.RunStatusUpdateDTO
 		json.Unmarshal(data, &update)
 
 		statusStr := ""
@@ -344,7 +346,7 @@ func (suite *WorkerTestSuite) Test_ApplyRunAborted() {
 	// update will have the IN_PROGRESS state, as we are not done yet
 	assert.Equal(suite.T(), 1, len(updateCalls))
 	data, _ := io.ReadAll(updateCalls[0].Body)
-	var update RunStatusUpdateDTO
+	var update meshapi.RunStatusUpdateDTO
 	json.Unmarshal(data, &update)
 	assert.Equal(suite.T(), IN_PROGRESS.str(), *update.Status)
 }
@@ -378,7 +380,7 @@ func (suite *WorkerTestSuite) Test_ApplyTfFailure() {
 	// Check the final update call
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, _ := io.ReadAll(lastUpdate.Body)
-	var update RunStatusUpdateDTO
+	var update meshapi.RunStatusUpdateDTO
 	json.Unmarshal(data, &update)
 
 	assert.Equal(suite.T(), FAILED.str(), *update.Status)
@@ -427,7 +429,7 @@ func (suite *WorkerTestSuite) Test_DestroySucceeded() {
 	// Check the final update call
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, _ := io.ReadAll(lastUpdate.Body)
-	var update RunStatusUpdateDTO
+	var update meshapi.RunStatusUpdateDTO
 	json.Unmarshal(data, &update)
 
 	assert.Equal(suite.T(), SUCCEEDED.str(), *update.Status)
@@ -467,7 +469,7 @@ func (suite *WorkerTestSuite) Test_DestroyTfFailure() {
 	// Check the final update call
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, _ := io.ReadAll(lastUpdate.Body)
-	var update RunStatusUpdateDTO
+	var update meshapi.RunStatusUpdateDTO
 	json.Unmarshal(data, &update)
 
 	assert.Equal(suite.T(), FAILED.str(), *update.Status)
@@ -525,7 +527,7 @@ func (suite *WorkerTestSuite) Test_UpdatesStatusWithLiveLogs() {
 		found := false
 		for _, update := range updateCalls {
 			data, _ := io.ReadAll(update.Body)
-			var update RunStatusUpdateDTO
+			var update meshapi.RunStatusUpdateDTO
 			json.Unmarshal(data, &update)
 			if step := findStepOrNil(update, StepExecuteTf); step != nil && step.SystemMessage != nil && *step.SystemMessage == expected {
 				found = true
@@ -539,7 +541,7 @@ func (suite *WorkerTestSuite) Test_UpdatesStatusWithLiveLogs() {
 func mockUpdateCallWithAbortResponse() func(_ *http.Request) *http.Response {
 	return func(_ *http.Request) *http.Response {
 		body, _ := json.Marshal(
-			&RunUpdateResponseDTO{
+			&meshapi.RunUpdateResponseDTO{
 				Abort: true,
 			},
 		)
@@ -553,44 +555,46 @@ func mockUpdateCallWithAbortResponse() func(_ *http.Request) *http.Response {
 
 func mockValidRunDetailsFetchCall(behavior, repo, path string) func(_ *http.Request) *http.Response {
 	return func(_ *http.Request) *http.Response {
+		implDTO := meshapi.TerraformImplementation{
+			TerraformVersion: DEFAULT_TF_VER,
+			RepositoryUrl:    repo,
+			RepositoryPath:   p(path),
+			RefName:          nil,
+			SshPrivateKey:    nil,
+			KnownHost:        nil,
+			Async:            false,
+		}
+		implJSON, _ := json.Marshal(implDTO)
 		body, _ := json.Marshal(
-			&RunDetailsDTO{
+			&meshapi.RunDetailsDTO{
 				ApiVersion: "v1",
 				Kind:       "MeshBuildingBlockRun",
-				Metadata: RunMetaDTO{
+				Metadata: meshapi.RunMetaDTO{
 					Uuid: "run-uuid",
 				},
-				Spec: RunSpecDTO{
+				Spec: meshapi.RunSpecDTO{
 					RunNumber: 1,
 					Behavior:  behavior,
-					RunToken:  "test-mock-run-token-12345", // Add runToken for authentication
-					BuildingBlock: BuildingBlockSpecDTO{
+					RunToken:  "test-mock-run-token-12345",
+					BuildingBlock: meshapi.BuildingBlockSpecDTO{
 						Uuid: "block-uuid",
-						Spec: BuildingBlockDetailsSpecDTO{
+						Spec: meshapi.BuildingBlockDetailsSpecDTO{
 							DisplayName: "Test-BuildingBlock",
-							Inputs:      make([]BuildingBlockInputSpecDTO, 0),
+							Inputs:      make([]meshapi.BuildingBlockInputSpecDTO, 0),
 						},
 					},
-					Definition: DefinitionSpecDTO{
+					Definition: meshapi.DefinitionSpecDTO{
 						Uuid: "definition-uuid",
-						Spec: DefinitionDetailsSpecDTO{
-							Version: 1,
-							Implementation: ImplementationDTO{
-								TerraformVersion: DEFAULT_TF_VER,
-								RepositoryUrl:    repo,
-								RepositoryPath:   p(path),
-								RefName:          nil,
-								PrivateKey:       nil,
-								KnownHost:        nil,
-								Async:            false,
-							},
+						Spec: meshapi.DefinitionDetailsSpecDTO{
+							Version:        1,
+							Implementation: implJSON,
 						},
 					},
 				},
 			},
 		)
 		header := make(http.Header)
-		header.Add("Content-Type", BlockRun_Type_V1)
+		header.Add("Content-Type", meshapi.BlockRunMediaTypeV1)
 
 		return &http.Response{
 			StatusCode: 200,

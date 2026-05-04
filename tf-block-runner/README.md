@@ -6,7 +6,7 @@ Config passed explicitly via program args will have precedence over file-config.
 To see a full list of program arguments run
 
 ```Shell
-$ go run main.go --help
+go run main.go --help
 ```
 
 ## Run locally
@@ -16,36 +16,24 @@ Activate Go Modules. Consider the `go.mod` file for requirements.
 Might need to go get dependencies before running:
 
 ```Shell
-$ go get <dependencies>
+go get <dependencies>
 ```
 
 To run the program use:
 
 ```Shell
-$ go run main.go
+go run main.go
 ```
 
 To run with known_hosts support for ssh use:
 
 ```Shell
-$ SSH_KNOWN_HOSTS=./resources/known_hosts go run main.go
+SSH_KNOWN_HOSTS=./resources/known_hosts go run main.go
 ```
 
 ## Run tests
 
 ```Shell
-$ go test ./tfrun -v
-$ go test ./crypto -v
-```
-
-## Build container image locally
-
-```Shell
-$ ./build-tfrunner-container-local.sh
-```
-
-## Run container locally with access to locally run meshfed
-After building the image file run:
-```Shell
-$ docker run -i --network=host -t tfrunner
+go test ./tfrun -v
+go test ./crypto -v
 ```

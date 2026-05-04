@@ -1,8 +1,9 @@
-module github.com/meshcloud/meshfed-release/buildingblocks/run-controller
+module github.com/meshcloud/building-block-runner/run-controller
 
 go 1.26
 
 require (
+	github.com/meshcloud/building-block-runner/go-meshapi-client v0.0.0
 	github.com/prometheus/client_golang v1.20.5
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.34.1
@@ -56,3 +57,5 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
+
+replace github.com/meshcloud/building-block-runner/go-meshapi-client => ../go-meshapi-client

@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	controller "github.com/meshcloud/meshfed-release/buildingblocks/run-controller/controller"
+	controller "github.com/meshcloud/building-block-runner/run-controller/controller"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 

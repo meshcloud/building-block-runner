@@ -34,7 +34,8 @@ jobs:
       - name: Build Docker image
         uses: docker/build-push-action@v6
         with:
-          context: run-controller
+          context: .
+          file: run-controller/Dockerfile
           push: false
           tags: run-controller:${{ github.sha }}
           cache-from: type=gha
@@ -67,7 +68,8 @@ jobs:
       - name: Build Docker image
         uses: docker/build-push-action@v6
         with:
-          context: tf-block-runner
+          context: .
+          file: tf-block-runner/Dockerfile
           push: false
           tags: tf-block-runner:${{ github.sha }}
           cache-from: type=gha

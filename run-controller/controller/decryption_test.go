@@ -4,18 +4,20 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"testing"
+
+	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
 )
 
 func TestGetImplementationType_ValidTypes(t *testing.T) {
 	tests := []struct {
 		name     string
-		implType ImplementationType
+		implType meshapi.ImplementationType
 	}{
-		{"Terraform", ImplTypeTerraform},
-		{"GitHub Workflow", ImplTypeGitHubWorkflow},
-		{"GitLab CICD", ImplTypeGitLabCICD},
-		{"Azure DevOps", ImplTypeAzureDevOps},
-		{"Manual", ImplTypeManual},
+		{"Terraform", meshapi.ImplTypeTerraform},
+		{"GitHub Workflow", meshapi.ImplTypeGitHubWorkflow},
+		{"GitLab CICD", meshapi.ImplTypeGitLabCICD},
+		{"Azure DevOps", meshapi.ImplTypeAzureDevOps},
+		{"Manual", meshapi.ImplTypeManual},
 	}
 
 	for _, tt := range tests {
@@ -25,7 +27,7 @@ func TestGetImplementationType_ValidTypes(t *testing.T) {
 			}
 			implJson, _ := json.Marshal(impl)
 
-			dto := &DefinitionDetailsSpecDTO{
+			dto := &meshapi.DefinitionDetailsSpecDTO{
 				Version:        1,
 				Implementation: implJson,
 			}
@@ -43,7 +45,7 @@ func TestGetImplementationType_ValidTypes(t *testing.T) {
 }
 
 func TestGetImplementationType_InvalidJSON(t *testing.T) {
-	dto := &DefinitionDetailsSpecDTO{
+	dto := &meshapi.DefinitionDetailsSpecDTO{
 		Version:        1,
 		Implementation: []byte("invalid json"),
 	}
@@ -54,24 +56,24 @@ func TestGetImplementationType_InvalidJSON(t *testing.T) {
 }
 
 func TestDecryptRunDetails_UnsupportedImplementationType(t *testing.T) {
-	runDetails := RunDetailsDTO{
+	runDetails := meshapi.RunDetailsDTO{
 		ApiVersion: "v1",
 		Kind:       "meshBuildingBlockRun",
-		Metadata:   RunMetaDTO{Uuid: "test-uuid"},
-		Spec: RunSpecDTO{
+		Metadata:   meshapi.RunMetaDTO{Uuid: "test-uuid"},
+		Spec: meshapi.RunSpecDTO{
 			RunNumber: 1,
 			Behavior:  "APPLY",
-			BuildingBlock: BuildingBlockSpecDTO{
+			BuildingBlock: meshapi.BuildingBlockSpecDTO{
 				Uuid: "bb-uuid",
-				Spec: BuildingBlockDetailsSpecDTO{
+				Spec: meshapi.BuildingBlockDetailsSpecDTO{
 					DisplayName:         "Test BB",
 					WorkspaceIdentifier: "test-workspace",
-					Inputs:              []BuildingBlockInputSpecDTO{},
+					Inputs:              []meshapi.BuildingBlockInputSpecDTO{},
 				},
 			},
-			Definition: DefinitionSpecDTO{
+			Definition: meshapi.DefinitionSpecDTO{
 				Uuid: "def-uuid",
-				Spec: DefinitionDetailsSpecDTO{
+				Spec: meshapi.DefinitionDetailsSpecDTO{
 					Version:        1,
 					Implementation: json.RawMessage(`{"type": "UNKNOWN_TYPE"}`),
 				},
@@ -88,24 +90,24 @@ func TestDecryptRunDetails_UnsupportedImplementationType(t *testing.T) {
 }
 
 func TestDecryptRunDetails_ManualImplementation(t *testing.T) {
-	runDetails := RunDetailsDTO{
+	runDetails := meshapi.RunDetailsDTO{
 		ApiVersion: "v1",
 		Kind:       "meshBuildingBlockRun",
-		Metadata:   RunMetaDTO{Uuid: "test-uuid"},
-		Spec: RunSpecDTO{
+		Metadata:   meshapi.RunMetaDTO{Uuid: "test-uuid"},
+		Spec: meshapi.RunSpecDTO{
 			RunNumber: 1,
 			Behavior:  "APPLY",
-			BuildingBlock: BuildingBlockSpecDTO{
+			BuildingBlock: meshapi.BuildingBlockSpecDTO{
 				Uuid: "bb-uuid",
-				Spec: BuildingBlockDetailsSpecDTO{
+				Spec: meshapi.BuildingBlockDetailsSpecDTO{
 					DisplayName:         "Test BB",
 					WorkspaceIdentifier: "test-workspace",
-					Inputs:              []BuildingBlockInputSpecDTO{},
+					Inputs:              []meshapi.BuildingBlockInputSpecDTO{},
 				},
 			},
-			Definition: DefinitionSpecDTO{
+			Definition: meshapi.DefinitionSpecDTO{
 				Uuid: "def-uuid",
-				Spec: DefinitionDetailsSpecDTO{
+				Spec: meshapi.DefinitionDetailsSpecDTO{
 					Version:        1,
 					Implementation: json.RawMessage(`{"type": "MANUAL"}`),
 				},
@@ -131,7 +133,7 @@ func TestDecryptRunDetails_ManualImplementation(t *testing.T) {
 		t.Fatalf("failed to decode result: %v", err)
 	}
 
-	var decodedRun RunDetailsDTO
+	var decodedRun meshapi.RunDetailsDTO
 	if err := json.Unmarshal(decoded, &decodedRun); err != nil {
 		t.Fatalf("failed to unmarshal decoded result: %v", err)
 	}
@@ -168,22 +170,23 @@ func TestDecryptRunDetails_InvalidInputs(t *testing.T) {
 func TestImplementationType_ToRunnerType(t *testing.T) {
 	tests := []struct {
 		name       string
-		implType   ImplementationType
-		runnerType RunnerImplementationType
+		implType   meshapi.ImplementationType
+		runnerType meshapi.RunnerImplementationType
 	}{
-		{"Terraform maps to Terraform", ImplTypeTerraform, RunnerTypeTerraform},
-		{"GitHub Workflow maps to GitHub Workflow", ImplTypeGitHubWorkflow, RunnerTypeGitHubWorkflow},
-		{"GitLab CICD maps to GitLab Pipeline", ImplTypeGitLabCICD, RunnerTypeGitLabPipeline},
-		{"Azure DevOps maps to Azure DevOps Pipeline", ImplTypeAzureDevOps, RunnerTypeAzureDevOpsPipeline},
-		{"Manual maps to Manual", ImplTypeManual, RunnerTypeManual},
+		{"Terraform maps to Terraform", meshapi.ImplTypeTerraform, meshapi.RunnerTypeTerraform},
+		{"GitHub Workflow maps to GitHub Workflow", meshapi.ImplTypeGitHubWorkflow, meshapi.RunnerTypeGitHubWorkflow},
+		{"GitLab CICD maps to GitLab Pipeline", meshapi.ImplTypeGitLabCICD, meshapi.RunnerTypeGitLabPipeline},
+		{"Azure DevOps maps to Azure DevOps Pipeline", meshapi.ImplTypeAzureDevOps, meshapi.RunnerTypeAzureDevOpsPipeline},
+		{"Manual maps to Manual", meshapi.ImplTypeManual, meshapi.RunnerTypeManual},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := tt.implType.ToRunnerType()
+			result := meshapi.ToRunnerType(tt.implType)
 			if result != tt.runnerType {
 				t.Errorf("got %v, want %v", result, tt.runnerType)
 			}
 		})
 	}
 }
+

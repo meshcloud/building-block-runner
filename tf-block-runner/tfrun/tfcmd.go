@@ -17,7 +17,7 @@ import (
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclwrite"
 	"github.com/hashicorp/terraform-exec/tfexec"
-	"github.com/meshcloud/meshfed-release/buildingblocks/tf-block-runner/crypto"
+	meshcrypto "github.com/meshcloud/building-block-runner/go-meshapi-client/crypto"
 	"github.com/meshcloud/meshfed-release/buildingblocks/tf-block-runner/util"
 	"github.com/zclconf/go-cty/cty"
 )
@@ -386,7 +386,7 @@ func (tfcmd *GenericTfCmd) setEnvWith(setOsEnv func(envKey, v string) error) err
 	for varName, variable := range tfcmd.params.vars {
 		// Note: TF_VAR_ prefixed env vars from Building Blocks are passed in as *.auto.tfvars file (see vars() method)
 		if variable.env && !strings.HasPrefix(varName, TfVarEnvPrefix) {
-			val, err := variable.decryptIfSensitive(crypto.Crypto)
+			val, err := variable.decryptIfSensitive(meshcrypto.Crypto)
 			if err == nil {
 				encodedValue, err := encodeVarValueForEnv(val, variable.Type)
 				if err != nil {
@@ -432,7 +432,7 @@ func (tfcmd *GenericTfCmd) saveInputFiles() (savedFiles int, err error) {
 			return savedFiles, err
 		}
 
-		value, err := v.decryptIfSensitive(crypto.Crypto)
+		value, err := v.decryptIfSensitive(meshcrypto.Crypto)
 		if err != nil {
 			tfcmd.Printfln("Failed to decrypt file input '%s'", k)
 			tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(fmt.Sprintf("Failed to decrypt file input '%s': %s", k, err.Error()))
@@ -497,7 +497,7 @@ func (tfcmd *GenericTfCmd) vars() error {
 			continue
 		}
 
-		decryptedValue, err := variable.decryptIfSensitive(crypto.Crypto)
+		decryptedValue, err := variable.decryptIfSensitive(meshcrypto.Crypto)
 		if err != nil {
 			tfcmd.Printfln("Failed to decrypt input '%s'", varName)
 			_, _ = tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(fmt.Sprintf("Failed to decrypt input '%s': %s", varName, err.Error()))

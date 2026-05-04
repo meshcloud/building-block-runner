@@ -4,146 +4,24 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"time"
+
+	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
 )
 
-type RunDetailsDTO struct {
-	ApiVersion string     `json:"apiVersion"`
-	Kind       string     `json:"kind"`
-	Metadata   RunMetaDTO `json:"metadata"`
-	Spec       RunSpecDTO `json:"spec"`
-	Links      LinksDTO   `json:"_links"`
-}
-
-type LinksDTO struct {
-	RegisterSourceUrl LinkDTO `json:"registerSource"`
-	UpdateSourceUrl   LinkDTO `json:"updateSource"`
-	MeshstackBaseUrl  LinkDTO `json:"meshstackBaseUrl"`
-}
-
-type LinkDTO struct {
-	Href string `json:"href"`
-}
-
-type RunMetaDTO struct {
-	Uuid string `json:"uuid"`
-}
-
-type RunSpecDTO struct {
-	RunNumber     int                  `json:"runNumber"`
-	Behavior      string               `json:"behavior"`
-	BuildingBlock BuildingBlockSpecDTO `json:"buildingBlock"`
-	Definition    DefinitionSpecDTO    `json:"buildingBlockDefinition"`
-	RunToken      string               `json:"runToken"`
-}
-
-type BuildingBlockSpecDTO struct {
-	Uuid string                      `json:"uuid"`
-	Spec BuildingBlockDetailsSpecDTO `json:"spec"`
-}
-
-type BuildingBlockDetailsSpecDTO struct {
-	DisplayName            string                      `json:"displayName"`
-	WorkspaceIdentifier    string                      `json:"workspaceIdentifier"`
-	ProjectIdentifier      string                      `json:"projectIdentifier"`
-	FullPlatformIdentifier string                      `json:"fullPlatformIdentifier"`
-	Inputs                 []BuildingBlockInputSpecDTO `json:"inputs"`
-	ParentBuildingBlocks   []ParentBuildingBlockDTO    `json:"parentBuildingBlocks"`
-}
-
-type ParentBuildingBlockDTO struct {
-	BuildingBlockUuid string `json:"buildingBlockUuid"`
-	DefinitionUuid    string `json:"definitionUuid"`
-}
-
-type BuildingBlockInputSpecDTO struct {
-	Key         string   `json:"key"`
-	Value       any      `json:"value"`
-	Type        DataType `json:"type"`
-	IsSensitive bool     `json:"isSensitive"`
-	Env         bool     `json:"isEnvironment"`
-}
-
-type DefinitionSpecDTO struct {
-	Uuid string                   `json:"uuid"`
-	Spec DefinitionDetailsSpecDTO `json:"spec"`
-}
-
-type DefinitionDetailsSpecDTO struct {
-	Version        int               `json:"version"`
-	Implementation ImplementationDTO `json:"implementation"`
-}
-
-type ImplementationDTO struct {
-	TerraformVersion           string        `json:"terraformVersion"`
-	RepositoryUrl              string        `json:"repositoryUrl"`
-	RepositoryPath             *string       `json:"repositoryPath"`
-	RefName                    *string       `json:"refName"`
-	PrivateKey                 *string       `json:"sshPrivateKey"`
-	KnownHost                  *KnownHostDTO `json:"knownHost"`
-	Async                      bool          `json:"async"`
-	UseMeshHttpBackendFallback bool          `json:"useMeshHttpBackendFallback"`
-	PreRunScript               *string       `json:"preRunScript"`
-}
-
-type KnownHostDTO struct {
-	Host     string `json:"host"`
-	KeyType  string `json:"keyType"`
-	KeyValue string `json:"keyValue"`
-}
-
-type RunStatusUpdateDTO struct {
-	BlockRunId string          `json:"blockRunId"`
-	Source     string          `json:"source"`
-	Type       RunType         `json:"type"`
-	Status     *string         `json:"status"`
-	CreatedOn  time.Time       `json:"createdOn"`
-	Summary    *string         `json:"summary"`
-	Steps      []StepUpdateDTO `json:"steps"`
-}
-
-type StepUpdateDTO struct {
-	Id            string               `json:"id"`
-	DisplayName   string               `json:"displayName"`
-	Status        *string              `json:"status"`
-	UserMessage   *string              `json:"userMessage"`
-	SystemMessage *string              `json:"systemMessage"`
-	Outputs       map[string]OutputDTO `json:"outputs"`
-}
-
-type OutputDTO struct {
-	Value     any      `json:"value"`
-	Type      DataType `json:"type"`
-	Sensitive bool     `json:"isSensitive"`
-}
-
-type RegistrationDTO struct {
-	Source SourceRegistrationDTO  `json:"source"`
-	Steps  []StepsRegistrationDTO `json:"steps"`
-}
-
-type SourceRegistrationDTO struct {
-	Id          string  `json:"id"`
-	ExternalId  *string `json:"externalId"`
-	ExternalUrl *string `json:"externalUrl"`
-}
-
-type StepsRegistrationDTO struct {
-	Id          string  `json:"id"`
-	DisplayName string  `json:"displayName"`
-	Status      *string `json:"status"`
-}
-
-type RunUpdateResponseDTO struct {
-	Abort bool `json:"runAborted"`
-}
-
-func (dto RunDetailsDTO) toInternal() (*Run, error) {
+// runDTOToInternal converts a RunDetailsDTO to an internal Run.
+// It decrypts sensitive inputs using the package-level crypto (polling mode).
+func runDTOToInternal(dto *meshapi.RunDetailsDTO) (*Run, error) {
 	behavior, err := DetermineBehavior(dto.Spec.Behavior)
 	if err != nil {
 		return nil, err
 	}
 
-	source, err := dto.Spec.Definition.Spec.Implementation.toInternal()
+	var impl meshapi.TerraformImplementation
+	if err := json.Unmarshal(dto.Spec.Definition.Spec.Implementation, &impl); err != nil {
+		return nil, err
+	}
+
+	source, err := terraformImplToGitSource(&impl)
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +38,7 @@ func (dto RunDetailsDTO) toInternal() (*Run, error) {
 
 	return &Run{
 		Id:                     dto.Metadata.Uuid,
-		TerraformVersion:       dto.Spec.Definition.Spec.Implementation.TerraformVersion,
+		TerraformVersion:       impl.TerraformVersion,
 		RequestedAt:            time.Now(),
 		RunToken:               dto.Spec.RunToken,
 		MeshstackBaseUrl:       dto.Links.MeshstackBaseUrl.Href,
@@ -170,24 +48,29 @@ func (dto RunDetailsDTO) toInternal() (*Run, error) {
 		Behavior:               behavior,
 		BuildingBlockId:        dto.Spec.BuildingBlock.Uuid,
 		BuildingBlockName:      dto.Spec.BuildingBlock.Spec.DisplayName,
-		IsAsync:                dto.Spec.Definition.Spec.Implementation.Async,
+		IsAsync:                impl.Async,
 		Vars:                   toInternalVariableMap(dto.Spec.BuildingBlock.Spec.Inputs),
 		RunJsonBase64:          encoded,
 		Source:                 source,
-		UseMeshBackendFallback: dto.Spec.Definition.Spec.Implementation.UseMeshHttpBackendFallback,
-		PreRunScript:           dto.Spec.Definition.Spec.Implementation.PreRunScript,
+		UseMeshBackendFallback: impl.UseMeshHttpBackendFallback,
+		PreRunScript:           impl.PreRunScript,
 	}, nil
 }
 
-// ToInternalWithoutDecryption converts DTO to internal Run structure without decrypting sensitive values.
+// ToInternalWithoutDecryption converts a RunDetailsDTO to an internal Run without decrypting sensitive values.
 // This is used when the run JSON has already been decrypted at the controller level.
-func (dto RunDetailsDTO) ToInternalWithoutDecryption() (*Run, error) {
+func ToInternalWithoutDecryption(dto *meshapi.RunDetailsDTO) (*Run, error) {
 	behavior, err := DetermineBehavior(dto.Spec.Behavior)
 	if err != nil {
 		return nil, err
 	}
 
-	source, err := dto.Spec.Definition.Spec.Implementation.toInternal()
+	var impl meshapi.TerraformImplementation
+	if err := json.Unmarshal(dto.Spec.Definition.Spec.Implementation, &impl); err != nil {
+		return nil, err
+	}
+
+	source, err := terraformImplToGitSource(&impl)
 	if err != nil {
 		return nil, err
 	}
@@ -205,14 +88,14 @@ func (dto RunDetailsDTO) ToInternalWithoutDecryption() (*Run, error) {
 		vars[input.Key] = &Variable{
 			value:       input.Value,
 			env:         input.Env,
-			Type:        input.Type,
+			Type:        DataType(input.Type),
 			isSensitive: false, // Mark as not sensitive since decryption already happened
 		}
 	}
 
 	return &Run{
 		Id:                     dto.Metadata.Uuid,
-		TerraformVersion:       dto.Spec.Definition.Spec.Implementation.TerraformVersion,
+		TerraformVersion:       impl.TerraformVersion,
 		RequestedAt:            time.Now(),
 		RunToken:               dto.Spec.RunToken,
 		MeshstackBaseUrl:       dto.Links.MeshstackBaseUrl.Href,
@@ -222,45 +105,45 @@ func (dto RunDetailsDTO) ToInternalWithoutDecryption() (*Run, error) {
 		Behavior:               behavior,
 		BuildingBlockId:        dto.Spec.BuildingBlock.Uuid,
 		BuildingBlockName:      dto.Spec.BuildingBlock.Spec.DisplayName,
-		IsAsync:                dto.Spec.Definition.Spec.Implementation.Async,
+		IsAsync:                impl.Async,
 		Vars:                   vars,
 		RunJsonBase64:          encoded,
 		Source:                 source,
-		UseMeshBackendFallback: dto.Spec.Definition.Spec.Implementation.UseMeshHttpBackendFallback,
-		PreRunScript:           dto.Spec.Definition.Spec.Implementation.PreRunScript,
+		UseMeshBackendFallback: impl.UseMeshHttpBackendFallback,
+		PreRunScript:           impl.PreRunScript,
 	}, nil
 }
 
-func toInternalVariableMap(m []BuildingBlockInputSpecDTO) map[string]*Variable {
+func toInternalVariableMap(m []meshapi.BuildingBlockInputSpecDTO) map[string]*Variable {
 	r := make(map[string]*Variable)
 	for _, v := range m {
-		r[v.Key] = &Variable{value: v.Value, env: v.Env, isSensitive: v.IsSensitive, Type: v.Type}
+		r[v.Key] = &Variable{value: v.Value, env: v.Env, isSensitive: v.IsSensitive, Type: DataType(v.Type)}
 	}
 	return r
 }
 
 // with this behavior the update won't update steps if the current status' step is nil
-func (status RunStatus) toExternal() (RunStatusUpdateDTO, error) {
+func (status RunStatus) toExternal() (meshapi.RunStatusUpdateDTO, error) {
 
 	// status
 	runStatus := status.Status.str()
 
 	// steps
-	var steps []StepUpdateDTO = nil
+	var steps []meshapi.StepStatusUpdateDTO = nil
 	if len(status.Steps) > 0 {
-		steps = make([]StepUpdateDTO, len(status.Steps))
+		steps = make([]meshapi.StepStatusUpdateDTO, len(status.Steps))
 		for i, statusStep := range status.Steps {
-			output := make(map[string]OutputDTO)
+			output := make(map[string]meshapi.OutputDTO)
 			for k, v := range statusStep.Outputs {
-				output[k] = OutputDTO{
+				output[k] = meshapi.OutputDTO{
 					Value:     v.Value,
-					Type:      v.Type,
+					Type:      string(v.Type),
 					Sensitive: v.Sensitive,
 				}
 			}
 
 			stepStatus := statusStep.Status.str()
-			steps[i] = StepUpdateDTO{
+			steps[i] = meshapi.StepStatusUpdateDTO{
 				Id:            statusStep.Name,
 				DisplayName:   statusStep.DisplayName,
 				Status:        &stepStatus,
@@ -271,10 +154,10 @@ func (status RunStatus) toExternal() (RunStatusUpdateDTO, error) {
 		}
 	}
 
-	return RunStatusUpdateDTO{
+	return meshapi.RunStatusUpdateDTO{
 		BlockRunId: status.RunId,
 		Source:     AppConfig.RunnerUuid,
-		Type:       RUN_TYPE_TF,
+		Type:       meshapi.RunTypeTerraform,
 		Status:     &runStatus,
 		CreatedOn:  time.Now(),
 		Summary:    status.Summary,
@@ -282,39 +165,35 @@ func (status RunStatus) toExternal() (RunStatusUpdateDTO, error) {
 	}, nil
 }
 
-func (dto ImplementationDTO) authMethod() (auth, error) {
-
-	if dto.PrivateKey == nil {
+func terraformImplAuthMethod(impl *meshapi.TerraformImplementation) (auth, error) {
+	if impl.SshPrivateKey == nil {
 		return &NoAuth{}, nil
-	} else {
-		return &SshAuth{
-			certStr:        *dto.PrivateKey,
-			knownHostEntry: knownHostsToInternal(dto.KnownHost),
-		}, nil
 	}
+	return &SshAuth{
+		certStr:        *impl.SshPrivateKey,
+		knownHostEntry: knownHostsToInternal(impl.KnownHost),
+	}, nil
 }
 
-func (dto ImplementationDTO) toInternal() (*GitSource, error) {
-	auth, err := dto.authMethod()
+func terraformImplToGitSource(impl *meshapi.TerraformImplementation) (*GitSource, error) {
+	auth, err := terraformImplAuthMethod(impl)
 	if err != nil {
 		return nil, err
 	}
 
 	return &GitSource{
-		url:       dto.RepositoryUrl,
-		path:      dto.RepositoryPath,
+		url:       impl.RepositoryUrl,
+		path:      impl.RepositoryPath,
 		auth:      auth,
-		refName:   dto.RefName,
+		refName:   impl.RefName,
 		gitFacade: &Git{},
 	}, nil
 }
 
-func knownHostsToInternal(dto *KnownHostDTO) *KnownHost {
+func knownHostsToInternal(dto *meshapi.KnownHostDTO) *KnownHost {
 	if dto == nil {
 		return nil
 	}
 
 	return &KnownHost{host: dto.Host, key: dto.KeyType, value: dto.KeyValue}
 }
-
-// API Key Authentication DTOs

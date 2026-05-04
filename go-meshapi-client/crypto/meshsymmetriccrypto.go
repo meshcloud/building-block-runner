@@ -12,7 +12,7 @@ const (
 	INT_LENGTH_IN_BYTES = 4
 )
 
-// This uses a symmetric key and ecrpyted data will look like this:
+// This uses a symmetric key and encrypted data will look like this:
 // |------cipherText--------------------------|
 // |--len(IV)--|-----IV-----|-----plaintext---|
 // The first 4 bytes indicate the length of the IV (nonce) => len(IV)

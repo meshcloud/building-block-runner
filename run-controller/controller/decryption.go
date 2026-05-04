@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/meshcloud/meshfed-release/buildingblocks/run-controller/crypto"
+	meshcrypto "github.com/meshcloud/building-block-runner/go-meshapi-client/crypto"
+	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
 )
 
 // decryptRunDetails decrypts all sensitive fields in the run details
-func decryptRunDetails(runJsonBase64 string, cryptoInstance *crypto.MeshCertBasedCrypto) (string, error) {
+func decryptRunDetails(runJsonBase64 string, cryptoInstance *meshcrypto.MeshCertBasedCrypto) (string, error) {
 	// Decode base64
 	runJsonBytes, err := base64.StdEncoding.DecodeString(runJsonBase64)
 	if err != nil {
@@ -17,7 +18,7 @@ func decryptRunDetails(runJsonBase64 string, cryptoInstance *crypto.MeshCertBase
 	}
 
 	// Parse JSON into DTO
-	runDetails, err := parseRunDetails(runJsonBytes)
+	runDetails, err := meshapi.ParseRunDetails(runJsonBytes)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse run JSON: %w", err)
 	}
@@ -45,8 +46,8 @@ func decryptRunDetails(runJsonBase64 string, cryptoInstance *crypto.MeshCertBase
 	implRaw := runDetails.Spec.Definition.Spec.Implementation
 
 	switch implType {
-	case ImplTypeTerraform:
-		var impl TerraformImplementation
+	case meshapi.ImplTypeTerraform:
+		var impl meshapi.TerraformImplementation
 		if err := json.Unmarshal(implRaw, &impl); err != nil {
 			return "", fmt.Errorf("failed to parse Terraform implementation: %w", err)
 		}
@@ -61,8 +62,8 @@ func decryptRunDetails(runJsonBase64 string, cryptoInstance *crypto.MeshCertBase
 			return "", fmt.Errorf("failed to marshal Terraform implementation: %w", err)
 		}
 
-	case ImplTypeGitHubWorkflow:
-		var impl GithubImplementation
+	case meshapi.ImplTypeGitHubWorkflow:
+		var impl meshapi.GithubImplementation
 		if err := json.Unmarshal(implRaw, &impl); err != nil {
 			return "", fmt.Errorf("failed to parse GitHub implementation: %w", err)
 		}
@@ -77,8 +78,8 @@ func decryptRunDetails(runJsonBase64 string, cryptoInstance *crypto.MeshCertBase
 			return "", fmt.Errorf("failed to marshal GitHub implementation: %w", err)
 		}
 
-	case ImplTypeGitLabCICD:
-		var impl GitlabImplementation
+	case meshapi.ImplTypeGitLabCICD:
+		var impl meshapi.GitlabImplementation
 		if err := json.Unmarshal(implRaw, &impl); err != nil {
 			return "", fmt.Errorf("failed to parse GitLab implementation: %w", err)
 		}
@@ -93,8 +94,8 @@ func decryptRunDetails(runJsonBase64 string, cryptoInstance *crypto.MeshCertBase
 			return "", fmt.Errorf("failed to marshal GitLab implementation: %w", err)
 		}
 
-	case ImplTypeAzureDevOps:
-		var impl AzureDevOpsImplementation
+	case meshapi.ImplTypeAzureDevOps:
+		var impl meshapi.AzureDevOpsImplementation
 		if err := json.Unmarshal(implRaw, &impl); err != nil {
 			return "", fmt.Errorf("failed to parse Azure DevOps implementation: %w", err)
 		}
@@ -109,9 +110,8 @@ func decryptRunDetails(runJsonBase64 string, cryptoInstance *crypto.MeshCertBase
 			return "", fmt.Errorf("failed to marshal Azure DevOps implementation: %w", err)
 		}
 
-	case ImplTypeManual:
+	case meshapi.ImplTypeManual:
 		// Manual implementations have no secrets to decrypt
-		// Nothing to do here
 
 	default:
 		return "", fmt.Errorf("unsupported implementation type: %s", implType)

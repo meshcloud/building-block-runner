@@ -9,12 +9,12 @@ import (
 	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
 )
 
-// runApiAuth implements meshapi.AuthProvider with Bearer token priority over Basic auth.
+// runApiAuth implements meshapi.AuthProvider with Bearer token priority over a fallback AuthProvider.
 // The runToken pointer is updated by SetRunToken / ClearRunToken so the shared meshapi.Client
 // automatically picks up the latest auth value on every request.
 type runApiAuth struct {
-	runToken *string
-	basic    string
+	runToken  *string
+	baseAuth  meshapi.AuthProvider
 }
 
 func (a *runApiAuth) AuthHeader() string {
@@ -22,9 +22,9 @@ func (a *runApiAuth) AuthHeader() string {
 		log.Printf("[AUTH] Using Bearer token for run-specific operations")
 		return "Bearer " + *a.runToken
 	}
-	if a.basic != "" {
-		log.Printf("[AUTH] Using Basic auth for API requests")
-		return a.basic
+	if a.baseAuth != nil {
+		log.Printf("[AUTH] Using configured auth for API requests")
+		return a.baseAuth.AuthHeader()
 	}
 	return ""
 }
@@ -50,17 +50,9 @@ type RunApi interface {
 }
 
 func NewRunApi() RunApi {
-	var basicAuth string
-	if AppConfig.RunApiBackend.User != "" && AppConfig.RunApiBackend.Password != "" {
-		basicAuth = meshapi.BasicAuth{
-			Username: AppConfig.RunApiBackend.User,
-			Password: AppConfig.RunApiBackend.Password,
-		}.AuthHeader()
-	}
-
 	auth := &runApiAuth{
 		runToken: nil,
-		basic:    basicAuth,
+		baseAuth: AppConfig.RunApiBackend.NewAuthProvider(),
 	}
 
 	httpClient := &http.Client{}

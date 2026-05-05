@@ -1,7 +1,6 @@
 package tfrun
 
 import (
-	"encoding/base64"
 	"errors"
 	"flag"
 	"fmt"
@@ -9,6 +8,7 @@ import (
 	"log"
 	"os"
 
+	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
 	"gopkg.in/yaml.v2"
 )
 
@@ -26,14 +26,27 @@ type TfRunnerConfig struct {
 	RunnerUuid            string       `yaml:"runnerUuid"`
 }
 
+// RunApiConfig holds API connection and authentication details.
+// Provide either (clientId + clientSecret) for API key auth or (user + password) for Basic auth.
 type RunApiConfig struct {
-	Url      string `yaml:"url"`
-	User     string `yaml:"user"`
-	Password string `yaml:"password"`
+	Url          string `yaml:"url"`
+	User         string `yaml:"user"`
+	Password     string `yaml:"password"`
+	ClientId     string `yaml:"clientId"`
+	ClientSecret string `yaml:"clientSecret"`
 }
 
-func (c *RunApiConfig) basicAuthHeader() string {
-	return "Basic " + base64.StdEncoding.EncodeToString([]byte(c.User+":"+c.Password))
+// NewAuthProvider returns the appropriate AuthProvider based on the configured credentials.
+// API key auth takes precedence when both clientId and clientSecret are set.
+// Returns nil when neither auth method is configured (valid in single-run mode, runToken covers it).
+func (c RunApiConfig) NewAuthProvider() meshapi.AuthProvider {
+	if c.ClientId != "" && c.ClientSecret != "" {
+		return meshapi.NewApiKeyAuth(c.Url, c.ClientId, c.ClientSecret)
+	}
+	if c.User != "" && c.Password != "" {
+		return meshapi.BasicAuth{Username: c.User, Password: c.Password}
+	}
+	return nil
 }
 
 const (
@@ -47,6 +60,9 @@ const (
 	FLAG_COORDINATOR_URL  = "api_url"
 	FLAG_COORDINATOR_USER = "api_user"
 	FLAG_COORDINATOR_PASS = "api_password"
+
+	FLAG_COORDINATOR_CLIENT_ID     = "api_client_id"
+	FLAG_COORDINATOR_CLIENT_SECRET = "api_client_secret"
 
 	FLAG_INSECURE_HOST_KEYS = "insecure_hostkeys"
 	FLAG_RUNNER_UUID        = "runnerUuid"
@@ -62,6 +78,9 @@ var (
 	apiUrl       = flag.String(FLAG_COORDINATOR_URL, "http://localhost:8080", "Block coordinator URL")
 	apiUser      = flag.String(FLAG_COORDINATOR_USER, "", "Basic Authentication user to authenticate towards Block Coordinator API")
 	apiPassword  = flag.String(FLAG_COORDINATOR_PASS, "", "Basic Authentication password to authenticate towards Block Coordinator API")
+
+	apiClientId     = flag.String(FLAG_COORDINATOR_CLIENT_ID, "", "API key client ID to authenticate towards Block Coordinator API")
+	apiClientSecret = flag.String(FLAG_COORDINATOR_CLIENT_SECRET, "", "API key client secret to authenticate towards Block Coordinator API")
 
 	insecureHostKeys = flag.Bool(FLAG_INSECURE_HOST_KEYS, false, "If set to true, known host key validation is off.")
 	runnerUuid       = flag.String(FLAG_RUNNER_UUID, "", "UUID of the building block runner to filter runs for")
@@ -153,6 +172,14 @@ func applyFlags() {
 		AppConfig.RunApiBackend.Password = *apiPassword
 	}
 
+	if isFlagSet(FLAG_COORDINATOR_CLIENT_ID) || AppConfig.RunApiBackend.ClientId == "" {
+		AppConfig.RunApiBackend.ClientId = *apiClientId
+	}
+
+	if isFlagSet(FLAG_COORDINATOR_CLIENT_SECRET) || AppConfig.RunApiBackend.ClientSecret == "" {
+		AppConfig.RunApiBackend.ClientSecret = *apiClientSecret
+	}
+
 	if isFlagSet(FLAG_INSECURE_HOST_KEYS) {
 		AppConfig.SkipHostKeyValidation = *insecureHostKeys
 	}
@@ -185,21 +212,33 @@ func applyEnvVars(logger *log.Logger) {
 		AppConfig.RunApiBackend.Password = envPassword
 	}
 
+	if envClientId := os.Getenv("BLOCKRUNNER_AUTH_CLIENT_ID"); envClientId != "" {
+		logger.Printf("Using BLOCKRUNNER_AUTH_CLIENT_ID from environment\n")
+		AppConfig.RunApiBackend.ClientId = envClientId
+	}
+
+	if envClientSecret := os.Getenv("BLOCKRUNNER_AUTH_CLIENT_SECRET"); envClientSecret != "" {
+		logger.Printf("Using BLOCKRUNNER_AUTH_CLIENT_SECRET from environment\n")
+		AppConfig.RunApiBackend.ClientSecret = envClientSecret
+	}
+
 	if envPrivateKey := os.Getenv("BLOCKRUNNER_PRIVATEKEY"); envPrivateKey != "" {
 		logger.Printf("Using BLOCKRUNNER_PRIVATEKEY from environment\n")
 		AppConfig.PrivateKey = envPrivateKey
 	}
 }
 
-// validateAuthConfig ensures proper authentication configuration
-// In Kubernetes mode (single-run with RUN_JSON_FILE_PATH), basic auth is not required
+// validateAuthConfig ensures proper authentication configuration.
+// In Kubernetes mode (single-run with RUN_JSON_FILE_PATH), auth credentials are not required
 // as the run is provided via file mounted from a K8S secret and contains a runToken.
-// In polling mode, basic auth is required to fetch runs from the API.
+// In polling mode, either basic auth (user+password) or API key auth (clientId+clientSecret) is required.
 func validateAuthConfig(config TfRunnerConfig) error {
-	// Check if basic auth credentials are set
-	hasBasicAuthUser := config.RunApiBackend.User != ""
-	hasBasicAuthPwd := config.RunApiBackend.Password != ""
-	hasCompleteBasicAuth := hasBasicAuthUser && hasBasicAuthPwd
+	hasCompleteBasicAuth := config.RunApiBackend.User != "" && config.RunApiBackend.Password != ""
+	hasCompleteApiKeyAuth := config.RunApiBackend.ClientId != "" && config.RunApiBackend.ClientSecret != ""
+
+	if hasCompleteBasicAuth && hasCompleteApiKeyAuth {
+		return fmt.Errorf("ambiguous authentication configuration: both Basic auth (user/password) and API key auth (clientId/clientSecret) are set; configure only one method")
+	}
 
 	// Check if we're in single-run mode
 	executionMode := os.Getenv("EXECUTION_MODE")
@@ -211,12 +250,12 @@ func validateAuthConfig(config TfRunnerConfig) error {
 		if runJsonFilePath == "" {
 			return fmt.Errorf("RUN_JSON_FILE_PATH environment variable is required in single-run mode")
 		}
-		// In single-run mode with RUN_JSON_FILE_PATH, basic auth is not required
+		// In single-run mode with RUN_JSON_FILE_PATH, auth credentials are not required
 		return nil
 	}
 
-	if !hasCompleteBasicAuth {
-		return fmt.Errorf("basic authentication required in polling mode: set user+password to fetch runs from API")
+	if !hasCompleteBasicAuth && !hasCompleteApiKeyAuth {
+		return fmt.Errorf("authentication required in polling mode: set either user+password (Basic auth) or clientId+clientSecret (API key auth)")
 	}
 
 	return nil

@@ -111,7 +111,8 @@ func (suite *WorkerTestSuite) SetupTest() {
 
 	// Create basic auth for test API client
 	basicAuth := base64.StdEncoding.EncodeToString([]byte("test-user:test-pass"))
-	scenarioAuth := &runApiAuth{basic: "Basic " + basicAuth}
+	_ = basicAuth // retained for clarity; credentials encoded in BasicAuth below
+	scenarioAuth := &runApiAuth{baseAuth: meshapi.BasicAuth{Username: "test-user", Password: "test-pass"}}
 	mockHC := &http.Client{Transport: testRoundTripper(suite.scenarioClientBehavior)}
 
 	suite.w = &Worker{

@@ -25,11 +25,28 @@ type ControllerConfig struct {
 	Runners                []RunnerConfig `yaml:"runners"`                // List of runner configurations
 }
 
-// ApiConfig holds API connection and authentication details
+// ApiConfig holds API connection and authentication details.
+// Provide either (clientId + clientSecret) for API key auth or (username + password) for Basic auth.
 type ApiConfig struct {
-	Url      string `yaml:"url"`      // API base URL
-	Username string `yaml:"username"` // API username for authentication
-	Password string `yaml:"password"` // API password for authentication
+	Url          string `yaml:"url"`          // API base URL
+	Username     string `yaml:"username"`     // Basic auth username (mutually exclusive with clientId/clientSecret)
+	Password     string `yaml:"password"`     // Basic auth password (mutually exclusive with clientId/clientSecret)
+	ClientId     string `yaml:"clientId"`     // API key client ID (mutually exclusive with username/password)
+	ClientSecret string `yaml:"clientSecret"` // API key client secret (mutually exclusive with username/password)
+}
+
+// NewAuthProvider returns the appropriate AuthProvider based on the configured credentials.
+// API key auth takes precedence when both clientId and clientSecret are set.
+// fallbackURL is used when the ApiConfig itself has no Url set (e.g. per-runner configs).
+func (c ApiConfig) NewAuthProvider(fallbackURL string) meshapi.AuthProvider {
+	url := c.Url
+	if url == "" {
+		url = fallbackURL
+	}
+	if c.ClientId != "" && c.ClientSecret != "" {
+		return meshapi.NewApiKeyAuth(url, c.ClientId, c.ClientSecret)
+	}
+	return meshapi.BasicAuth{Username: c.Username, Password: c.Password}
 }
 
 // RunnerConfig holds configuration for a specific runner
@@ -149,6 +166,37 @@ func ReadConfig(logger *log.Logger) *ControllerConfig {
 }
 
 // validateConfig ensures the configuration is valid and complete
+// validateApiAuth checks that exactly one authentication method is configured for an ApiConfig.
+// context is a human-readable prefix for error messages (e.g. "api" or "runner[0].api").
+func validateApiAuth(c ApiConfig, context string) error {
+	hasBasicAuth := c.Username != "" || c.Password != ""
+	hasApiKeyAuth := c.ClientId != "" || c.ClientSecret != ""
+
+	if hasBasicAuth && hasApiKeyAuth {
+		return fmt.Errorf("%s: ambiguous authentication configuration: both Basic auth (username/password) and API key auth (clientId/clientSecret) are set; configure only one method", context)
+	}
+	if hasBasicAuth {
+		if c.Username == "" {
+			return fmt.Errorf("%s.username is required when using Basic auth", context)
+		}
+		if c.Password == "" {
+			return fmt.Errorf("%s.password is required when using Basic auth", context)
+		}
+	}
+	if hasApiKeyAuth {
+		if c.ClientId == "" {
+			return fmt.Errorf("%s.clientId is required when using API key auth", context)
+		}
+		if c.ClientSecret == "" {
+			return fmt.Errorf("%s.clientSecret is required when using API key auth", context)
+		}
+	}
+	if !hasBasicAuth && !hasApiKeyAuth {
+		return fmt.Errorf("%s: no authentication configured; set either username/password (Basic auth) or clientId/clientSecret (API key auth)", context)
+	}
+	return nil
+}
+
 func validateConfig(config *ControllerConfig) error {
 	if config.ControllerId == "" {
 		return fmt.Errorf("controllerId is required")
@@ -159,11 +207,8 @@ func validateConfig(config *ControllerConfig) error {
 	if config.Api.Url == "" {
 		return fmt.Errorf("api.url is required")
 	}
-	if config.Api.Username == "" {
-		return fmt.Errorf("api.username is required")
-	}
-	if config.Api.Password == "" {
-		return fmt.Errorf("api.password is required")
+	if err := validateApiAuth(config.Api, "api"); err != nil {
+		return err
 	}
 	if len(config.Runners) == 0 {
 		return fmt.Errorf("at least one runner must be configured")
@@ -190,11 +235,8 @@ func validateConfig(config *ControllerConfig) error {
 		if !isValidImplementationType(runner.ImplementationType) {
 			return fmt.Errorf("runner[%d].implementationType '%s' is invalid. Valid values are: TERRAFORM, GITHUB_WORKFLOW, GITLAB_PIPELINE, AZURE_DEVOPS_PIPELINE, MANUAL", i, runner.ImplementationType)
 		}
-		if runner.Api.Username == "" {
-			return fmt.Errorf("runner[%d].api.username is required", i)
-		}
-		if runner.Api.Password == "" {
-			return fmt.Errorf("runner[%d].api.password is required", i)
+		if err := validateApiAuth(runner.Api, fmt.Sprintf("runner[%d].api", i)); err != nil {
+			return err
 		}
 		if runner.Crypto.PrivateKey == "" {
 			return fmt.Errorf("runner[%d].crypto.privateKey is required", i)

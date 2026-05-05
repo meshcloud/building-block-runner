@@ -24,6 +24,16 @@ func TestValidateAuthConfig(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "valid api key auth",
+			config: TfRunnerConfig{
+				RunApiBackend: RunApiConfig{
+					ClientId:     "my-client-id",
+					ClientSecret: "my-client-secret",
+				},
+			},
+			wantErr: false,
+		},
+		{
 			name: "no authentication methods",
 			config: TfRunnerConfig{
 				RunApiBackend: RunApiConfig{
@@ -32,7 +42,7 @@ func TestValidateAuthConfig(t *testing.T) {
 				},
 			},
 			wantErr:     true,
-			errContains: "basic authentication required",
+			errContains: "authentication required in polling mode",
 		},
 		{
 			name: "only user without password",
@@ -43,7 +53,7 @@ func TestValidateAuthConfig(t *testing.T) {
 				},
 			},
 			wantErr:     true,
-			errContains: "basic authentication required",
+			errContains: "authentication required in polling mode",
 		},
 		{
 			name: "only password without user",
@@ -54,7 +64,40 @@ func TestValidateAuthConfig(t *testing.T) {
 				},
 			},
 			wantErr:     true,
-			errContains: "basic authentication required",
+			errContains: "authentication required in polling mode",
+		},
+		{
+			name: "only clientId without clientSecret",
+			config: TfRunnerConfig{
+				RunApiBackend: RunApiConfig{
+					ClientId: "my-client-id",
+				},
+			},
+			wantErr:     true,
+			errContains: "authentication required in polling mode",
+		},
+		{
+			name: "only clientSecret without clientId",
+			config: TfRunnerConfig{
+				RunApiBackend: RunApiConfig{
+					ClientSecret: "my-client-secret",
+				},
+			},
+			wantErr:     true,
+			errContains: "authentication required in polling mode",
+		},
+		{
+			name: "both basic auth and api key auth configured",
+			config: TfRunnerConfig{
+				RunApiBackend: RunApiConfig{
+					User:         "test-user",
+					Password:     "test-password",
+					ClientId:     "my-client-id",
+					ClientSecret: "my-client-secret",
+				},
+			},
+			wantErr:     true,
+			errContains: "ambiguous authentication configuration",
 		},
 	}
 

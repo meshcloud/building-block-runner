@@ -11,9 +11,12 @@ namespace: default
 # 127.0.0.1 host.minikube.internal
 api:
   url: http://host.minikube.internal:8080
-  # Shared API credentials - can be referenced using YAML anchors
+  # Option 1: Basic auth credentials - can be referenced using YAML anchors
   username: &apiUsername bb-api
   password: &apiPassword guest
+  # Option 2: API key auth (takes precedence over username/password when both clientId and clientSecret are set)
+  # clientId: &apiClientId your-client-id
+  # clientSecret: &apiClientSecret your-client-secret
 
 # Shared crypto config using YAML anchor
 crypto: &cryptoConfig

@@ -92,7 +92,7 @@ func (suite *ApiTestSuite) SetupSuite() {
 
 	// create runApi with basic auth for testing
 	sAuth := &runApiAuth{
-		basic: meshapi.BasicAuth{Username: "test-username", Password: "test-password"}.AuthHeader(),
+		baseAuth: meshapi.BasicAuth{Username: "test-username", Password: "test-password"},
 	}
 	hc := suite.meshfed.Client()
 	suite.api = &RunApiClient{
@@ -744,7 +744,7 @@ func (suite *ApiTestSuite) Test_FetchRunDetails_NoCustomPredicate_UsesDefaultEnd
 func (suite *ApiTestSuite) Test_ClearRunToken_ResetsToBasicAuth() {
 	// Setup: Create API client with basic auth
 	basicAuth := base64.StdEncoding.EncodeToString([]byte("test-user:test-pass"))
-	tAuth := &runApiAuth{basic: "Basic " + basicAuth}
+	tAuth := &runApiAuth{baseAuth: meshapi.BasicAuth{Username: "test-user", Password: "test-pass"}}
 	hc := suite.meshfed.Client()
 	api := &RunApiClient{
 		rid:        "test-runner",
@@ -823,7 +823,8 @@ func (suite *ApiTestSuite) Test_ClearRunToken_MultipleRunCycle() {
 	// Simulating multiple runs being processed by a worker
 
 	basicAuth := base64.StdEncoding.EncodeToString([]byte("worker-user:worker-pass"))
-	wAuth := &runApiAuth{basic: "Basic " + basicAuth}
+	wAuth := &runApiAuth{baseAuth: meshapi.BasicAuth{Username: "worker-user", Password: "worker-pass"}}
+	_ = basicAuth // kept for assertion comparisons below
 	hc := suite.meshfed.Client()
 	api := &RunApiClient{
 		rid:        "worker-001",

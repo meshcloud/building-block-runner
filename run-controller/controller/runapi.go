@@ -13,11 +13,9 @@ import (
 var UseTestClient = false
 
 type RunApiClient struct {
-	cid      string
-	url      string
-	username string
-	password string
-	metrics  *MetricsCollector
+	cid     string
+	url     string
+	metrics *MetricsCollector
 }
 
 type RunApi interface {
@@ -28,20 +26,14 @@ type RunApi interface {
 
 func newApi() RunApi {
 	return &RunApiClient{
-		cid:      AppConfig.ControllerId,
-		url:      AppConfig.Api.Url,
-		username: AppConfig.Api.Username,
-		password: AppConfig.Api.Password,
-		metrics:  NewMetricsCollector(),
+		cid:     AppConfig.ControllerId,
+		url:     AppConfig.Api.Url,
+		metrics: NewMetricsCollector(),
 	}
 }
 
 func (api *RunApiClient) newMeshClient(runner *RunnerConfig, nodeID string) *meshapi.Client {
-	auth := meshapi.BasicAuth{
-		Username: runner.Api.Username,
-		Password: runner.Api.Password,
-	}
-	return meshapi.NewClient(api.url, nodeID, auth)
+	return meshapi.NewClient(api.url, nodeID, runner.Api.NewAuthProvider(api.url))
 }
 
 func (api *RunApiClient) FetchRunDetails(nodePostfix string, runner *RunnerConfig) (string, *meshapi.RunDetailsDTO, error) {

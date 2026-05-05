@@ -22,7 +22,7 @@ w.Write([]byte("forbidden"))
 		},
 	}
 
-	auth := &runApiAuth{basic: "Basic dGVzdC11c2VyOnRlc3QtcGFzcw=="}
+	auth := &runApiAuth{baseAuth: meshapi.BasicAuth{Username: "test-user", Password: "test-pass"}}
 	api := &RunApiClient{
 		rid:    AppConfig.RunnerUuid,
 		auth:   auth,
@@ -60,7 +60,7 @@ w.Write([]byte("forbidden"))
 		},
 	}
 
-	auth := &runApiAuth{basic: "Basic dGVzdC11c2VyOnRlc3QtcGFzcw=="}
+	auth := &runApiAuth{baseAuth: meshapi.BasicAuth{Username: "test-user", Password: "test-pass"}}
 	api := &RunApiClient{
 		rid:    AppConfig.RunnerUuid,
 		auth:   auth,
@@ -94,7 +94,7 @@ w.Write([]byte("conflict"))
 		},
 	}
 
-	auth := &runApiAuth{basic: "Basic dGVzdC11c2VyOnRlc3QtcGFzcw=="}
+	auth := &runApiAuth{baseAuth: meshapi.BasicAuth{Username: "test-user", Password: "test-pass"}}
 	api := &RunApiClient{
 		rid:    AppConfig.RunnerUuid,
 		auth:   auth,

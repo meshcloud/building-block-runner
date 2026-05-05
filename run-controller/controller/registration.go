@@ -2,12 +2,13 @@ package controller
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+
+	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
 )
 
 const (
@@ -26,8 +27,7 @@ type RegistrationApi interface {
 type RegistrationApiClient struct {
 	url        string
 	namespace  string
-	username   string
-	password   string
+	auth       meshapi.AuthProvider
 	oidcIssuer string
 	client     *http.Client
 	logger     *log.Logger
@@ -38,8 +38,7 @@ func NewRegistrationApi(logger *log.Logger) RegistrationApi {
 	return &RegistrationApiClient{
 		url:        AppConfig.Api.Url,
 		namespace:  AppConfig.Namespace,
-		username:   AppConfig.Api.Username,
-		password:   AppConfig.Api.Password,
+		auth:       AppConfig.Api.NewAuthProvider(AppConfig.Api.Url),
 		oidcIssuer: DiscoveredOidcIssuer,
 		client:     &http.Client{},
 		logger:     logger,
@@ -145,8 +144,7 @@ func (api *RegistrationApiClient) postRunner(runner *RunnerConfig, jsonBody []by
 
 // setHeaders sets the common headers for API requests
 func (api *RegistrationApiClient) setHeaders(req *http.Request) {
-	auth := "Basic " + base64.StdEncoding.EncodeToString([]byte(api.username+":"+api.password))
-	req.Header.Set("Authorization", auth)
+	req.Header.Set("Authorization", api.auth.AuthHeader())
 	req.Header.Set("Content-Type", MeshBuildingBlockRunner_MediaType_V1Preview)
 	req.Header.Set("Accept", MeshBuildingBlockRunner_MediaType_V1Preview)
 }

@@ -157,3 +157,68 @@ func TestValidateConfig_ValidImplementationTypes(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateConfig_ApiKeyAuth(t *testing.T) {
+	t.Run("valid api key auth on global api", func(t *testing.T) {
+		config := createValidConfig()
+		config.Api.Username = ""
+		config.Api.Password = ""
+		config.Api.ClientId = "my-client-id"
+		config.Api.ClientSecret = "my-client-secret"
+
+		if err := validateConfig(config); err != nil {
+			t.Errorf("expected no error for valid API key auth, got: %v", err)
+		}
+	})
+
+	t.Run("valid api key auth on runner api", func(t *testing.T) {
+		config := createValidConfig()
+		config.Runners[0].Api.Username = ""
+		config.Runners[0].Api.Password = ""
+		config.Runners[0].Api.ClientId = "my-client-id"
+		config.Runners[0].Api.ClientSecret = "my-client-secret"
+
+		if err := validateConfig(config); err != nil {
+			t.Errorf("expected no error for valid runner API key auth, got: %v", err)
+		}
+	})
+
+	t.Run("both auth methods set on global api", func(t *testing.T) {
+		config := createValidConfig()
+		config.Api.ClientId = "my-client-id"
+		config.Api.ClientSecret = "my-client-secret"
+
+		err := validateConfig(config)
+		if err == nil {
+			t.Error("expected error when both auth methods are set on api")
+		} else if !contains(err.Error(), "ambiguous authentication configuration") {
+			t.Errorf("expected ambiguous auth error, got: %v", err)
+		}
+	})
+
+	t.Run("both auth methods set on runner api", func(t *testing.T) {
+		config := createValidConfig()
+		config.Runners[0].Api.ClientId = "my-client-id"
+		config.Runners[0].Api.ClientSecret = "my-client-secret"
+
+		err := validateConfig(config)
+		if err == nil {
+			t.Error("expected error when both auth methods are set on runner api")
+		} else if !contains(err.Error(), "ambiguous authentication configuration") {
+			t.Errorf("expected ambiguous auth error, got: %v", err)
+		}
+	})
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
+}
+
+func containsHelper(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}

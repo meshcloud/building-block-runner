@@ -52,6 +52,8 @@ func (c RunApiConfig) NewAuthProvider() meshapi.AuthProvider {
 const (
 	configFilename = "application.yml"
 
+	FLAG_CONFIG = "config"
+
 	FLAG_TFTIMEOUT        = "timeoutMins"
 	FLAG_WSTIMEOUT        = "wsTimeoutMins"
 	FLAG_INITTIMEOUT      = "initTimeoutMins"
@@ -69,6 +71,7 @@ const (
 )
 
 var (
+	configFile      = flag.String(FLAG_CONFIG, configFilename, "path to the YAML configuration file")
 	timeoutMins     = flag.Int(FLAG_TFTIMEOUT, 60, "Terraform command timeout in minutes")
 	wsTimeoutMins   = flag.Int(FLAG_WSTIMEOUT, 5, "Terraform workspace operations timeout in minutes")
 	initTimeoutMins = flag.Int(FLAG_INITTIMEOUT, 3, "Terraform init command timeout in minutes")
@@ -87,9 +90,12 @@ var (
 )
 
 func ReadConfig(logger *log.Logger) error {
+	// Parse flags first so --config can override the default path.
+	flag.Parse()
+
 	// read in and unmarshal config file (if present)
-	if fileData, err := os.ReadFile(configFilename); errors.Is(err, fs.ErrNotExist) {
-		logger.Printf("config file %s does not exist, will use defaults and environment", configFilename)
+	if fileData, err := os.ReadFile(*configFile); errors.Is(err, fs.ErrNotExist) {
+		logger.Printf("config file %s does not exist, will use defaults and environment", *configFile)
 	} else if err != nil {
 		return err
 	} else if err := yaml.Unmarshal(fileData, &AppConfig); err != nil {
@@ -97,7 +103,6 @@ func ReadConfig(logger *log.Logger) error {
 	}
 
 	// parse program args into config struct as fallback
-	flag.Parse()
 	applyFlags()
 
 	// apply environment variables (highest precedence)

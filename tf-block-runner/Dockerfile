@@ -1,4 +1,4 @@
-FROM golang:1.26-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 
 WORKDIR /app
 
@@ -18,7 +18,11 @@ WORKDIR /app
 COPY tf-block-runner/ ./tf-block-runner/
 
 WORKDIR /app/tf-block-runner
-RUN CGO_ENABLED=0 GOOS=linux go build -o tfrunner .
+ARG VERSION=dev
+ARG COMMIT_SHA=unknown
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -buildvcs=false -ldflags "-s -w -X 'github.com/meshcloud/meshfed-release/buildingblocks/tf-block-runner/build.Version=${VERSION}' -X 'github.com/meshcloud/meshfed-release/buildingblocks/tf-block-runner/build.Commit=${COMMIT_SHA}'" -o tfrunner .
 
 FROM alpine:3
 
@@ -43,5 +47,6 @@ COPY --chown=meshcloud:meshcloud --chmod=755 containers/entrypoint.sh /app/entry
 
 ENV SSH_KNOWN_HOSTS=/app/known_hosts
 
+WORKDIR /app
 USER 2000
 ENTRYPOINT ["/app/entrypoint.sh", "/app/tfrunner", "-workerCount=1"]

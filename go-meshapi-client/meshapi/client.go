@@ -16,6 +16,33 @@ const (
 	BlockRunMediaTypeV1 = "application/vnd.meshcloud.api.meshbuildingblockrun.v1.hal+json"
 )
 
+var (
+	runnerName    = "unknown-runner"
+	runnerVersion = "dev"
+	runnerCommit  = "unknown"
+)
+
+// SetClientMetadata configures the runner identity headers sent on all requests.
+func SetClientMetadata(name, version, commit string) {
+	if name != "" {
+		runnerName = name
+	}
+	if version != "" {
+		runnerVersion = version
+	}
+	if commit != "" {
+		runnerCommit = commit
+	}
+}
+
+func userAgent() string {
+	if runnerCommit == "" || runnerCommit == "unknown" {
+		return fmt.Sprintf("meshcloud-%s/%s", runnerName, runnerVersion)
+	}
+
+	return fmt.Sprintf("meshcloud-%s/%s (%s)", runnerName, runnerVersion, runnerCommit)
+}
+
 // StatusError is returned when the meshfed API responds with an unexpected HTTP status code.
 type StatusError struct {
 	Status int
@@ -170,4 +197,8 @@ func (c *Client) setHeaders(req *http.Request) {
 	req.Header.Set("Accept", BlockRunMediaTypeV1)
 	req.Header.Set("Content-Type", BlockRunMediaTypeV1)
 	req.Header.Set("X-Block-Runner-Node-Id", c.nodeID)
+	req.Header.Set("User-Agent", userAgent())
+	req.Header.Set("X-Meshcloud-Runner-Name", runnerName)
+	req.Header.Set("X-Meshcloud-Runner-Version", runnerVersion)
+	req.Header.Set("X-Meshcloud-Runner-Commit", runnerCommit)
 }

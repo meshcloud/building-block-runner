@@ -1,18 +1,18 @@
 package tfrun
 
 import (
-"net/http"
-"net/http/httptest"
-"testing"
+	"net/http"
+	"net/http/httptest"
+	"testing"
 
-meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
+	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
 )
 
 func TestUpdateState_ErrorHandling(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-w.WriteHeader(http.StatusForbidden)
-w.Write([]byte("forbidden"))
-}))
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte("forbidden"))
+	}))
 	defer server.Close()
 
 	AppConfig = TfRunnerConfig{
@@ -24,9 +24,9 @@ w.Write([]byte("forbidden"))
 
 	auth := &runApiAuth{baseAuth: meshapi.BasicAuth{Username: "test-user", Password: "test-pass"}}
 	api := &RunApiClient{
-		rid:    AppConfig.RunnerUuid,
-		auth:   auth,
-		client: meshapi.NewClient(server.URL, AppConfig.RunnerUuid, auth),
+		rid:        AppConfig.RunnerUuid,
+		auth:       auth,
+		client:     meshapi.NewClient(server.URL, AppConfig.RunnerUuid, auth),
 		httpClient: &http.Client{},
 	}
 
@@ -48,9 +48,9 @@ w.Write([]byte("forbidden"))
 
 func TestRegister_ErrorHandling(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-w.WriteHeader(http.StatusForbidden)
-w.Write([]byte("forbidden"))
-}))
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte("forbidden"))
+	}))
 	defer server.Close()
 
 	AppConfig = TfRunnerConfig{
@@ -62,9 +62,9 @@ w.Write([]byte("forbidden"))
 
 	auth := &runApiAuth{baseAuth: meshapi.BasicAuth{Username: "test-user", Password: "test-pass"}}
 	api := &RunApiClient{
-		rid:    AppConfig.RunnerUuid,
-		auth:   auth,
-		client: meshapi.NewClient(server.URL, AppConfig.RunnerUuid, auth),
+		rid:        AppConfig.RunnerUuid,
+		auth:       auth,
+		client:     meshapi.NewClient(server.URL, AppConfig.RunnerUuid, auth),
 		httpClient: &http.Client{},
 	}
 
@@ -82,9 +82,9 @@ w.Write([]byte("forbidden"))
 
 func TestRegister_409Conflict_ReturnsNil(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-w.WriteHeader(http.StatusConflict)
-w.Write([]byte("conflict"))
-}))
+		w.WriteHeader(http.StatusConflict)
+		w.Write([]byte("conflict"))
+	}))
 	defer server.Close()
 
 	AppConfig = TfRunnerConfig{
@@ -96,9 +96,9 @@ w.Write([]byte("conflict"))
 
 	auth := &runApiAuth{baseAuth: meshapi.BasicAuth{Username: "test-user", Password: "test-pass"}}
 	api := &RunApiClient{
-		rid:    AppConfig.RunnerUuid,
-		auth:   auth,
-		client: meshapi.NewClient(server.URL, AppConfig.RunnerUuid, auth),
+		rid:        AppConfig.RunnerUuid,
+		auth:       auth,
+		client:     meshapi.NewClient(server.URL, AppConfig.RunnerUuid, auth),
 		httpClient: &http.Client{},
 	}
 

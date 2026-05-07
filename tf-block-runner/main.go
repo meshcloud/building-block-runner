@@ -10,6 +10,7 @@ import (
 
 	meshcrypto "github.com/meshcloud/building-block-runner/go-meshapi-client/crypto"
 	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
+	"github.com/meshcloud/meshfed-release/buildingblocks/tf-block-runner/build"
 	"github.com/meshcloud/meshfed-release/buildingblocks/tf-block-runner/tfrun"
 )
 
@@ -20,6 +21,9 @@ const (
 
 func main() {
 	logger := log.New(os.Stdout, "[TF RUNNER] ", log.LstdFlags)
+	meshapi.SetClientMetadata("tf-block-runner", build.Version, build.Commit)
+	logger.Printf("Build metadata: version=%s commit=%s", build.Version, build.Commit)
+
 	if err := tfrun.ReadConfig(logger); err != nil {
 		logger.Fatalf("cannot read config: %s", err.Error())
 	}

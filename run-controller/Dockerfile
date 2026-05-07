@@ -1,4 +1,4 @@
-FROM golang:1.26-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 
 WORKDIR /app
 
@@ -18,7 +18,11 @@ WORKDIR /app
 COPY run-controller/ ./run-controller/
 
 WORKDIR /app/run-controller
-RUN CGO_ENABLED=0 GOOS=linux go build -o run-controller .
+ARG VERSION=dev
+ARG COMMIT_SHA=unknown
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -buildvcs=false -ldflags "-s -w -X 'github.com/meshcloud/building-block-runner/run-controller/build.Version=${VERSION}' -X 'github.com/meshcloud/building-block-runner/run-controller/build.Commit=${COMMIT_SHA}'" -o run-controller .
 
 FROM alpine:3
 
@@ -32,13 +36,10 @@ RUN addgroup -S meshcloud -g 2000 && adduser -SD meshcloud -u 2000 -G meshcloud 
 
 ENV CUSTOM_CA_CERTS_PATH=/usr/local/share/ca-certificates
 
-# Optional: Install additional packages
-ARG EXTRA_PACKAGES=""
-RUN if [ -n "$EXTRA_PACKAGES" ]; then apk add $EXTRA_PACKAGES; fi
-
 COPY --from=builder --chown=meshcloud:meshcloud --chmod=755 /app/run-controller/run-controller /app/run-controller
 COPY --from=builder --chown=meshcloud:meshcloud /app/run-controller/application.yml /app/.
 COPY --chown=meshcloud:meshcloud --chmod=755 containers/entrypoint.sh /app/entrypoint.sh
 
+WORKDIR /app
 USER 2000
 ENTRYPOINT ["/app/entrypoint.sh", "/app/run-controller"]

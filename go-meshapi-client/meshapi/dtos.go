@@ -245,19 +245,19 @@ const (
 
 // StatusUpdateDTO is sent via PATCH by simple runners (e.g. the run-controller) to update the status of a run.
 type StatusUpdateDTO struct {
-	Status  *string              `json:"status"`
-	Summary *string              `json:"summary"`
+	Status  *string               `json:"status"`
+	Summary *string               `json:"summary"`
 	Steps   []StepStatusUpdateDTO `json:"steps"`
 }
 
 // RunStatusUpdateDTO is sent via PATCH by runners that produce full step outputs (e.g. the Terraform runner).
 type RunStatusUpdateDTO struct {
-	BlockRunId string               `json:"blockRunId"`
-	Source     string               `json:"source"`
-	Type       RunType              `json:"type"`
-	Status     *string              `json:"status"`
-	CreatedOn  time.Time            `json:"createdOn"`
-	Summary    *string              `json:"summary"`
+	BlockRunId string                `json:"blockRunId"`
+	Source     string                `json:"source"`
+	Type       RunType               `json:"type"`
+	Status     *string               `json:"status"`
+	CreatedOn  time.Time             `json:"createdOn"`
+	Summary    *string               `json:"summary"`
 	Steps      []StepStatusUpdateDTO `json:"steps"`
 }
 

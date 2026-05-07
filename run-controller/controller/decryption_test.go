@@ -189,4 +189,3 @@ func TestImplementationType_ToRunnerType(t *testing.T) {
 		})
 	}
 }
-

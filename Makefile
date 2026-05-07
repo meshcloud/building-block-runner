@@ -1,0 +1,53 @@
+SHELL := /bin/sh
+MODULES := go-meshapi-client run-controller tf-block-runner
+RUN_CONTROLLER_CONFIG := run-controller/application.yml
+TF_BLOCK_RUNNER_CONFIG := tf-block-runner/application.yml
+
+.PHONY: help run-run-controller run-tf-block-runner test test-run-controller test-tf-block-runner fmt vet tidy work-sync
+
+define run-in-modules
+	@set -e; \
+	for module in $(MODULES); do \
+		echo "==> $$module: $(1)"; \
+		(cd $$module && $(1)); \
+	done
+endef
+
+help:
+	@echo "Available targets:"
+	@echo "  run-run-controller    Run run-controller"
+	@echo "  run-tf-block-runner   Run tf-block-runner"
+	@echo "  test                  Run all tests"
+	@echo "  test-run-controller   Run run-controller tests"
+	@echo "  test-tf-block-runner  Run tf-block-runner tests"
+	@echo "  fmt                   Format all Go code"
+	@echo "  vet                   Run go vet on all modules"
+	@echo "  tidy                  Tidy modules"
+	@echo "  work-sync             Sync go.work entries"
+
+run-run-controller:
+	go run ./run-controller --config $(RUN_CONTROLLER_CONFIG)
+
+run-tf-block-runner:
+	go run ./tf-block-runner --config $(TF_BLOCK_RUNNER_CONFIG)
+
+test:
+	$(call run-in-modules,go test ./...)
+
+test-run-controller:
+	cd run-controller && go test ./...
+
+test-tf-block-runner:
+	cd tf-block-runner && go test ./...
+
+fmt:
+	$(call run-in-modules,go fmt ./...)
+
+vet:
+	$(call run-in-modules,go vet ./...)
+
+tidy:
+	$(call run-in-modules,go mod tidy)
+
+work-sync:
+	go work sync

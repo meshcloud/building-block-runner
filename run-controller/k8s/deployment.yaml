@@ -18,16 +18,8 @@ spec:
       serviceAccountName: run-controller
       containers:
         - name: run-controller
-          image: run-controller-local
-          # Never pull from a registry — this image was loaded via 'minikube image load'
-          imagePullPolicy: Never
-          workingDir: /app
-          volumeMounts:
-            - name: config
-              mountPath: /app/application.yml
-              subPath: application.yml
-              readOnly: true
-      volumes:
-        - name: config
-          configMap:
-            name: run-controller-config
+          image: ghcr.io/meshcloud/run-controller:main
+          imagePullPolicy: IfNotPresent
+          args:
+            - -config
+            - /app/application.yml

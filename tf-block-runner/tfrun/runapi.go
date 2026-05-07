@@ -13,8 +13,8 @@ import (
 // The runToken pointer is updated by SetRunToken / ClearRunToken so the shared meshapi.Client
 // automatically picks up the latest auth value on every request.
 type runApiAuth struct {
-	runToken  *string
-	baseAuth  meshapi.AuthProvider
+	runToken *string
+	baseAuth meshapi.AuthProvider
 }
 
 func (a *runApiAuth) AuthHeader() string {
@@ -136,4 +136,3 @@ func (api *RunApiClient) UpdateState(status *RunStatus) (bool, error) {
 
 	return runUpdateResponse.Abort, nil
 }
-

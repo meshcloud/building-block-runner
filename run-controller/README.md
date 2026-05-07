@@ -1,34 +1,16 @@
-# Run Controller - Local Development
+# run-controller
 
-## Prerequisites
+How to run and test locally.
 
-- [Nix flake](../../flake.nix) environment (includes minikube, kubectl, and other dependencies)
-- Docker
-- `minikube start` (optionally `--memory=8192 --cpus=4`)
-
-## Quick Start
+## Run
 
 ```bash
-# Controller runs on the host; runner Jobs spin up inside minikube
-./gradlew :buildingblocks:run-controller:start
-
-# Controller runs as a Pod inside minikube
-./gradlew :buildingblocks:run-controller:startInCluster
+go run .
 ```
 
-Both modes use `http://host.minikube.internal:8080` as the meshStack API URL so status updates reach your locally running backend. Add `127.0.0.1 host.minikube.internal` to your `/etc/hosts`.
-
-Configure credentials, runner UUIDs, and crypto keys in `application.yml`.
-
-## In-Cluster Iteration
+## Test
 
 ```bash
-# Rebuild and redeploy only the run-controller after code changes
-./gradlew :buildingblocks:run-controller:reloadRc
-
-# Watch logs
-kubectl logs -l app=run-controller -f
-
-# Tear down
-./gradlew :buildingblocks:run-controller:undeployFromCluster
+go test ./...
+go test -v ./controller
 ```

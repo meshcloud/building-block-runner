@@ -10,12 +10,17 @@ import (
 	"syscall"
 	"time"
 
+	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
+	"github.com/meshcloud/building-block-runner/run-controller/build"
 	controller "github.com/meshcloud/building-block-runner/run-controller/controller"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
 	logger := log.New(os.Stdout, "[RUN CONTROLLER] ", log.LstdFlags)
+	meshapi.SetClientMetadata("run-controller", build.Version, build.Commit)
+	logger.Printf("Build metadata: version=%s commit=%s", build.Version, build.Commit)
+
 	controller.ReadConfig(logger)
 
 	// Start Prometheus metrics endpoint

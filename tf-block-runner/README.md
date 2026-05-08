@@ -19,5 +19,4 @@ SSH_KNOWN_HOSTS=./resources/known_hosts go run .
 ```bash
 go test ./...
 go test -v ./tfrun
-go test -v ./crypto
 ```

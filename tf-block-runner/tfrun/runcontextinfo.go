@@ -21,6 +21,7 @@ type RunContextInfo struct {
 	runStatus              *RunStatus
 	// the reportStatus is an atomic version of the runStatus, meaning the reportStatus is safe to use in the worker / observer routine
 	reportStatus     RunStatus
+	artifactFilePath string
 	runToken         string
 	meshstackBaseUrl string
 }
@@ -48,6 +49,7 @@ func initRunContextInfo(run *Run, logPrefix string, logWriter io.Writer, wd stri
 		asyncRun:               run.IsAsync,
 		useMeshBackendFallback: run.UseMeshBackendFallback,
 		workingDirectory:       wd,
+		artifactFilePath:       path.Join(wd, "plan.tfplan"),
 		runStatus:              status,
 		reportStatus:           *status,
 		logFile_name:           outFile,

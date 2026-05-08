@@ -259,6 +259,9 @@ type RunStatusUpdateDTO struct {
 	CreatedOn  time.Time             `json:"createdOn"`
 	Summary    *string               `json:"summary"`
 	Steps      []StepStatusUpdateDTO `json:"steps"`
+	// Artifact is an optional base64-encoded binary artifact produced by this run.
+	// For DETECT runs this holds the binary Terraform plan file.
+	Artifact string `json:"artifact,omitempty"`
 }
 
 // ==================== Runner Implementation Types ====================

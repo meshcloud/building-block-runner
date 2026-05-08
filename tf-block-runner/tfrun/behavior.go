@@ -9,19 +9,19 @@ type Behavior int
 
 const (
 	APPLY   = Behavior(iota) // generic term that represents tf apply
-	DRY_RUN                  // generic term that represents tf plan
+	DETECT                   // generic term that represents tf plan (detects state drift)
 	DESTROY                  // generic term tat represents tf destory
 	UNKNOWN_BEHAVIOR
 )
 
-var behaviors = []Behavior{APPLY, DRY_RUN, DESTROY}
+var behaviors = []Behavior{APPLY, DETECT, DESTROY}
 
 func (b Behavior) str() string {
 	switch b {
 	case APPLY:
 		return "APPLY"
-	case DRY_RUN:
-		return "DRY_RUN"
+	case DETECT:
+		return "DETECT"
 	case DESTROY:
 		return "DESTROY"
 	default:

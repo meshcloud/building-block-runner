@@ -1,4 +1,3 @@
-workerCount: 4
 timeoutMins: 42
 wsTimeoutMins: 43
 initTimeoutMins: 44

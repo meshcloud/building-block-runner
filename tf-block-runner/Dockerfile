@@ -65,4 +65,4 @@ COPY --chown=meshcloud:meshcloud --chmod=755 containers/entrypoint.sh /app/entry
 ENV SSH_KNOWN_HOSTS=/app/known_hosts
 
 WORKDIR /app
-ENTRYPOINT ["/app/entrypoint.sh", "/app/tfrunner", "-workerCount=1"]
+ENTRYPOINT ["/app/entrypoint.sh", "/app/tfrunner"]

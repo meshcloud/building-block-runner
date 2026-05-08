@@ -1,6 +1,5 @@
 # Building Block Runner
 
-Multi-language runner infrastructure for executing building block operations in meshCloud:
 - **run-controller**: orchestrates terraform execution in Kubernetes
 - **tf-block-runner**: executes terraform plans and applies
 

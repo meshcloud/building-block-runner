@@ -158,7 +158,7 @@ func (w *Worker) workRoutine(ctx context.Context, run *Run, wg *sync.WaitGroup, 
 	case APPLY:
 		tfCommand = ApplyCmd(ctx, params, w.tfBinaries)
 
-	case DRY_RUN:
+	case DETECT:
 		tfCommand = PlanCmd(ctx, params, w.tfBinaries)
 
 	case DESTROY:

@@ -8,6 +8,10 @@ type RunStatus struct {
 	Steps            []*StepStatus
 	CurrentStepIndex int
 	Summary          *string
+	// Artifact holds an optional binary artifact produced by this run.
+	// For DETECT runs this contains the binary Terraform plan file so it can be
+	// consumed by a subsequent APPLY run.
+	Artifact []byte
 }
 
 type StepStatus struct {

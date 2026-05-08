@@ -2,7 +2,10 @@ package tfrun
 
 import (
 	"context"
+	"fmt"
 	"os"
+
+	"github.com/hashicorp/terraform-exec/tfexec"
 )
 
 type TfPlanCommand struct {
@@ -135,10 +138,18 @@ func (tfcmd *TfPlanCommand) execute() {
 	}
 
 	// Variables are now in meshstack.auto.tfvars file, no command-line args needed
-	if _, err = tf.Plan(tfcmd.ctx); err != nil {
+	planFile := tfcmd.runContextInfo.artifactFilePath
+	if _, err = tf.Plan(tfcmd.ctx, tfexec.Out(planFile)); err != nil {
 		tfcmd.fail(err)
 		return
 	}
+
+	planData, err := os.ReadFile(planFile)
+	if err != nil {
+		tfcmd.fail(fmt.Errorf("failed to read plan artifact: %w", err))
+		return
+	}
+	tfcmd.runContextInfo.runStatus.Artifact = planData
 
 	tfcmd.completeRun(nil)
 }

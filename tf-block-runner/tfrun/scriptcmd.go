@@ -23,7 +23,7 @@ type ScriptParams struct {
 	// Script is the bash script content. No shebang is required.
 	Script string
 
-	// RunMode is the building block run mode (e.g. "APPLY", "DRY_RUN", "DESTROY").
+	// RunMode is the building block run mode (e.g. "APPLY", "DETECT", "DESTROY").
 	// It is passed as the first positional argument ($1) to the script.
 	RunMode string
 
@@ -68,7 +68,7 @@ type ScriptResult struct {
 // The script is executed using 'bash --noprofile --norc -e -o pipefail', following
 // the same approach as GitHub Actions
 // (https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrun).
-// No shebang line is required. The run mode (APPLY, DRY_RUN, DESTROY) is provided
+// No shebang line is required. The run mode (APPLY, DETECT, DESTROY) is provided
 // as the first positional argument ($1).
 //
 // The script has a PATH environment set up such that tofu (and legacy terraform) commands

@@ -2,7 +2,6 @@ package tfrun
 
 import (
 	"context"
-	"os"
 )
 
 type TfApplyCommand struct {
@@ -112,7 +111,12 @@ func (tfcmd *TfApplyCommand) execute() {
 		return
 	}
 
-	if err = tfcmd.setEnvWith(os.Setenv); err != nil {
+	tfEnv, err := tfcmd.buildTfEnv()
+	if err != nil {
+		tfcmd.fail(err)
+		return
+	}
+	if err = tf.SetEnv(tfEnv); err != nil {
 		tfcmd.fail(err)
 		return
 	}
@@ -145,7 +149,7 @@ func (tfcmd *TfApplyCommand) execute() {
 
 	tfcmd.advanceStep(nil)
 
-	preRunUserMsg, err := tfcmd.runPreRunScript()
+	preRunUserMsg, err := tfcmd.runPreRunScript(tfEnv)
 	if err != nil {
 		tfcmd.fail(err)
 		return

@@ -366,12 +366,32 @@ func matchOutputType(outputMeta tfexec.OutputMeta) DataType {
 	}
 }
 
-func (tfcmd *GenericTfCmd) setEnvWith(setOsEnv func(envKey, v string) error) error {
-	var envKeys []string
-	setEnv := func(envKey, v string) {
-		_ = setOsEnv(envKey, v)
-		envKeys = append(envKeys, envKey)
+// cleanSystemEnv returns a minimal environment map containing only the
+// system variables that Terraform and hook scripts need to operate correctly
+// (HOME for the plugin cache, PATH for executable lookup, and temporary
+// directory variables). All other variables present in the current process
+// environment — e.g. credentials injected at Docker container startup — are
+// intentionally excluded so they cannot leak into subprocesses.
+func cleanSystemEnv() map[string]string {
+	env := make(map[string]string)
+	for _, key := range []string{"HOME", "PATH", "TMPDIR", "TMP", "TEMP"} {
+		if val, ok := os.LookupEnv(key); ok {
+			env[key] = val
+		}
 	}
+	return env
+}
+
+// buildTfEnv constructs a clean environment map for the Terraform subprocess.
+// It starts from the minimal system environment (see cleanSystemEnv) and layers
+// on only the variables that the Go code explicitly configures: GIT_SSH_COMMAND
+// for SSH-based source authentication and any building-block input variables
+// that are marked as environment variables. No ambient process environment
+// variables (e.g. Docker startup vars, cloud credentials passed to the runner
+// container) are inherited.
+func (tfcmd *GenericTfCmd) buildTfEnv() (map[string]string, error) {
+	env := cleanSystemEnv()
+	var envKeys []string
 
 	// Set GIT_SSH_COMMAND if SSH authentication is configured
 	if tfcmd.params.source != nil && tfcmd.params.source.auth.name() == AUTH_TYPE_SSH {
@@ -380,7 +400,8 @@ func (tfcmd *GenericTfCmd) setEnvWith(setOsEnv func(envKey, v string) error) err
 			gitSshCommandEnv += " -o StrictHostKeyChecking=no"
 		}
 		tfcmd.Println(fmt.Sprintf("Setting GIT_SSH_COMMAND=%s", gitSshCommandEnv))
-		setEnv("GIT_SSH_COMMAND", gitSshCommandEnv)
+		env["GIT_SSH_COMMAND"] = gitSshCommandEnv
+		envKeys = append(envKeys, "GIT_SSH_COMMAND")
 	}
 
 	for varName, variable := range tfcmd.params.vars {
@@ -390,13 +411,14 @@ func (tfcmd *GenericTfCmd) setEnvWith(setOsEnv func(envKey, v string) error) err
 			if err == nil {
 				encodedValue, err := encodeVarValueForEnv(val, variable.Type)
 				if err != nil {
-					return err
+					return nil, err
 				}
-				setEnv(varName, encodedValue)
+				env[varName] = encodedValue
+				envKeys = append(envKeys, varName)
 			} else {
 				tfcmd.Printfln("Failed to decrypt input '%s'", varName)
 				tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(fmt.Sprintf("Failed to decrypt input '%s': %s", varName, err.Error()))
-				return fmt.Errorf("input decryption failed for '%s'", varName)
+				return nil, fmt.Errorf("input decryption failed for '%s'", varName)
 			}
 		}
 	}
@@ -407,7 +429,7 @@ func (tfcmd *GenericTfCmd) setEnvWith(setOsEnv func(envKey, v string) error) err
 		tfcmd.Println(msg)
 	}
 
-	return nil
+	return env, nil
 }
 
 func (tfcmd *GenericTfCmd) saveInputFiles() (savedFiles int, err error) {
@@ -618,7 +640,7 @@ func extractContentFromDataUrl(dataUrl string) ([]byte, error) {
 // runPreRunScript delegates to RunScript, routing the combined script output
 // to the operator-visible system log and returning the user-facing message (content
 // written by the script to $MESHSTACK_USER_MESSAGE) together with any execution error.
-func (tfcmd *GenericTfCmd) runPreRunScript() (*string, error) {
+func (tfcmd *GenericTfCmd) runPreRunScript(extraEnv map[string]string) (*string, error) {
 	preRunScript := tfcmd.params.preRunScript
 	if preRunScript == nil || strings.TrimSpace(*preRunScript) == "" {
 		tfcmd.runContextInfo.logwrap.PrintlnToLocalAndUpdateLogs("No pre-run script configured, skipping.")
@@ -634,6 +656,7 @@ func (tfcmd *GenericTfCmd) runPreRunScript() (*string, error) {
 		RunMode:         tfcmd.params.runMode,
 		WorkDir:         tfcmd.runContextInfo.workingDirectory,
 		RunJsonBase64:   tfcmd.runContextInfo.runJsonBase64,
+		ExtraEnv:        extraEnv,
 	})
 
 	if result.SystemMessage != "" {

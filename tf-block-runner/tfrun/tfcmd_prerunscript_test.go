@@ -94,7 +94,7 @@ func strPtr(s string) *string { return &s }
 func Test_runPreRunScript_nilScript_returnsNilNoError(t *testing.T) {
 	sut, _ := makePreRunScriptTfCmd(t, nil, "APPLY", false)
 
-	userMsg, err := sut.runPreRunScript()
+	userMsg, err := sut.runPreRunScript(nil)
 
 	require.NoError(t, err)
 	assert.Nil(t, userMsg)
@@ -103,7 +103,7 @@ func Test_runPreRunScript_nilScript_returnsNilNoError(t *testing.T) {
 func Test_runPreRunScript_emptyScript_returnsNilNoError(t *testing.T) {
 	sut, _ := makePreRunScriptTfCmd(t, strPtr(""), "APPLY", false)
 
-	userMsg, err := sut.runPreRunScript()
+	userMsg, err := sut.runPreRunScript(nil)
 
 	require.NoError(t, err)
 	assert.Nil(t, userMsg)
@@ -112,7 +112,7 @@ func Test_runPreRunScript_emptyScript_returnsNilNoError(t *testing.T) {
 func Test_runPreRunScript_scriptWithWindowsLineEndings_returnsNilNoError(t *testing.T) {
 	sut, _ := makePreRunScriptTfCmd(t, strPtr("echo Hello\r\n\r\necho Windows\r\n"), "APPLY", false)
 
-	userMsg, err := sut.runPreRunScript()
+	userMsg, err := sut.runPreRunScript(nil)
 
 	require.NoError(t, err)
 	assert.Nil(t, userMsg)
@@ -123,7 +123,7 @@ func Test_runPreRunScript_userMessageFile_returnedAndSetAsUserMessage(t *testing
 	script := "echo 'hello user' >> \"$MESHSTACK_USER_MESSAGE\""
 	sut, _ := makePreRunScriptTfCmd(t, &script, "APPLY", false)
 
-	userMsg, err := sut.runPreRunScript()
+	userMsg, err := sut.runPreRunScript(nil)
 
 	require.NoError(t, err)
 	require.NotNil(t, userMsg)
@@ -135,7 +135,7 @@ func Test_runPreRunScript_failedScript_userMessageFile_stillSetAsUserMessage(t *
 	script := "echo 'partial output' >> \"$MESHSTACK_USER_MESSAGE\"\nexit 1"
 	sut, _ := makePreRunScriptTfCmd(t, &script, "APPLY", false)
 
-	userMsg, err := sut.runPreRunScript()
+	userMsg, err := sut.runPreRunScript(nil)
 
 	// UserMessage on the step must still carry the content even when the script fails.
 	require.Error(t, err)
@@ -147,7 +147,7 @@ func Test_runPreRunScript_failedScript_stdoutGoesToSystemLog(t *testing.T) {
 	script := "echo 'debug detail'\nexit 1"
 	sut, readSystemLog := makePreRunScriptTfCmd(t, &script, "APPLY", false)
 
-	_, _ = sut.runPreRunScript()
+	_, _ = sut.runPreRunScript(nil)
 
 	assert.Contains(t, readSystemLog(), "debug detail")
 }
@@ -157,11 +157,11 @@ func Test_runPreRunScript_exitCodeAlwaysLoggedToSystemLog(t *testing.T) {
 	failScript := "exit 42"
 
 	sut0, readLog0 := makePreRunScriptTfCmd(t, &successScript, "APPLY", false)
-	_, _ = sut0.runPreRunScript()
+	_, _ = sut0.runPreRunScript(nil)
 	assert.Contains(t, readLog0(), "exited with code 0")
 
 	sut42, readLog42 := makePreRunScriptTfCmd(t, &failScript, "APPLY", false)
-	_, _ = sut42.runPreRunScript()
+	_, _ = sut42.runPreRunScript(nil)
 	assert.Contains(t, readLog42(), "exited with code 42")
 }
 
@@ -169,7 +169,7 @@ func Test_runPreRunScript_errorMessageContainsExitCode(t *testing.T) {
 	script := "exit 7"
 	sut, _ := makePreRunScriptTfCmd(t, &script, "APPLY", false)
 
-	_, err := sut.runPreRunScript()
+	_, err := sut.runPreRunScript(nil)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "7")
@@ -194,7 +194,7 @@ func Test_runPreRunScript_stdoutAndStderr_bothGoToSystemLog(t *testing.T) {
 	script := "echo 'this is stdout'\necho 'this is stderr' >&2"
 	sut, readSystemLog := makePreRunScriptTfCmd(t, &script, "APPLY", false)
 
-	_, err := sut.runPreRunScript()
+	_, err := sut.runPreRunScript(nil)
 
 	require.NoError(t, err)
 	// Both streams must appear in the system log, in the correct order.
@@ -209,7 +209,7 @@ func Test_runPreRunScript_userMessageFile_doesNotLeakIntoSystemLog(t *testing.T)
 	script := "echo 'user-only content' >> \"$MESHSTACK_USER_MESSAGE\""
 	sut, readSystemLog := makePreRunScriptTfCmd(t, &script, "APPLY", false)
 
-	_, err := sut.runPreRunScript()
+	_, err := sut.runPreRunScript(nil)
 
 	require.NoError(t, err)
 	assert.NotContains(t, readSystemLog(), "user-only content",
@@ -228,7 +228,7 @@ func Test_runPreRunScript_bashInterpreterUsed(t *testing.T) {
 	script := "echo \"interpreter: $BASH_VERSION\" >> \"$MESHSTACK_USER_MESSAGE\""
 	sut, _ := makePreRunScriptTfCmd(t, &script, "APPLY", false)
 
-	userMsg, err := sut.runPreRunScript()
+	userMsg, err := sut.runPreRunScript(nil)
 
 	require.NoError(t, err)
 	require.NotNil(t, userMsg)
@@ -240,7 +240,7 @@ func Test_runPreRunScript_runModePassedAsFirstArgument(t *testing.T) {
 	script := "echo \"mode=$1\" >> \"$MESHSTACK_USER_MESSAGE\""
 	sut, _ := makePreRunScriptTfCmd(t, &script, "APPLY", false)
 
-	userMsg, err := sut.runPreRunScript()
+	userMsg, err := sut.runPreRunScript(nil)
 
 	require.NoError(t, err)
 	require.NotNil(t, userMsg)
@@ -252,7 +252,7 @@ func Test_runPreRunScript_runJsonPassedOnStdin(t *testing.T) {
 	script := "cat - >> \"$MESHSTACK_USER_MESSAGE\""
 	sut, _ := makePreRunScriptTfCmd(t, &script, "APPLY", false)
 
-	userMsg, err := sut.runPreRunScript()
+	userMsg, err := sut.runPreRunScript(nil)
 
 	require.NoError(t, err)
 	require.NotNil(t, userMsg)
@@ -266,7 +266,7 @@ func Test_runPreRunScript_scriptThatIgnoresStdin_doesNotHang(t *testing.T) {
 	script := "echo 'done' >> \"$MESHSTACK_USER_MESSAGE\""
 	sut, _ := makePreRunScriptTfCmd(t, &script, "APPLY", false)
 
-	userMsg, err := sut.runPreRunScript()
+	userMsg, err := sut.runPreRunScript(nil)
 
 	require.NoError(t, err)
 	require.NotNil(t, userMsg)
@@ -278,7 +278,7 @@ func Test_runPreRunScript_cwdIsWorkingDirectory(t *testing.T) {
 	script := "pwd >> \"$MESHSTACK_USER_MESSAGE\""
 	sut, _ := makePreRunScriptTfCmd(t, &script, "APPLY", false)
 
-	userMsg, err := sut.runPreRunScript()
+	userMsg, err := sut.runPreRunScript(nil)
 
 	require.NoError(t, err)
 	require.NotNil(t, userMsg)
@@ -295,7 +295,7 @@ func Test_runPreRunScript_tofuAndTerraformBinPresent(t *testing.T) {
 	script := `tofu version >>"$MESHSTACK_USER_MESSAGE"`
 	sut, _ := makePreRunScriptTfCmd(t, &script, "APPLY", true)
 
-	userMsg, err := sut.runPreRunScript()
+	userMsg, err := sut.runPreRunScript(nil)
 
 	require.NoError(t, err)
 	require.NotNil(t, userMsg)

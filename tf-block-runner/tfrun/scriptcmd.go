@@ -38,6 +38,12 @@ type ScriptParams struct {
 	// RunJsonBase64 is the base64-encoded building block run JSON, supplied to the script on stdin.
 	// Scripts that do not read stdin discard it without error.
 	RunJsonBase64 string
+
+	// ExtraEnv contains additional environment variables to layer on top of the minimal clean system
+	// environment (HOME, PATH, TMPDIR, etc.) when executing the script. Typically this is the map
+	// returned by GenericTfCmd.buildTfEnv so that input variables marked as env-vars and
+	// GIT_SSH_COMMAND reach the script. Passing nil means only the system vars are available.
+	ExtraEnv map[string]string
 }
 
 // ScriptResult contains the output produced by RunPreRunScript.
@@ -97,7 +103,7 @@ func RunScript(ctx context.Context, params ScriptParams) (ScriptResult, error) {
 		return ScriptResult{}, err
 	}
 
-	environmentVariables := buildScriptEnvironmentVariables(params.TerraformBinDir, userMsgPath)
+	environmentVariables := buildScriptEnvironmentVariables(params.TerraformBinDir, userMsgPath, params.ExtraEnv)
 	cmd := buildScriptCmd(ctx, params.WorkDir, scriptPath,
 		environmentVariables,
 		runJSON, // stdin for script
@@ -171,10 +177,20 @@ func buildScriptCmd(ctx context.Context, wd, scriptPath string, environ []string
 	return cmd
 }
 
-func buildScriptEnvironmentVariables(terraformBinDir, userMsgPath string) []string {
-	return append(prependToPathEnvironmentVariable(os.Environ(), terraformBinDir),
-		fmt.Sprintf("MESHSTACK_USER_MESSAGE=%s", userMsgPath),
-	)
+func buildScriptEnvironmentVariables(terraformBinDir, userMsgPath string, extraEnv map[string]string) []string {
+	// Start from the minimal clean system environment, then layer on any explicitly
+	// configured variables (e.g. input vars marked as env, GIT_SSH_COMMAND).
+	merged := cleanSystemEnv()
+	for k, v := range extraEnv {
+		merged[k] = v
+	}
+	merged["MESHSTACK_USER_MESSAGE"] = userMsgPath
+
+	environ := make([]string, 0, len(merged))
+	for k, v := range merged {
+		environ = append(environ, fmt.Sprintf("%s=%s", k, v))
+	}
+	return prependToPathEnvironmentVariable(environ, terraformBinDir)
 }
 
 func prependToPathEnvironmentVariable(environ []string, paths ...string) []string {

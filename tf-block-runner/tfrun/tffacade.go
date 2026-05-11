@@ -25,6 +25,7 @@ type TfFacade interface {
 	WorkspaceSelect(ctx context.Context, workspace string) error
 	WorkspaceDelete(ctx context.Context, workspace string, opts ...tfexec.WorkspaceDeleteCmdOption) error
 
+	SetEnv(env map[string]string) error
 	SetStdout(w io.Writer)
 	SetStderr(w io.Writer)
 }

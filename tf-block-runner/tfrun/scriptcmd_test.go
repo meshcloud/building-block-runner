@@ -52,7 +52,7 @@ func Test_prependToPathEnvironmentVariable(t *testing.T) {
 func Test_buildScriptEnvironmentVariables(t *testing.T) {
 	pathSeparator := regexp.QuoteMeta(string(os.PathListSeparator))
 
-	actual := buildScriptEnvironmentVariables("/some/path/to/terraform", "/some/path/to/user-message.txt")
+	actual := buildScriptEnvironmentVariables("/some/path/to/terraform", "/some/path/to/user-message.txt", nil)
 	assert.Contains(t, actual, "MESHSTACK_USER_MESSAGE=/some/path/to/user-message.txt")
 	foundPrependedPath := false
 	for _, envKeyValue := range actual {

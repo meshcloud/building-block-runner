@@ -431,12 +431,8 @@ func Test_setEnvWith_CreatesMeshStackRunVarsFileAndSetsTfVarEnv(t *testing.T) {
 	err := os.WriteFile(path.Join(uut.runContextInfo.workingDirectory, "variables.tf"), customMeshStackRunVarsTf, 0644)
 	require.NoError(t, err)
 
-	// Call setEnvWith
-	capturedEnv := make(map[string]string)
-	err = uut.setEnvWith(func(envKey, v string) error {
-		capturedEnv[envKey] = v
-		return nil
-	})
+	// Call buildTfEnv
+	capturedEnv, err := uut.buildTfEnv()
 	require.NoError(t, err)
 
 	// Call vars() which creates the meshStack_run_vars.tf file
@@ -481,21 +477,18 @@ func Test_setEnvWith_DoesNotOverwriteExistingMeshStackRunVarsFile(t *testing.T) 
 	err := os.WriteFile(meshStackVarsPath, customMeshStackRunVarsTf, 0644)
 	require.NoError(t, err)
 
-	// Call setEnvWith
-	capturedEnv := make(map[string]string)
-	require.NoError(t, uut.setEnvWith(func(envKey, v string) error {
-		capturedEnv[envKey] = v
-		return nil
-	}))
+	// Call buildTfEnv
+	capturedEnv, err := uut.buildTfEnv()
+	require.NoError(t, err)
 
 	// Call vars() which would create the meshStack_run_vars.tf file
 	err = uut.vars()
 	require.NoError(t, err)
 
 	// meshStack variables are no longer set as environment variables
-	assert.Equal(t, map[string]string{
-		"ENV_FROM_VAR": "should-be-there",
-	}, capturedEnv)
+	assert.Equal(t, "should-be-there", capturedEnv["ENV_FROM_VAR"])
+	assert.NotContains(t, capturedEnv, "TF_VAR_blub")
+	assert.NotContains(t, capturedEnv, "non-env-input")
 
 	// Verify the file still contains the custom content (not overwritten)
 	content, err := os.ReadFile(meshStackVarsPath)

@@ -28,7 +28,7 @@ FROM alpine:3
 
 RUN apk update && \
     apk upgrade && \
-  apk add --no-cache bash git jq openssh curl ca-certificates xz coreutils
+  apk add --no-cache bash git jq openssh curl ca-certificates xz coreutils aws-cli
 
 # required for users to add certificates to truststore and single-user nix installs
 RUN addgroup -S meshcloud -g 2000 && adduser -SD meshcloud -u 2000 -G meshcloud && \
@@ -36,10 +36,6 @@ RUN addgroup -S meshcloud -g 2000 && adduser -SD meshcloud -u 2000 -G meshcloud 
   mkdir -m 0755 /nix && chown meshcloud:meshcloud /nix
 
 ENV CUSTOM_CA_CERTS_PATH=/usr/local/share/ca-certificates
-
-# Optional: Install additional packages
-ARG EXTRA_PACKAGES=""
-RUN if [ -n "$EXTRA_PACKAGES" ]; then apk add $EXTRA_PACKAGES; fi
 
 USER 2000
 

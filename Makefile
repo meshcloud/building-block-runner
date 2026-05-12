@@ -1,7 +1,7 @@
 SHELL := /bin/sh
 MODULES := go-meshapi-client run-controller tf-block-runner
-RUN_CONTROLLER_CONFIG := run-controller/application.yml
-TF_BLOCK_RUNNER_CONFIG := tf-block-runner/application.yml
+RUN_CONTROLLER_CONFIG := run-controller/runner-config.yml
+TF_BLOCK_RUNNER_CONFIG := tf-block-runner/runner-config.yml
 
 .PHONY: help run-run-controller run-tf-block-runner test test-run-controller test-tf-block-runner fmt vet tidy work-sync
 

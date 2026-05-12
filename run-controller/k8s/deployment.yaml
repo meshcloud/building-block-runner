@@ -22,4 +22,4 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             - -config
-            - /app/application.yml
+            - /app/runner-config.yml

@@ -50,7 +50,7 @@ func (c RunApiConfig) NewAuthProvider() meshapi.AuthProvider {
 }
 
 const (
-	configFilename = "application.yml"
+	configFilename = "runner-config.yml"
 
 	FLAG_CONFIG = "config"
 

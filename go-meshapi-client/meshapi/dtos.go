@@ -266,7 +266,6 @@ type RunStatusUpdateDTO struct {
 
 // ==================== Runner Implementation Types ====================
 
-// RunnerImplementationType represents the runner type used in configuration (application.yml).
 type RunnerImplementationType string
 
 const (

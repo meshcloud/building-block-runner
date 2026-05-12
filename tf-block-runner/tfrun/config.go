@@ -59,14 +59,14 @@ const (
 	FLAG_INITTIMEOUT      = "initTimeoutMins"
 	FLAG_INSTALLDIR       = "tfInstallDir"
 	FLAG_WORKDIR          = "workingDir"
-	FLAG_COORDINATOR_URL  = "api_url"
-	FLAG_COORDINATOR_USER = "api_user"
-	FLAG_COORDINATOR_PASS = "api_password"
+	FLAG_COORDINATOR_URL  = "apiUrl"
+	FLAG_COORDINATOR_USER = "apiUser"
+	FLAG_COORDINATOR_PASS = "apiPassword"
 
-	FLAG_COORDINATOR_CLIENT_ID     = "api_client_id"
-	FLAG_COORDINATOR_CLIENT_SECRET = "api_client_secret"
+	FLAG_COORDINATOR_CLIENT_ID     = "apiClientId"
+	FLAG_COORDINATOR_CLIENT_SECRET = "apiClientSecret"
 
-	FLAG_INSECURE_HOST_KEYS = "insecure_hostkeys"
+	FLAG_INSECURE_HOST_KEYS = "insecureHostKeys"
 	FLAG_RUNNER_UUID        = "runnerUuid"
 )
 

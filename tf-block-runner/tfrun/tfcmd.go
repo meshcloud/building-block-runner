@@ -374,11 +374,38 @@ func matchOutputType(outputMeta tfexec.OutputMeta) DataType {
 // intentionally excluded so they cannot leak into subprocesses.
 func cleanSystemEnv() map[string]string {
 	env := make(map[string]string)
-	for _, key := range []string{"HOME", "PATH", "PWD", "TMPDIR", "TMP", "TEMP", "SSH_KNOWN_HOSTS", "NIX_CONFIG"} {
+
+	// Core system variables required for basic process operation.
+	for _, key := range []string{"HOME", "PATH", "PWD", "TMPDIR", "TMP", "TEMP"} {
 		if val, ok := os.LookupEnv(key); ok {
 			env[key] = val
 		}
 	}
+
+	// The following variables were present in the subprocess environment before the
+	// explicit whitelist was introduced. They are kept here for backwards compatibility
+	// so that pre-run scripts that rely on them continue to work without modification.
+	for _, key := range []string{
+		// SSH host key file location, set in the Docker image; required for SSH-based git sources in scripts.
+		"SSH_KNOWN_HOSTS",
+		// Nix package manager configuration, set in the Docker image; needed when scripts install or invoke nix packages.
+		"NIX_CONFIG",
+		// meshStack API base URL injected by the platform; pre-run scripts use it to call meshStack APIs.
+		"MESHSTACK_ENDPOINT",
+		// Path to custom CA certificates, set in the Docker image; scripts that call HTTPS endpoints need this.
+		"CUSTOM_CA_CERTS_PATH",
+		// Terraform logging controls; operators set these to capture Terraform debug output.
+		"TF_LOG", "TF_LOG_CORE", "TF_LOG_PROVIDER", "TF_LOG_PATH",
+		// Disables Terraform checkpoint calls; commonly set in CI/CD environments.
+		"CHECKPOINT_DISABLE",
+		// Signals to Terraform that it is running in an automated pipeline (set by tfexec).
+		"TF_IN_AUTOMATION",
+	} {
+		if val, ok := os.LookupEnv(key); ok {
+			env[key] = val
+		}
+	}
+
 	return env
 }
 

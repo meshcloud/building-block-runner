@@ -374,7 +374,7 @@ func matchOutputType(outputMeta tfexec.OutputMeta) DataType {
 // intentionally excluded so they cannot leak into subprocesses.
 func cleanSystemEnv() map[string]string {
 	env := make(map[string]string)
-	for _, key := range []string{"HOME", "PATH", "TMPDIR", "TMP", "TEMP"} {
+	for _, key := range []string{"HOME", "PATH", "PWD", "TMPDIR", "TMP", "TEMP", "SSH_KNOWN_HOSTS", "NIX_CONFIG"} {
 		if val, ok := os.LookupEnv(key); ok {
 			env[key] = val
 		}

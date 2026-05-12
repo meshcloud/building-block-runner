@@ -1,6 +1,10 @@
 package tfrun
 
 import (
+	"io"
+	"log"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -121,5 +125,43 @@ func TestValidateRunnerUuid_ValidUuid(t *testing.T) {
 	})
 	t.Run("invalid uuid", func(t *testing.T) {
 		require.ErrorContains(t, validateRunnerUuid(TfRunnerConfig{}), "runnerUuid is required")
+	})
+}
+
+func TestApplyPrivateKeyFile(t *testing.T) {
+	nopLogger := log.New(io.Discard, "", 0)
+
+	t.Run("loads key from file", func(t *testing.T) {
+		keyFile := filepath.Join(t.TempDir(), "private.key")
+		require.NoError(t, os.WriteFile(keyFile, []byte("-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----\n"), 0600))
+
+		cfg := TfRunnerConfig{}
+		applyPrivateKeyFile(keyFile, &cfg, nopLogger)
+
+		require.Equal(t, "-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----\n", cfg.PrivateKey)
+	})
+
+	t.Run("silently skips missing file", func(t *testing.T) {
+		cfg := TfRunnerConfig{}
+		applyPrivateKeyFile(filepath.Join(t.TempDir(), "does-not-exist.key"), &cfg, nopLogger)
+
+		require.Empty(t, cfg.PrivateKey)
+	})
+
+	t.Run("does not overwrite existing value when file is missing", func(t *testing.T) {
+		cfg := TfRunnerConfig{PrivateKey: "existing-key"}
+		applyPrivateKeyFile(filepath.Join(t.TempDir(), "does-not-exist.key"), &cfg, nopLogger)
+
+		require.Equal(t, "existing-key", cfg.PrivateKey)
+	})
+
+	t.Run("file overrides existing key from config", func(t *testing.T) {
+		keyFile := filepath.Join(t.TempDir(), "private.key")
+		require.NoError(t, os.WriteFile(keyFile, []byte("key-from-file"), 0600))
+
+		cfg := TfRunnerConfig{PrivateKey: "key-from-config"}
+		applyPrivateKeyFile(keyFile, &cfg, nopLogger)
+
+		require.Equal(t, "key-from-file", cfg.PrivateKey)
 	})
 }

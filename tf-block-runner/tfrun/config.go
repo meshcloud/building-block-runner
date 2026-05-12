@@ -21,6 +21,7 @@ type TfRunnerConfig struct {
 	RunApiBackend         RunApiConfig `yaml:"api"`
 	SkipHostKeyValidation bool         `yaml:"insecureHostKeys"`
 	PrivateKey            string       `yaml:"privateKey"`
+	PrivateKeyFile        string       `yaml:"privateKeyFile"`
 	WsTimeoutMins         int          `yaml:"wsTimeoutMins"`
 	InitTimeoutMins       int          `yaml:"initTimeoutMins"`
 	RunnerUuid            string       `yaml:"runnerUuid"`
@@ -52,6 +53,10 @@ func (c RunApiConfig) NewAuthProvider() meshapi.AuthProvider {
 const (
 	configFilename = "runner-config.yml"
 
+	// privateKeyFile is the hardcoded path where the private key file is expected to be mounted
+	// in the Docker container (e.g. as a Kubernetes secret volume mount).
+	privateKeyFile = "/app/private.key"
+
 	FLAG_CONFIG = "config"
 
 	FLAG_TFTIMEOUT        = "timeoutMins"
@@ -68,6 +73,7 @@ const (
 
 	FLAG_INSECURE_HOST_KEYS = "insecureHostKeys"
 	FLAG_RUNNER_UUID        = "runnerUuid"
+	FLAG_PRIVATE_KEY_FILE   = "privateKeyFile"
 )
 
 var (
@@ -85,8 +91,9 @@ var (
 	apiClientId     = flag.String(FLAG_COORDINATOR_CLIENT_ID, "", "API key client ID to authenticate towards Block Coordinator API")
 	apiClientSecret = flag.String(FLAG_COORDINATOR_CLIENT_SECRET, "", "API key client secret to authenticate towards Block Coordinator API")
 
-	insecureHostKeys = flag.Bool(FLAG_INSECURE_HOST_KEYS, false, "If set to true, known host key validation is off.")
-	runnerUuid       = flag.String(FLAG_RUNNER_UUID, "", "UUID of the building block runner to filter runs for")
+	insecureHostKeys   = flag.Bool(FLAG_INSECURE_HOST_KEYS, false, "If set to true, known host key validation is off.")
+	runnerUuid         = flag.String(FLAG_RUNNER_UUID, "", "UUID of the building block runner to filter runs for")
+	privateKeyFilePath = flag.String(FLAG_PRIVATE_KEY_FILE, privateKeyFile, "Path to the private SSH key file to load")
 )
 
 func ReadConfig(logger *log.Logger) error {
@@ -107,6 +114,11 @@ func ReadConfig(logger *log.Logger) error {
 
 	// apply environment variables (highest precedence)
 	applyEnvVars(logger)
+
+	// Try to load the private key from the configured file path (highest priority).
+	// Uses BLOCKRUNNER_PRIVATE_KEY_FILE env var path if set, otherwise the default /app/private.key.
+	// Falls back to privateKey from runner-config.yml or BLOCKRUNNER_PRIVATEKEY env variable if the file is not found.
+	applyPrivateKeyFile(AppConfig.PrivateKeyFile, &AppConfig, logger)
 
 	// validate authentication configuration
 	if err := validateAuthConfig(AppConfig); err != nil {
@@ -192,6 +204,10 @@ func applyFlags() {
 	if isFlagSet(FLAG_RUNNER_UUID) || AppConfig.RunnerUuid == "" {
 		AppConfig.RunnerUuid = *runnerUuid
 	}
+
+	if isFlagSet(FLAG_PRIVATE_KEY_FILE) || AppConfig.PrivateKeyFile == "" {
+		AppConfig.PrivateKeyFile = *privateKeyFilePath
+	}
 }
 
 // applyEnvVars applies environment variables with BLOCKRUNNER_ prefix
@@ -230,6 +246,27 @@ func applyEnvVars(logger *log.Logger) {
 	if envPrivateKey := os.Getenv("BLOCKRUNNER_PRIVATEKEY"); envPrivateKey != "" {
 		logger.Printf("Using BLOCKRUNNER_PRIVATEKEY from environment\n")
 		AppConfig.PrivateKey = envPrivateKey
+	}
+
+	if envPrivateKeyFile := os.Getenv("BLOCKRUNNER_PRIVATE_KEY_FILE"); envPrivateKeyFile != "" {
+		logger.Printf("Using BLOCKRUNNER_PRIVATE_KEY_FILE from environment\n")
+		AppConfig.PrivateKeyFile = envPrivateKeyFile
+	}
+}
+
+// applyPrivateKeyFile loads the private key from path and sets cfg.PrivateKey.
+// It is silently skipped when the file does not exist.
+// Other read errors are logged as warnings but do not fail startup.
+func applyPrivateKeyFile(path string, cfg *TfRunnerConfig, logger *log.Logger) {
+	if path == "" {
+		return
+	}
+	keyData, err := os.ReadFile(path)
+	if err == nil {
+		logger.Printf("Loaded private key from %s\n", path)
+		cfg.PrivateKey = string(keyData)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		logger.Printf("Warning: could not read private key file %s: %v\n", path, err)
 	}
 }
 

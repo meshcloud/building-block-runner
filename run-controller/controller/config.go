@@ -122,7 +122,7 @@ type ResourceSpec struct {
 }
 
 const (
-	defaultConfigFilename = "application.yml"
+	defaultConfigFilename = "runner-config.yml"
 
 	FLAG_CONFIG_FILE              = "config"
 	FLAG_CONTROLLER_CONTROLLER_ID = "controller.controllerId"

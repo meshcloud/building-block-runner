@@ -74,7 +74,7 @@ func (tfcmd *TfDestroyCommand) initRunSteps() {
 			},
 			{
 				Name:          StepExecuteTf,
-				DisplayName:   "Run Terraform",
+				DisplayName:   "Run Terraform Destroy",
 				Status:        PENDING,
 				Outputs:       make(map[string]*TfOutput),
 				UserMessage:   nil,

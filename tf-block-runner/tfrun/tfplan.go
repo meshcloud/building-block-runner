@@ -59,6 +59,15 @@ func (tfcmd *TfPlanCommand) initRunSteps() {
 				LogStartIdx:   0,
 			},
 			{
+				Name:          StepInitTf,
+				DisplayName:   "Initialize Terraform and select Workspace",
+				Status:        PENDING,
+				Outputs:       make(map[string]*TfOutput),
+				UserMessage:   nil,
+				SystemMessage: nil,
+				LogStartIdx:   0,
+			},
+			{
 				Name:          StepPreRunScript,
 				DisplayName:   "Execute Pre-Run Script",
 				Status:        PENDING,
@@ -69,7 +78,7 @@ func (tfcmd *TfPlanCommand) initRunSteps() {
 			},
 			{
 				Name:          StepExecuteTf,
-				DisplayName:   "Run Terraform",
+				DisplayName:   "Run Terraform Plan",
 				Status:        PENDING,
 				Outputs:       make(map[string]*TfOutput),
 				UserMessage:   nil,
@@ -123,14 +132,6 @@ func (tfcmd *TfPlanCommand) execute() {
 
 	tfcmd.advanceStep(nil)
 
-	preRunUserMsg, err := tfcmd.runPreRunScript(tfEnv)
-	if err != nil {
-		tfcmd.fail(err)
-		return
-	}
-
-	tfcmd.advanceStep(preRunUserMsg)
-
 	if err = tfcmd.init(tf); err != nil {
 		tfcmd.runContextInfo.logwrap.PrintlnToLocalAndUpdateLogs(HINT_INIT_FAILED)
 		tfcmd.fail(err)
@@ -141,6 +142,16 @@ func (tfcmd *TfPlanCommand) execute() {
 		tfcmd.fail(err)
 		return
 	}
+
+	tfcmd.advanceStep(nil)
+
+	preRunUserMsg, err := tfcmd.runPreRunScript(tfEnv)
+	if err != nil {
+		tfcmd.fail(err)
+		return
+	}
+
+	tfcmd.advanceStep(preRunUserMsg)
 
 	// Variables are now in meshstack.auto.tfvars file, no command-line args needed
 	planFile := tfcmd.runContextInfo.artifactFilePath

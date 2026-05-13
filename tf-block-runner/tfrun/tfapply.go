@@ -74,7 +74,7 @@ func (tfcmd *TfApplyCommand) initRunSteps() {
 			},
 			{
 				Name:          StepExecuteTf,
-				DisplayName:   "Run Terraform",
+				DisplayName:   "Run Terraform Apply",
 				Status:        PENDING,
 				Outputs:       make(map[string]*TfOutput),
 				UserMessage:   nil,

@@ -24,7 +24,7 @@ ARG TARGETOS
 ARG TARGETARCH
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -buildvcs=false -ldflags "-s -w -X 'github.com/meshcloud/meshfed-release/buildingblocks/tf-block-runner/build.Version=${VERSION}' -X 'github.com/meshcloud/meshfed-release/buildingblocks/tf-block-runner/build.Commit=${COMMIT_SHA}'" -o tfrunner .
 
-FROM alpine:3
+FROM alpine:3.22.4@sha256:310c62b5e7ca5b08167e4384c68db0fd2905dd9c7493756d356e893909057601
 
 RUN apk update && \
     apk upgrade && \

@@ -1,0 +1,71 @@
+name: Check Unreleased Commits
+
+on:
+  schedule:
+    - cron: "0 6 * * 1-5" # 06:00 UTC on weekdays (Mon-Fri)
+
+jobs:
+  check-unreleased:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0 # full history needed to compare tags with HEAD
+
+      - name: Check for unreleased commits on main
+        id: check
+        run: |
+          LATEST_TAG=$(git describe --tags --match "v*" --abbrev=0 2>/dev/null || echo "")
+          RANGE="${LATEST_TAG:+${LATEST_TAG}..}HEAD"
+          COMMIT_COUNT=$(git rev-list "$RANGE" --count)
+
+          if [ "$COMMIT_COUNT" -gt 0 ]; then
+            if [ -n "$LATEST_TAG" ]; then
+              COMPARE_URL="https://github.com/${GITHUB_REPOSITORY}/compare/${LATEST_TAG}...main"
+            else
+              COMPARE_URL="https://github.com/${GITHUB_REPOSITORY}/commits/main"
+            fi
+
+            echo "has_unreleased=true" >> $GITHUB_OUTPUT
+            echo "latest_tag=${LATEST_TAG:-none}" >> $GITHUB_OUTPUT
+            echo "commit_count=${COMMIT_COUNT}" >> $GITHUB_OUTPUT
+            echo "compare_url=${COMPARE_URL}" >> $GITHUB_OUTPUT
+          else
+            echo "has_unreleased=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Send Slack warning
+        if: steps.check.outputs.has_unreleased == 'true'
+        uses: slackapi/slack-github-action@b0fa283ad8fea605de13dc3f449259339835fc52 # v2.1.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            channel: "#engineering"
+            blocks:
+              - type: section
+                text:
+                  type: mrkdwn
+                  text: |
+                    :warning: *Untagged commits detected on `main`*
+                    <https://github.com/${{ github.repository }}|${{ github.repository }}>
+
+                    The <https://panel.dev.meshcloud.io|*dev environment*> is already using these commits from `main`.
+
+                    *Action required:* create a new release tag to include them the next release.
+              - type: section
+                fields:
+                  - type: mrkdwn
+                    text: "*Latest tag:*\n`${{ steps.check.outputs.latest_tag }}`"
+                  - type: mrkdwn
+                    text: "*Unreleased commits:*\n${{ steps.check.outputs.commit_count }}"
+              - type: actions
+                elements:
+                  - type: button
+                    text:
+                      type: plain_text
+                      text: "View commits"
+                    url: "${{ steps.check.outputs.compare_url }}"

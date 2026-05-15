@@ -2,7 +2,7 @@ terraform {
   required_providers {
     github = {
       source  = "integrations/github"
-      version = "6.12.1"
+      version = "~> 6.12"
     }
     tls = {
       source  = "hashicorp/tls"
@@ -44,6 +44,12 @@ variable "release_tag_pattern" {
   description = "Tag ref pattern to protect"
   type        = string
   default     = "refs/tags/v*"
+}
+
+variable "slack_webhook_url" {
+  description = "Slack incoming webhook URL for GitHub Actions notifications"
+  type        = string
+  sensitive   = true
 }
 
 data "github_repository" "current" {
@@ -129,6 +135,12 @@ resource "github_repository_deploy_key" "pipeline_read_only" {
   title      = "pipeline-read-only"
   key        = tls_private_key.pipeline_deploy_key.public_key_openssh
   read_only  = true
+}
+
+resource "github_actions_secret" "slack_webhook_url" {
+  repository  = data.github_repository.current.name
+  secret_name = "SLACK_WEBHOOK_URL"
+  value       = var.slack_webhook_url
 }
 
 output "pipeline_deploy_key_private" {

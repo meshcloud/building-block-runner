@@ -569,13 +569,13 @@ func (k *KubernetesClient) buildEnvVars(runner *RunnerConfig) []corev1.EnvVar {
 			Value: runJsonFilePath,
 		},
 		{
-			Name:  "BLOCKRUNNER_UUID",
+			Name:  "RUNNER_UUID",
 			Value: runner.Uuid,
 		},
 		{
 			// The API URL is used as a fallback for building callback URLs.
 			// Runners prefer the _links.meshstackBaseUrl from the run object when available.
-			Name:  "BLOCKRUNNER_API_URL",
+			Name:  "RUNNER_API_URL",
 			Value: AppConfig.Api.Url,
 		},
 	}

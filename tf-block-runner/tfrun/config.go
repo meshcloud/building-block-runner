@@ -73,7 +73,6 @@ const (
 
 	FLAG_INSECURE_HOST_KEYS = "insecureHostKeys"
 	FLAG_RUNNER_UUID        = "runnerUuid"
-	FLAG_PRIVATE_KEY_FILE   = "privateKeyFile"
 )
 
 var (
@@ -91,9 +90,8 @@ var (
 	apiClientId     = flag.String(FLAG_COORDINATOR_CLIENT_ID, "", "API key client ID to authenticate towards Block Coordinator API")
 	apiClientSecret = flag.String(FLAG_COORDINATOR_CLIENT_SECRET, "", "API key client secret to authenticate towards Block Coordinator API")
 
-	insecureHostKeys   = flag.Bool(FLAG_INSECURE_HOST_KEYS, false, "If set to true, known host key validation is off.")
-	runnerUuid         = flag.String(FLAG_RUNNER_UUID, "", "UUID of the building block runner to filter runs for")
-	privateKeyFilePath = flag.String(FLAG_PRIVATE_KEY_FILE, privateKeyFile, "Path to the private SSH key file to load")
+	insecureHostKeys = flag.Bool(FLAG_INSECURE_HOST_KEYS, false, "If set to true, known host key validation is off.")
+	runnerUuid       = flag.String(FLAG_RUNNER_UUID, "", "UUID of the building block runner to filter runs for")
 )
 
 func ReadConfig(logger *log.Logger) error {
@@ -116,8 +114,8 @@ func ReadConfig(logger *log.Logger) error {
 	applyEnvVars(logger)
 
 	// Try to load the private key from the configured file path (highest priority).
-	// Uses BLOCKRUNNER_PRIVATE_KEY_FILE env var path if set, otherwise the default /app/private.key.
-	// Falls back to privateKey from runner-config.yml or BLOCKRUNNER_PRIVATEKEY env variable if the file is not found.
+	// Uses RUNNER_PRIVATE_KEY_FILE env var path if set, otherwise the default /app/private.key.
+	// Falls back to privateKey from runner-config.yml if the file is not found.
 	applyPrivateKeyFile(AppConfig.PrivateKeyFile, &AppConfig, logger)
 
 	// validate authentication configuration
@@ -205,51 +203,47 @@ func applyFlags() {
 		AppConfig.RunnerUuid = *runnerUuid
 	}
 
-	if isFlagSet(FLAG_PRIVATE_KEY_FILE) || AppConfig.PrivateKeyFile == "" {
-		AppConfig.PrivateKeyFile = *privateKeyFilePath
+	// Apply default private key file path if not set via YAML
+	if AppConfig.PrivateKeyFile == "" {
+		AppConfig.PrivateKeyFile = privateKeyFile
 	}
 }
 
-// applyEnvVars applies environment variables with BLOCKRUNNER_ prefix
+// applyEnvVars applies environment variables with RUNNER_ prefix
 // Environment variables take precedence over all other configuration sources
 func applyEnvVars(logger *log.Logger) {
-	if envUuid := os.Getenv("BLOCKRUNNER_UUID"); envUuid != "" {
-		logger.Printf("Using BLOCKRUNNER_UUID from environment: %s\n", envUuid)
+	if envUuid := os.Getenv("RUNNER_UUID"); envUuid != "" {
+		logger.Printf("Using RUNNER_UUID from environment: %s\n", envUuid)
 		AppConfig.RunnerUuid = envUuid
 	}
 
-	if envApiUrl := os.Getenv("BLOCKRUNNER_API_URL"); envApiUrl != "" {
-		logger.Printf("Using BLOCKRUNNER_API_URL from environment\n")
+	if envApiUrl := os.Getenv("RUNNER_API_URL"); envApiUrl != "" {
+		logger.Printf("Using RUNNER_API_URL from environment\n")
 		AppConfig.RunApiBackend.Url = envApiUrl
 	}
 
-	if envUsername := os.Getenv("BLOCKRUNNER_AUTH_USERNAME"); envUsername != "" {
-		logger.Printf("Using BLOCKRUNNER_AUTH_USERNAME from environment\n")
+	if envUsername := os.Getenv("RUNNER_API_USERNAME"); envUsername != "" {
+		logger.Printf("Using RUNNER_API_USERNAME from environment\n")
 		AppConfig.RunApiBackend.User = envUsername
 	}
 
-	if envPassword := os.Getenv("BLOCKRUNNER_AUTH_PASSWORD"); envPassword != "" {
-		logger.Printf("Using BLOCKRUNNER_AUTH_PASSWORD from environment\n")
+	if envPassword := os.Getenv("RUNNER_API_PASSWORD"); envPassword != "" {
+		logger.Printf("Using RUNNER_API_PASSWORD from environment\n")
 		AppConfig.RunApiBackend.Password = envPassword
 	}
 
-	if envClientId := os.Getenv("BLOCKRUNNER_AUTH_CLIENT_ID"); envClientId != "" {
-		logger.Printf("Using BLOCKRUNNER_AUTH_CLIENT_ID from environment\n")
+	if envClientId := os.Getenv("RUNNER_API_CLIENT_ID"); envClientId != "" {
+		logger.Printf("Using RUNNER_API_CLIENT_ID from environment\n")
 		AppConfig.RunApiBackend.ClientId = envClientId
 	}
 
-	if envClientSecret := os.Getenv("BLOCKRUNNER_AUTH_CLIENT_SECRET"); envClientSecret != "" {
-		logger.Printf("Using BLOCKRUNNER_AUTH_CLIENT_SECRET from environment\n")
+	if envClientSecret := os.Getenv("RUNNER_API_CLIENT_SECRET"); envClientSecret != "" {
+		logger.Printf("Using RUNNER_API_CLIENT_SECRET from environment\n")
 		AppConfig.RunApiBackend.ClientSecret = envClientSecret
 	}
 
-	if envPrivateKey := os.Getenv("BLOCKRUNNER_PRIVATEKEY"); envPrivateKey != "" {
-		logger.Printf("Using BLOCKRUNNER_PRIVATEKEY from environment\n")
-		AppConfig.PrivateKey = envPrivateKey
-	}
-
-	if envPrivateKeyFile := os.Getenv("BLOCKRUNNER_PRIVATE_KEY_FILE"); envPrivateKeyFile != "" {
-		logger.Printf("Using BLOCKRUNNER_PRIVATE_KEY_FILE from environment\n")
+	if envPrivateKeyFile := os.Getenv("RUNNER_PRIVATE_KEY_FILE"); envPrivateKeyFile != "" {
+		logger.Printf("Using RUNNER_PRIVATE_KEY_FILE from environment\n")
 		AppConfig.PrivateKeyFile = envPrivateKeyFile
 	}
 }

@@ -100,7 +100,7 @@ func (c *Controller) processRuns() {
 
 func (c *Controller) processRunsForRunner(runner *RunnerConfig) {
 	// Fetch available runs from meshfed API
-	runJsonBase64, runDetails, err := c.runApi.FetchRunDetails(AppConfig.ControllerId, runner)
+	runJsonBase64, runDetails, err := c.runApi.FetchRunDetails(runner.Uuid, runner)
 
 	if err != nil {
 		if !isNoRunError(err) {

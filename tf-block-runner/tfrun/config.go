@@ -54,15 +54,15 @@ const (
 	defaultPrivateKeyFile = "/app/runner-private.pem"
 
 	envConfigFile       = "RUNNER_CONFIG_FILE"
-	envRunnerUUID       = "RUNNER_UUID"
-	envAPIURL           = "RUNNER_API_URL"
+	envRunnerUuid       = "RUNNER_UUID"
+	envApiUrl           = "RUNNER_API_URL"
 	envAuthUsername     = "RUNNER_API_USERNAME"
 	envAuthPassword     = "RUNNER_API_PASSWORD"
-	envAuthClientID     = "RUNNER_API_CLIENT_ID"
+	envAuthClientId     = "RUNNER_API_CLIENT_ID"
 	envAuthClientSecret = "RUNNER_API_CLIENT_SECRET"
 	envPrivateKeyFile   = "RUNNER_PRIVATE_KEY_FILE"
 	envExecutionMode    = "EXECUTION_MODE"
-	envRunJSONFilePath  = "RUN_JSON_FILE_PATH"
+	envRunJsonFilePath  = "RUN_JSON_FILE_PATH"
 )
 
 func ReadConfig(logger *log.Logger) error {
@@ -117,13 +117,13 @@ func ReadConfig(logger *log.Logger) error {
 // applyEnvVars applies environment variables with RUNNER_ prefix and sets defaults for unset values.
 // Environment variables take precedence over config file values.
 func applyEnvVars(logger *log.Logger) {
-	if envUuid := os.Getenv(envRunnerUUID); envUuid != "" {
-		logger.Printf("Using %s from environment: %s\n", envRunnerUUID, envUuid)
+	if envUuid := os.Getenv(envRunnerUuid); envUuid != "" {
+		logger.Printf("Using %s from environment: %s\n", envRunnerUuid, envUuid)
 		AppConfig.RunnerUuid = envUuid
 	}
 
-	if envApiUrl := os.Getenv(envAPIURL); envApiUrl != "" {
-		logger.Printf("Using %s from environment\n", envAPIURL)
+	if envApiUrl := os.Getenv(envApiUrl); envApiUrl != "" {
+		logger.Printf("Using %s from environment\n", envApiUrl)
 		AppConfig.RunApiBackend.Url = envApiUrl
 	}
 
@@ -137,8 +137,8 @@ func applyEnvVars(logger *log.Logger) {
 		AppConfig.RunApiBackend.Password = envPassword
 	}
 
-	if envClientId := os.Getenv(envAuthClientID); envClientId != "" {
-		logger.Printf("Using %s from environment\n", envAuthClientID)
+	if envClientId := os.Getenv(envAuthClientId); envClientId != "" {
+		logger.Printf("Using %s from environment\n", envAuthClientId)
 		AppConfig.RunApiBackend.ClientId = envClientId
 	}
 
@@ -186,7 +186,7 @@ func validateAuthConfig(config TfRunnerConfig) error {
 
 	// Check if we're in single-run mode
 	executionMode := os.Getenv(envExecutionMode)
-	runJsonFilePath := os.Getenv(envRunJSONFilePath)
+	runJsonFilePath := os.Getenv(envRunJsonFilePath)
 	isSingleRunMode := executionMode == "single-run"
 
 	// In single-run mode, RUN_JSON_FILE_PATH is required

@@ -16,7 +16,6 @@ var DiscoveredOidcIssuer string = ""
 
 // ControllerConfig holds the main configuration for the run controller
 type ControllerConfig struct {
-	ControllerId           string         `yaml:"controllerId"`           // Unique identifier for this controller instance
 	Namespace              string         `yaml:"namespace"`              // Kubernetes namespace where jobs are created
 	ImagePullSecrets       []string       `yaml:"imagePullSecrets"`       // Image pull secrets for runner jobs (optional)
 	PollingIntervalSeconds int            `yaml:"pollingIntervalSeconds"` // Polling interval in seconds (default: 10)
@@ -121,12 +120,9 @@ type ResourceSpec struct {
 }
 
 const (
-	defaultConfigFile = "runner-config.yml"
+	defaultConfigFile = "/app/runner-config.yml"
 
-	envConfigFile   = "BLOCKRUNNER_CONFIG_FILE"
-	envControllerId = "BLOCKRUNNER_CONTROLLER_ID"
-	envNamespace    = "BLOCKRUNNER_NAMESPACE"
-	envApiURL       = "BLOCKRUNNER_API_URL"
+	envConfigFile = "CONFIG_FILE"
 )
 
 func ReadConfig(logger *log.Logger) *ControllerConfig {
@@ -141,9 +137,6 @@ func ReadConfig(logger *log.Logger) *ControllerConfig {
 		logger.Fatalf("Failed to read config file %s: %v\n", configPath, err)
 	}
 
-	// Apply environment variable overrides on top of file config
-	applyEnvVars(config, logger)
-
 	// Validate configuration
 	if err := validateConfig(config); err != nil {
 		logger.Fatalf("Invalid configuration: %v\n", err)
@@ -154,25 +147,6 @@ func ReadConfig(logger *log.Logger) *ControllerConfig {
 
 	AppConfig = config
 	return config
-}
-
-// applyEnvVars applies environment variables as overrides to file configuration.
-// Environment variables take precedence over values from the config file.
-func applyEnvVars(config *ControllerConfig, logger *log.Logger) {
-	if envControllerID := os.Getenv(envControllerId); envControllerID != "" {
-		logger.Printf("Using %s from environment\n", envControllerId)
-		config.ControllerId = envControllerID
-	}
-
-	if envNamespaceValue := os.Getenv(envNamespace); envNamespaceValue != "" {
-		logger.Printf("Using %s from environment\n", envNamespace)
-		config.Namespace = envNamespaceValue
-	}
-
-	if envApiURLValue := os.Getenv(envApiURL); envApiURLValue != "" {
-		logger.Printf("Using %s from environment\n", envApiURL)
-		config.Api.Url = envApiURLValue
-	}
 }
 
 // validateConfig ensures the configuration is valid and complete
@@ -208,9 +182,6 @@ func validateApiAuth(c ApiConfig, context string) error {
 }
 
 func validateConfig(config *ControllerConfig) error {
-	if config.ControllerId == "" {
-		return fmt.Errorf("controllerId is required")
-	}
 	if config.Namespace == "" {
 		return fmt.Errorf("namespace is required")
 	}
@@ -265,7 +236,6 @@ func validateConfig(config *ControllerConfig) error {
 // logConfig logs the startup configuration
 func logConfig(logger *log.Logger, config *ControllerConfig) {
 	logger.Println("--------------------------------------------------------------------")
-	logger.Printf("Starting controller with id: %s\n", config.ControllerId)
 	logger.Printf("Kubernetes namespace: %s\n", config.Namespace)
 	if len(config.ImagePullSecrets) > 0 {
 		logger.Printf("Image pull secrets: %v\n", config.ImagePullSecrets)

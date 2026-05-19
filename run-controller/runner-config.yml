@@ -1,8 +1,6 @@
 # Run Controller Configuration
 # This configuration defines how the run controller manages building block runners
 
-controllerId: run-controller-0
-
 # Kubernetes namespace where all jobs and resources are created
 namespace: default
 

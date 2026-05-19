@@ -12,8 +12,9 @@ import (
 
 var UseTestClient = false
 
+const requesterPrefix = "run-controller"
+
 type RunApiClient struct {
-	cid     string
 	url     string
 	metrics *MetricsCollector
 }
@@ -26,7 +27,6 @@ type RunApi interface {
 
 func newApi() RunApi {
 	return &RunApiClient{
-		cid:     AppConfig.ControllerId,
 		url:     AppConfig.Api.Url,
 		metrics: NewMetricsCollector(),
 	}
@@ -37,7 +37,7 @@ func (api *RunApiClient) newMeshClient(runner *RunnerConfig, nodeID string) *mes
 }
 
 func (api *RunApiClient) FetchRunDetails(nodePostfix string, runner *RunnerConfig) (string, *meshapi.RunDetailsDTO, error) {
-	requester := fmt.Sprintf("%s-%s", api.cid, nodePostfix)
+	requester := fmt.Sprintf("%s-%s", requesterPrefix, nodePostfix)
 
 	// Measure fetch duration
 	start := time.Now()
@@ -63,7 +63,7 @@ func (api *RunApiClient) FetchRunDetails(nodePostfix string, runner *RunnerConfi
 // RegisterSource registers the run-controller as a status source for a run.
 // Idempotent: if the source is already registered (HTTP 409 Conflict), the call succeeds silently.
 func (api *RunApiClient) RegisterSource(runId string, runner *RunnerConfig) error {
-	requester := fmt.Sprintf("%s-%s", api.cid, runner.Uuid)
+	requester := fmt.Sprintf("%s-%s", requesterPrefix, runner.Uuid)
 	client := api.newMeshClient(runner, requester)
 
 	registration := meshapi.RegistrationDTO{
@@ -89,7 +89,7 @@ func (api *RunApiClient) RegisterSource(runId string, runner *RunnerConfig) erro
 // UpdateRunStatus sends a PATCH status update for a run.
 // It must be called after RegisterSource has been called for the same run.
 func (api *RunApiClient) UpdateRunStatus(runId string, runner *RunnerConfig, status string, summary string, stepMessage string) error {
-	requester := fmt.Sprintf("%s-%s", api.cid, runner.Uuid)
+	requester := fmt.Sprintf("%s-%s", requesterPrefix, runner.Uuid)
 	client := api.newMeshClient(runner, requester)
 
 	dto := meshapi.StatusUpdateDTO{

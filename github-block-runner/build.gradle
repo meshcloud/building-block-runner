@@ -6,7 +6,7 @@ group = "io.meshcloud.buildingblocks"
 description = "github-block-runner"
 
 dependencies {
-  implementation project(":buildingblocks:block-runner-core")
+  implementation project(":block-runner-core")
 
   implementation('org.springframework.boot:spring-boot-starter')
 

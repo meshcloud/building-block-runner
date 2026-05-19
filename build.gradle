@@ -6,8 +6,8 @@ plugins {
 
 // Convenience task to resolve dependencies for the shippable spring-boot apps.
 tasks.register('resolveShippable') {
-  dependsOn(":buildingblocks:manual-block-runner:dependencies")
-  dependsOn(":buildingblocks:github-block-runner:dependencies")
-  dependsOn(":buildingblocks:gitlab-block-runner:dependencies")
-  dependsOn(":buildingblocks:azure-devops-block-runner:dependencies")
+  dependsOn(":manual-block-runner:dependencies")
+  dependsOn(":github-block-runner:dependencies")
+  dependsOn(":gitlab-block-runner:dependencies")
+  dependsOn(":azure-devops-block-runner:dependencies")
 }

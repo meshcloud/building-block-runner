@@ -22,17 +22,17 @@ includeBuild('platforms')
  * Building Blocks — JVM block runners.
  * Core libraries are now integrated into block-runner-core as internal packages.
  */
-include ':buildingblocks:block-runner-core'
-project(':buildingblocks:block-runner-core').projectDir = "$rootDir/buildingblocks/block-runner-core" as File
+include ':block-runner-core'
+project(':block-runner-core').projectDir = "$rootDir/block-runner-core" as File
 
-include ':buildingblocks:manual-block-runner'
-project(':buildingblocks:manual-block-runner').projectDir = "$rootDir/buildingblocks/manual-block-runner" as File
+include ':manual-block-runner'
+project(':manual-block-runner').projectDir = "$rootDir/manual-block-runner" as File
 
-include ':buildingblocks:github-block-runner'
-project(':buildingblocks:github-block-runner').projectDir = "$rootDir/buildingblocks/github-block-runner" as File
+include ':github-block-runner'
+project(':github-block-runner').projectDir = "$rootDir/github-block-runner" as File
 
-include ':buildingblocks:gitlab-block-runner'
-project(':buildingblocks:gitlab-block-runner').projectDir = "$rootDir/buildingblocks/gitlab-block-runner" as File
+include ':gitlab-block-runner'
+project(':gitlab-block-runner').projectDir = "$rootDir/gitlab-block-runner" as File
 
-include ':buildingblocks:azure-devops-block-runner'
-project(':buildingblocks:azure-devops-block-runner').projectDir = "$rootDir/buildingblocks/azure-devops-block-runner" as File
+include ':azure-devops-block-runner'
+project(':azure-devops-block-runner').projectDir = "$rootDir/azure-devops-block-runner" as File

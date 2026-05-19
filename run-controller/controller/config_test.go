@@ -26,8 +26,7 @@ func createValidRunnerConfig(uuid string) RunnerConfig {
 
 func createValidConfig() *ControllerConfig {
 	return &ControllerConfig{
-		ControllerId: "test-controller",
-		Namespace:    "test-namespace",
+		Namespace: "test-namespace",
 		Api: ApiConfig{
 			Url:      "http://localhost:8080",
 			Username: "api-user",
@@ -77,10 +76,6 @@ func TestValidateConfig_InvalidConfigs(t *testing.T) {
 		name   string
 		mutate func(*ControllerConfig)
 	}{
-		{
-			name:   "empty controller id",
-			mutate: func(c *ControllerConfig) { c.ControllerId = "" },
-		},
 		{
 			name:   "empty namespace",
 			mutate: func(c *ControllerConfig) { c.Namespace = "" },

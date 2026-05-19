@@ -1,3 +1,13 @@
+.gradle
+build/
+out/
+.DS_Store
+.settings
+.project
+.classpath
+bin/
+
+
 # IDE
 .idea/
 

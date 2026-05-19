@@ -1,0 +1,17 @@
+logging:
+  pattern.console: "%yellow(%d{dd-MM-yyyy HH:mm:ss.SSS}) %magenta([%15.15t]) %highlight(%-5level) ${PID:- } %boldCyan(%21(%X{requestId})) %-40.40logger{39} : %msg%n${LOG_EXCEPTION_CONVERSION_WORD:%ex{15}}"
+  level:
+    ROOT: INFO
+    io.meshcloud: INFO
+
+spring:
+  main:
+    web-application-type: none
+
+blockrunner:
+  api:
+    url: "http://localhost:8080"
+  uuid: "05cfa85f-2818-4bdd-b193-620e0187d7de"
+  auth:
+    username: bb-api
+    password: guest

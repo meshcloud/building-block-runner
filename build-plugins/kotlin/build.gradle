@@ -1,0 +1,15 @@
+plugins {
+  id('groovy-gradle-plugin')
+}
+
+dependencies {
+  implementation(platform('io.meshcloud.meshstack.platform:plugins-platform'))
+  implementation(project(':jvm'))
+
+  implementation('org.jetbrains.kotlin.jvm:org.jetbrains.kotlin.jvm.gradle.plugin')
+  implementation('org.jetbrains.kotlin.plugin.allopen:org.jetbrains.kotlin.plugin.allopen.gradle.plugin')
+  implementation('org.jetbrains.kotlin.plugin.spring:org.jetbrains.kotlin.plugin.spring.gradle.plugin')
+  implementation('org.jetbrains.kotlin.plugin.jpa:org.jetbrains.kotlin.plugin.jpa.gradle.plugin')
+
+  implementation('org.jlleitschuh.gradle.ktlint:org.jlleitschuh.gradle.ktlint.gradle.plugin')
+}

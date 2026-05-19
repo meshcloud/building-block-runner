@@ -1,0 +1,106 @@
+/**
+ The jvm plugin sets up a standard build for any jvm build.
+ Individual builds usually don't import this directly but should import a higher-level plugin
+ like kotlin-library or spring-boot-application.
+*/
+
+
+plugins {
+  id('java')
+}
+
+group = 'io.meshcloud.meshstack'
+
+// note that setting the java toolchain will also set the kotlin toolchain
+// see https://kotlinlang.org/docs/gradle-configure-project.html#gradle-java-toolchains-support
+java {
+  toolchain {
+    languageVersion.set(JavaLanguageVersion.of(21))
+  }
+}
+
+dependencies {
+  // note: platforms don't create a dependency, but instead control the versions of dependencies that builds using this
+  // plugin get when adding a dependency (without a specific version)
+  implementation(platform('io.meshcloud.meshstack.platform:jvm-platform'))
+
+  testImplementation(platform('io.meshcloud.meshstack.platform:jvm-test-platform'))
+  testImplementation('junit:junit') // for now we use junit 4, but we should consider moving to junit 5
+
+  // We use junit-vintage-engine to run JUnit 4 tests via JUnit 5.
+  // We do this because
+  // - Spectrum's nested test suites report only correctly with all nesting levels in JUnit 5, however Spectrum itself is built against JUnit 4 only
+  // - enables eventual migration to JUnit 5 native tests
+  // We need the junit-vintage-engine only at runtime for executing the tests
+  testRuntimeOnly("org.junit.vintage:junit-vintage-engine")
+  testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+// Use of these libraries is globally forbidden in our codebase because we want to standardize on a common set of
+// testing libraries that is familiar to all developers. See https://www.notion.so/meshcloud/Backend-Unit-Testing-Improvement-8b3b71939cbe4720ade3d28efdd77f13
+//
+// We therefore explicitly blacklist these dependencies via gradle, because spring and other libraries may bring them
+// in transitively.
+//
+// Excluding these libs via gradle is better than just relying on archUnit alone, as we don't have full coverage of
+// archUnit for all our libraries.
+// Someday gradle may allow us to surface this error better, see https://github.com/gradle/gradle/issues/24134
+configurations.configureEach {
+  exclude group: 'org.jetbrains.kotlin', module: 'kotlin-test' // use plain junit or assertj instead
+  exclude group: 'org.mockito' // use mockk instead
+  exclude group: 'com.nhaarman', module: 'mockitokotlin2' // use mockk instead
+}
+
+tasks.withType(Test) {
+  // Disable Class Data Sharing (CDS) to avoid "Sharing is only supported for boot loader classes" warnings
+  // when Gradle modifies the bootstrap classpath. CDS provides minimal benefit for test JVMs.
+  jvmArgs '-Xshare:off'
+  
+  // Set file encoding to UTF-8 for all test JVMs to ensure:
+  // 1. Consistent character encoding across different environments (avoids caching problems)
+  // 2. Proper formatting of non-ASCII characters in tests (e.g., Cypress/E2E tests)
+  // Note: This is separate from org.gradle.jvmargs which only affects the Gradle daemon
+  systemProperty 'file.encoding', 'UTF-8'
+
+  testLogging {
+    exceptionFormat = "full"    // short does not even render the exception message, so we need full
+    showStackTraces = true      // needs to be true, otherwise we won't see where the test failed, only the exception message
+    showStandardStreams = false // change to true for debugging via gradle, through running the test via IDEA will show stdout in the Test Results window just fine regardless of this setting
+
+    // We don't print passed tests because with those it becomes hard to quickly find the failed ones in CI logs.
+    // The downside of this is that it becomes hard to see test progress and debug test ordering issues.
+    // However, these are much less common concerns than quickly finding the failed tests in CI logs, so we optimize for this.
+    events "skipped", "failed"
+  }
+
+  reports.html.required = false
+  reports.junitXml.required = false
+
+  // Ensure each test task has its own binary results directory to avoid overlapping outputs
+  // which prevents Gradle from caching test results. Use the task name to create unique paths.
+  // This is important because in our builds we often have multiple test tasks (test, acceptanceTest, docsTest) etc.
+  // per project.
+  // See: https://docs.gradle.org/current/userguide/incremental_build.html#sec:disable_caching_for_task
+  binaryResultsDirectory = project.layout.buildDirectory.dir("test-results/${name}/binary")
+
+  useJUnitPlatform() {
+    // important: do not restrict the includedEngines, e.g. archunit comes with its own engine
+  }
+
+  /**
+   * because we skip outputting PASSED tests, we need to provide at least some feedback
+   * how many tests were running in total
+   *
+   * print a summary of the test results after the test suite has run
+   * inspired by https://medium.com/@wasyl/pretty-tests-summary-in-gradle-744804dd676c
+   */
+  afterSuite { desc, result ->
+    if (!desc.parent) {
+      def duration = (result.endTime - result.startTime) / 1000
+      def output = "Results: ${result.resultType} (${result.testCount} tests, ${result.successfulTestCount} successes, ${result.failedTestCount} failures, ${result.skippedTestCount} skipped) in ${duration} seconds"
+      def startItem = '|  ', endItem = '  |'
+      def repeatLength = startItem.length() + output.length() + endItem.length()
+      println('\n' + ('-' * repeatLength) + '\n' + startItem + output + endItem + '\n' + ('-' * repeatLength))
+    }
+  }
+}

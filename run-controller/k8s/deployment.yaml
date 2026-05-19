@@ -20,6 +20,3 @@ spec:
         - name: run-controller
           image: ghcr.io/meshcloud/run-controller:main
           imagePullPolicy: IfNotPresent
-          args:
-            - -config
-            - /app/runner-config.yml

@@ -2,7 +2,6 @@ package tfrun
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"io/fs"
 	"log"
@@ -51,64 +50,36 @@ func (c RunApiConfig) NewAuthProvider() meshapi.AuthProvider {
 }
 
 const (
-	configFilename = "runner-config.yml"
+	defaultConfigFile     = "runner-config.yml"
+	defaultPrivateKeyFile = "/app/runner-private.pem"
 
-	// privateKeyFile is the hardcoded path where the private key file is expected to be mounted
-	// in the Docker container (e.g. as a Kubernetes secret volume mount).
-	privateKeyFile = "/app/private.key"
-
-	FLAG_CONFIG = "config"
-
-	FLAG_TFTIMEOUT        = "timeoutMins"
-	FLAG_WSTIMEOUT        = "wsTimeoutMins"
-	FLAG_INITTIMEOUT      = "initTimeoutMins"
-	FLAG_INSTALLDIR       = "tfInstallDir"
-	FLAG_WORKDIR          = "workingDir"
-	FLAG_COORDINATOR_URL  = "apiUrl"
-	FLAG_COORDINATOR_USER = "apiUser"
-	FLAG_COORDINATOR_PASS = "apiPassword"
-
-	FLAG_COORDINATOR_CLIENT_ID     = "apiClientId"
-	FLAG_COORDINATOR_CLIENT_SECRET = "apiClientSecret"
-
-	FLAG_INSECURE_HOST_KEYS = "insecureHostKeys"
-	FLAG_RUNNER_UUID        = "runnerUuid"
-)
-
-var (
-	configFile      = flag.String(FLAG_CONFIG, configFilename, "path to the YAML configuration file")
-	timeoutMins     = flag.Int(FLAG_TFTIMEOUT, 60, "Terraform command timeout in minutes")
-	wsTimeoutMins   = flag.Int(FLAG_WSTIMEOUT, 5, "Terraform workspace operations timeout in minutes")
-	initTimeoutMins = flag.Int(FLAG_INITTIMEOUT, 3, "Terraform init command timeout in minutes")
-
-	tfInstallDir = flag.String(FLAG_INSTALLDIR, "/tmp/runner/tfbin", "Terraform binaries install directory")
-	tfWorkingDir = flag.String(FLAG_WORKDIR, "/tmp/runner/wd", "Parent directory for all workers")
-	apiUrl       = flag.String(FLAG_COORDINATOR_URL, "http://localhost:8080", "Block coordinator URL")
-	apiUser      = flag.String(FLAG_COORDINATOR_USER, "", "Basic Authentication user to authenticate towards Block Coordinator API")
-	apiPassword  = flag.String(FLAG_COORDINATOR_PASS, "", "Basic Authentication password to authenticate towards Block Coordinator API")
-
-	apiClientId     = flag.String(FLAG_COORDINATOR_CLIENT_ID, "", "API key client ID to authenticate towards Block Coordinator API")
-	apiClientSecret = flag.String(FLAG_COORDINATOR_CLIENT_SECRET, "", "API key client secret to authenticate towards Block Coordinator API")
-
-	insecureHostKeys = flag.Bool(FLAG_INSECURE_HOST_KEYS, false, "If set to true, known host key validation is off.")
-	runnerUuid       = flag.String(FLAG_RUNNER_UUID, "", "UUID of the building block runner to filter runs for")
+	envConfigFile       = "RUNNER_CONFIG_FILE"
+	envRunnerUUID       = "RUNNER_UUID"
+	envAPIURL           = "RUNNER_API_URL"
+	envAuthUsername     = "RUNNER_API_USERNAME"
+	envAuthPassword     = "RUNNER_API_PASSWORD"
+	envAuthClientID     = "RUNNER_API_CLIENT_ID"
+	envAuthClientSecret = "RUNNER_API_CLIENT_SECRET"
+	envPrivateKeyFile   = "RUNNER_PRIVATE_KEY_FILE"
+	envExecutionMode    = "EXECUTION_MODE"
+	envRunJSONFilePath  = "RUN_JSON_FILE_PATH"
 )
 
 func ReadConfig(logger *log.Logger) error {
-	// Parse flags first so --config can override the default path.
-	flag.Parse()
+	// read configFile path from env var or use default
+	configPath := os.Getenv(envConfigFile)
+	if configPath == "" {
+		configPath = defaultConfigFile
+	}
 
 	// read in and unmarshal config file (if present)
-	if fileData, err := os.ReadFile(*configFile); errors.Is(err, fs.ErrNotExist) {
-		logger.Printf("config file %s does not exist, will use defaults and environment", *configFile)
+	if fileData, err := os.ReadFile(configPath); errors.Is(err, fs.ErrNotExist) {
+		logger.Printf("config file %s does not exist, will use defaults and environment", configPath)
 	} else if err != nil {
 		return err
 	} else if err := yaml.Unmarshal(fileData, &AppConfig); err != nil {
 		return err
 	}
-
-	// parse program args into config struct as fallback
-	applyFlags()
 
 	// apply environment variables (highest precedence)
 	applyEnvVars(logger)
@@ -143,108 +114,45 @@ func ReadConfig(logger *log.Logger) error {
 	return nil
 }
 
-// We apply flags with precendece over file config, but only of the flag was actively set.
-// flags' default values are only applied, if the config value would be null otherwise.
-func applyFlags() {
-	isFlagSet := func(flagName string) (isSet bool) {
-		flag.Visit(func(flag *flag.Flag) {
-			if flag.Name == flagName {
-				isSet = true
-			}
-		})
-		return
-	}
-
-	if isFlagSet(FLAG_TFTIMEOUT) || AppConfig.TfCommandTimeoutMins == 0 {
-		AppConfig.TfCommandTimeoutMins = *timeoutMins
-	}
-
-	if isFlagSet(FLAG_WSTIMEOUT) || AppConfig.WsTimeoutMins == 0 {
-		AppConfig.WsTimeoutMins = *wsTimeoutMins
-	}
-
-	if isFlagSet(FLAG_INITTIMEOUT) || AppConfig.InitTimeoutMins == 0 {
-		AppConfig.InitTimeoutMins = *initTimeoutMins
-	}
-
-	if isFlagSet(FLAG_INSTALLDIR) || AppConfig.TfInstallDir == "" {
-		AppConfig.TfInstallDir = *tfInstallDir
-	}
-
-	if isFlagSet(FLAG_WORKDIR) || AppConfig.TfParentWorkingDir == "" {
-		AppConfig.TfParentWorkingDir = *tfWorkingDir
-	}
-
-	if isFlagSet(FLAG_COORDINATOR_URL) || AppConfig.RunApiBackend.Url == "" {
-		AppConfig.RunApiBackend.Url = *apiUrl
-	}
-
-	if isFlagSet(FLAG_COORDINATOR_USER) || AppConfig.RunApiBackend.User == "" {
-		AppConfig.RunApiBackend.User = *apiUser
-	}
-
-	if isFlagSet(FLAG_COORDINATOR_PASS) || AppConfig.RunApiBackend.Password == "" {
-		AppConfig.RunApiBackend.Password = *apiPassword
-	}
-
-	if isFlagSet(FLAG_COORDINATOR_CLIENT_ID) || AppConfig.RunApiBackend.ClientId == "" {
-		AppConfig.RunApiBackend.ClientId = *apiClientId
-	}
-
-	if isFlagSet(FLAG_COORDINATOR_CLIENT_SECRET) || AppConfig.RunApiBackend.ClientSecret == "" {
-		AppConfig.RunApiBackend.ClientSecret = *apiClientSecret
-	}
-
-	if isFlagSet(FLAG_INSECURE_HOST_KEYS) {
-		AppConfig.SkipHostKeyValidation = *insecureHostKeys
-	}
-
-	if isFlagSet(FLAG_RUNNER_UUID) || AppConfig.RunnerUuid == "" {
-		AppConfig.RunnerUuid = *runnerUuid
-	}
-
-	// Apply default private key file path if not set via YAML
-	if AppConfig.PrivateKeyFile == "" {
-		AppConfig.PrivateKeyFile = privateKeyFile
-	}
-}
-
-// applyEnvVars applies environment variables with RUNNER_ prefix
-// Environment variables take precedence over all other configuration sources
+// applyEnvVars applies environment variables with RUNNER_ prefix and sets defaults for unset values.
+// Environment variables take precedence over config file values.
 func applyEnvVars(logger *log.Logger) {
-	if envUuid := os.Getenv("RUNNER_UUID"); envUuid != "" {
-		logger.Printf("Using RUNNER_UUID from environment: %s\n", envUuid)
+	if envUuid := os.Getenv(envRunnerUUID); envUuid != "" {
+		logger.Printf("Using %s from environment: %s\n", envRunnerUUID, envUuid)
 		AppConfig.RunnerUuid = envUuid
 	}
 
-	if envApiUrl := os.Getenv("RUNNER_API_URL"); envApiUrl != "" {
-		logger.Printf("Using RUNNER_API_URL from environment\n")
+	if envApiUrl := os.Getenv(envAPIURL); envApiUrl != "" {
+		logger.Printf("Using %s from environment\n", envAPIURL)
 		AppConfig.RunApiBackend.Url = envApiUrl
 	}
 
-	if envUsername := os.Getenv("RUNNER_API_USERNAME"); envUsername != "" {
-		logger.Printf("Using RUNNER_API_USERNAME from environment\n")
+	if envUsername := os.Getenv(envAuthUsername); envUsername != "" {
+		logger.Printf("Using %s from environment\n", envAuthUsername)
 		AppConfig.RunApiBackend.User = envUsername
 	}
 
-	if envPassword := os.Getenv("RUNNER_API_PASSWORD"); envPassword != "" {
-		logger.Printf("Using RUNNER_API_PASSWORD from environment\n")
+	if envPassword := os.Getenv(envAuthPassword); envPassword != "" {
+		logger.Printf("Using %s from environment\n", envAuthPassword)
 		AppConfig.RunApiBackend.Password = envPassword
 	}
 
-	if envClientId := os.Getenv("RUNNER_API_CLIENT_ID"); envClientId != "" {
-		logger.Printf("Using RUNNER_API_CLIENT_ID from environment\n")
+	if envClientId := os.Getenv(envAuthClientID); envClientId != "" {
+		logger.Printf("Using %s from environment\n", envAuthClientID)
 		AppConfig.RunApiBackend.ClientId = envClientId
 	}
 
-	if envClientSecret := os.Getenv("RUNNER_API_CLIENT_SECRET"); envClientSecret != "" {
-		logger.Printf("Using RUNNER_API_CLIENT_SECRET from environment\n")
+	if envClientSecret := os.Getenv(envAuthClientSecret); envClientSecret != "" {
+		logger.Printf("Using %s from environment\n", envAuthClientSecret)
 		AppConfig.RunApiBackend.ClientSecret = envClientSecret
 	}
 
-	if envPrivateKeyFile := os.Getenv("RUNNER_PRIVATE_KEY_FILE"); envPrivateKeyFile != "" {
-		logger.Printf("Using RUNNER_PRIVATE_KEY_FILE from environment\n")
+	if envPrivateKeyFile := os.Getenv(envPrivateKeyFile); envPrivateKeyFile != "" {
+		logger.Printf("Using %s from environment\n", envPrivateKeyFile)
 		AppConfig.PrivateKeyFile = envPrivateKeyFile
+	} else if AppConfig.PrivateKeyFile == "" {
+		// Use default private key file path if not configured via config file or env var
+		AppConfig.PrivateKeyFile = defaultPrivateKeyFile
 	}
 }
 
@@ -277,8 +185,8 @@ func validateAuthConfig(config TfRunnerConfig) error {
 	}
 
 	// Check if we're in single-run mode
-	executionMode := os.Getenv("EXECUTION_MODE")
-	runJsonFilePath := os.Getenv("RUN_JSON_FILE_PATH")
+	executionMode := os.Getenv(envExecutionMode)
+	runJsonFilePath := os.Getenv(envRunJSONFilePath)
 	isSingleRunMode := executionMode == "single-run"
 
 	// In single-run mode, RUN_JSON_FILE_PATH is required
@@ -300,7 +208,7 @@ func validateAuthConfig(config TfRunnerConfig) error {
 // validateRunnerUuid ensures that the runner UUID is configured and not empty
 func validateRunnerUuid(config TfRunnerConfig) error {
 	if config.RunnerUuid == "" {
-		return fmt.Errorf("runnerUuid is required and must not be empty. Set it via configuration file or --runnerUuid flag")
+		return fmt.Errorf("runnerUuid is required and must not be empty. Set it via RUNNER_UUID environment variable or runner-config.yml")
 	}
 	return nil
 }

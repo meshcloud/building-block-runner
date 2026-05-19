@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -122,36 +121,28 @@ type ResourceSpec struct {
 }
 
 const (
-	defaultConfigFilename = "runner-config.yml"
+	defaultConfigFile = "runner-config.yml"
 
-	FLAG_CONFIG_FILE              = "config"
-	FLAG_CONTROLLER_CONTROLLER_ID = "controller.controllerId"
-	FLAG_CONTROLLER_NAMESPACE     = "controller.kubernetes.namespace"
-	FLAG_API_URL                  = "api.url"
-)
-
-var (
-	configFile = flag.String(FLAG_CONFIG_FILE, defaultConfigFilename, "path to the YAML configuration file")
-
-	controllerId = flag.String(FLAG_CONTROLLER_CONTROLLER_ID, "run-controller-1", "controller id")
-
-	namespace = flag.String(FLAG_CONTROLLER_NAMESPACE, "", "kubernetes namespace (required)")
-
-	apiUrl = flag.String(FLAG_API_URL, "http://localhost:8080", "API URL")
+	envConfigFile   = "BLOCKRUNNER_CONFIG_FILE"
+	envControllerId = "BLOCKRUNNER_CONTROLLER_ID"
+	envNamespace    = "BLOCKRUNNER_NAMESPACE"
+	envApiURL       = "BLOCKRUNNER_API_URL"
 )
 
 func ReadConfig(logger *log.Logger) *ControllerConfig {
-	// Parse flags first so -config is available before reading the file
-	flag.Parse()
-
-	// Read configuration from file
-	config, err := ReadInYmlConfig(*configFile)
-	if err != nil {
-		logger.Fatalf("Failed to read config file %s: %v\n", *configFile, err)
+	configPath := os.Getenv(envConfigFile)
+	if configPath == "" {
+		configPath = defaultConfigFile
 	}
 
-	// Apply remaining flag overrides on top of file config
-	applyFlags(config)
+	// Read configuration from file
+	config, err := ReadInYmlConfig(configPath)
+	if err != nil {
+		logger.Fatalf("Failed to read config file %s: %v\n", configPath, err)
+	}
+
+	// Apply environment variable overrides on top of file config
+	applyEnvVars(config, logger)
 
 	// Validate configuration
 	if err := validateConfig(config); err != nil {
@@ -163,6 +154,25 @@ func ReadConfig(logger *log.Logger) *ControllerConfig {
 
 	AppConfig = config
 	return config
+}
+
+// applyEnvVars applies environment variables as overrides to file configuration.
+// Environment variables take precedence over values from the config file.
+func applyEnvVars(config *ControllerConfig, logger *log.Logger) {
+	if envControllerID := os.Getenv(envControllerId); envControllerID != "" {
+		logger.Printf("Using %s from environment\n", envControllerId)
+		config.ControllerId = envControllerID
+	}
+
+	if envNamespaceValue := os.Getenv(envNamespace); envNamespaceValue != "" {
+		logger.Printf("Using %s from environment\n", envNamespace)
+		config.Namespace = envNamespaceValue
+	}
+
+	if envApiURLValue := os.Getenv(envApiURL); envApiURLValue != "" {
+		logger.Printf("Using %s from environment\n", envApiURL)
+		config.Api.Url = envApiURLValue
+	}
 }
 
 // validateConfig ensures the configuration is valid and complete
@@ -291,32 +301,6 @@ func ReadInYmlConfig(file string) (*ControllerConfig, error) {
 	err = yaml.Unmarshal(fileData, config)
 
 	return config, err
-}
-
-// applyFlags applies command-line flags as overrides to file configuration
-// Flags take precedence over values from the config file
-func applyFlags(config *ControllerConfig) {
-	if isFlagSet(FLAG_CONTROLLER_CONTROLLER_ID) {
-		config.ControllerId = *controllerId
-	}
-
-	if isFlagSet(FLAG_API_URL) {
-		config.Api.Url = *apiUrl
-	}
-
-	if isFlagSet(FLAG_CONTROLLER_NAMESPACE) {
-		config.Namespace = *namespace
-	}
-}
-
-func isFlagSet(flagname string) bool {
-	isSet := false
-	flag.Visit(func(flag *flag.Flag) {
-		if flag.Name == flagname {
-			isSet = true
-		}
-	})
-	return isSet
 }
 
 // checkDuplicateRunnerUUIDs returns an error if any runner UUIDs are duplicated

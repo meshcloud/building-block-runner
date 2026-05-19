@@ -3,13 +3,15 @@ plugins {
 }
 
 group = "io.meshcloud.buildingblocks"
-description = "azure-devops-block-runner"
+description = "github-block-runner"
 
 dependencies {
-  implementation project(":buildingblocks:block-runner-core")
+  implementation project(":block-runner-core")
 
   implementation('org.springframework.boot:spring-boot-starter')
 
+  implementation('com.auth0:java-jwt:4.0.0')
+  implementation("org.bouncycastle:bcprov-jdk15on:1.70")
   implementation('com.fasterxml.jackson.module:jackson-module-kotlin')
   implementation('com.fasterxml.jackson.datatype:jackson-datatype-jsr310')
   implementation('com.fasterxml.jackson.dataformat:jackson-dataformat-yaml')

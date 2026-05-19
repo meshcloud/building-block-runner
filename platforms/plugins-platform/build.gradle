@@ -1,0 +1,39 @@
+/**
+ The plugins-platform is the single source of truth for all dependencies we use for building gradle plugins.
+ It is not supposed to be used for code that ships to production
+
+ TIP: to map gradle plugin ids to the right mvn id, search https://mvnrepository.com/ for the gradle plugin id
+*/
+
+plugins {
+  id('java-platform')
+}
+
+group = 'io.meshcloud.meshstack.platform'
+
+
+// allow the definition of dependencies to other platforms like the Spring Boot BOM
+javaPlatform.allowDependencies()
+
+// NOTE: When changing this, also change
+// - kotlin-bom version in platforms/jvm-platform/build.gradle
+// - kotlin plugin version in build-plugins/release-notes/build.gradle
+def kotlinVersion = '2.1.21'
+
+dependencies {
+  constraints {
+    // other gradle plugins that we combine into our "convention plugins"
+    api("org.jetbrains.kotlin.jvm:org.jetbrains.kotlin.jvm.gradle.plugin:$kotlinVersion")
+    api("org.jetbrains.kotlin.plugin.allopen:org.jetbrains.kotlin.plugin.allopen.gradle.plugin:$kotlinVersion")
+    api("org.jetbrains.kotlin.plugin.spring:org.jetbrains.kotlin.plugin.spring.gradle.plugin:$kotlinVersion")
+    api("org.jetbrains.kotlin.plugin.jpa:org.jetbrains.kotlin.plugin.jpa.gradle.plugin:$kotlinVersion")
+
+    api('org.springframework.boot:org.springframework.boot.gradle.plugin:3.5.13')
+
+    api('com.github.jk1.dependency-license-report:com.github.jk1.dependency-license-report.gradle.plugin:2.8')
+
+    api('com.epages.restdocs-api-spec:com.epages.restdocs-api-spec.gradle.plugin:0.19.4')
+
+    api('org.jlleitschuh.gradle.ktlint:org.jlleitschuh.gradle.ktlint.gradle.plugin:14.0.1')
+  }
+}

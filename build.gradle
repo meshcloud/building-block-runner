@@ -1,0 +1,13 @@
+// We have to import the kotlin plugin here so that gradle uses the version specified in
+// platforms/plugins-platform/build.gradle. We don't *apply* it; subprojects do.
+plugins {
+  id 'io.meshcloud.meshstack.kotlin' apply false
+}
+
+// Convenience task to resolve dependencies for the shippable spring-boot apps.
+tasks.register('resolveShippable') {
+  dependsOn(":buildingblocks:manual-block-runner:dependencies")
+  dependsOn(":buildingblocks:github-block-runner:dependencies")
+  dependsOn(":buildingblocks:gitlab-block-runner:dependencies")
+  dependsOn(":buildingblocks:azure-devops-block-runner:dependencies")
+}

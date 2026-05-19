@@ -1,0 +1,9 @@
+plugins {
+  id('groovy-gradle-plugin')
+}
+
+dependencies {
+  implementation(platform('io.meshcloud.meshstack.platform:plugins-platform'))
+
+  implementation(project(':kotlin'))
+}

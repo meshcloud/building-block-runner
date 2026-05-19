@@ -1,0 +1,20 @@
+logging:
+  pattern.console: "%yellow(%d{dd-MM-yyyy HH:mm:ss.SSS}) %magenta([%15.15t]) %highlight(%-5level) ${PID:- } %boldCyan(%21(%X{requestId})) %-40.40logger{39} : %msg%n${LOG_EXCEPTION_CONVERSION_WORD:%ex{15}}"
+  level:
+    ROOT: INFO
+    io.meshcloud: INFO
+
+spring:
+  main:
+    web-application-type: none
+
+blockrunner:
+  uuid: 46b7c17a-61f0-4062-9601-5785e60ce11f
+  auth:
+    username: bb-api
+    password: guest
+  # This will enable a 20s wait time when blocks are executed and its state is set randomly (50:50) between
+  # success and fail. It can be handy for easy local development.
+  debugMode: false
+  api:
+    url: http://localhost:8080

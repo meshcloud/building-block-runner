@@ -1,0 +1,47 @@
+/**
+ The jvm-test-platform is the single source of truth for all dependencies we use for tests and do not ship to production.
+
+ Individual gradle builds should not reference additional dependencies directly with a version number,
+ but rather define a "version-less" dependency that will be resolved with help of this platform.
+ This ensures we use consistent versions across all our libraries and can enforce updates in a single place.
+*/
+
+plugins {
+  id('java-platform')
+}
+
+group = 'io.meshcloud.meshstack.platform'
+
+// allow the definition of dependencies to other platforms like the JUnit 5 BOM
+javaPlatform.allowDependencies()
+
+dependencies {
+  constraints {
+    api('junit:junit:4.13.2')
+    api('io.mockk:mockk:1.13.10')
+    api('com.ninja-squad:springmockk:4.0.2') // spring mockk support, ie via MockkBean, this has some usefulness
+
+    // we use only junit5 for running archunit, since the junit-vintage-engine does not seem
+    // to work with archunit properly in some cases and since we use junit5 engine anyway, this makes more sense
+    api('com.tngtech.archunit:archunit-junit5:1.4.0')
+
+    api('net.ravendb:ravendb-test-driver:5.4.3')
+
+    // assertJ is the default assertion library for our java tests, do not use hamcrest or anything else but plain junit
+    api('org.assertj:assertj-core:3.27.3')
+
+    // acceptance tests
+    api('org.wiremock:wiremock-jetty12:3.12.1')
+    api('com.greghaskins:spectrum:1.2.0')
+
+    // used for docs tests, maybe that should be a separate platform?
+    api('com.epages:restdocs-api-spec-mockmvc:0.19.4')
+
+    // needed for testing keycloak scriptmappers
+    api('org.openjdk.nashorn:nashorn-core:15.6')
+  }
+
+  // some tests uses junit jupiter, this potentially conflicts with junit4 and we should consider fixing this
+  // we need to decide whether we want to use jupiter or junit 4 going forward
+  api(platform('org.junit:junit-bom:5.10.5'))
+}

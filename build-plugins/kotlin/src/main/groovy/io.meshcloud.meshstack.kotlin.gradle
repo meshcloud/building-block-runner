@@ -1,0 +1,67 @@
+/**
+ The kotlin plugin sets up a standard build with kotlin
+ The dependencies specified here should only include the "must haves" that all our kotlin code depends on
+ */
+
+plugins {
+  id('io.meshcloud.meshstack.jvm')
+
+  id('org.jetbrains.kotlin.jvm')
+
+  // enable kotlin to automatically make classes with spring annotations like @Component open
+  // see https://kotlinlang.org/docs/all-open-plugin.html#spring-support
+  // note: it may be nice in the future to disentangle "pure Kotlin" build targets vs. those that need spring.
+  // atm. spring is sprinkled all over our code base, so putting this centrally here should be fine
+  id('org.jetbrains.kotlin.plugin.allopen')
+  id('org.jetbrains.kotlin.plugin.spring')
+  id('org.jetbrains.kotlin.plugin.jpa')
+  id('org.jlleitschuh.gradle.ktlint')
+}
+
+ktlint {
+  // NOTE: This is an intentional exception to our convention of keeping all versions in plugins-platform/build.gradle.
+  // The jlleitschuh ktlint plugin manages its own internal detached Gradle configuration for the ktlint CLI,
+  // so platform constraints have no effect on it. The only supported way to override the version is via this DSL.
+  // Keep this version in sync with pkgsUnstable.ktlint in flake.nix.
+  version = "1.8.0"
+}
+
+// this is a custom annotation for the https://kotlinlang.org/docs/all-open-plugin.html
+allOpen {
+  annotation("io.meshcloud.AllOpen")
+
+  // apparently our version of the JPA plugin above did not have this enabled
+  // not sure why this did not generate hibernate warnings earlier...
+  // annotation("jakarta.persistence.Entity")
+}
+
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
+
+tasks.withType(KotlinCompilationTask).all {
+  compilerOptions {
+    allWarningsAsErrors = true
+
+    jvmTarget = JvmTarget.JVM_21
+    languageVersion = KotlinVersion.KOTLIN_2_1
+
+
+    // NOTE for upgrading to kotlin 2.2:
+    // Kotlin 2.2. will change the default target of annotations
+    // "first-only" preserves the old behavior, which is what we want for now.
+    // After upgrading to kotlin 2.2 we should revisit this decision and see if we can upgrade to the new default behavio
+    // see https://blog.jetbrains.com/idea/2025/09/improved-annotation-handling-in-kotlin-2-2-less-boilerplate-fewer-surprises/
+    // freeCompilerArgs = ['-Xannotation-default-target=first-only']
+
+  }
+}
+
+
+dependencies {
+  implementation('org.jetbrains.kotlin:kotlin-stdlib-jdk8')
+  implementation('io.github.microutils:kotlin-logging') {
+    because 'this is our standard logging library across all of meshStack'
+  }
+}
+

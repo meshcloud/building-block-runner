@@ -1,0 +1,16 @@
+plugins {
+  id('io.meshcloud.meshstack.spring-boot-application')
+}
+
+group = "io.meshcloud.buildingblocks"
+description = "manual-block-runner"
+
+dependencies {
+  implementation project(":buildingblocks:block-runner-core")
+
+  implementation('org.springframework.boot:spring-boot-starter')
+}
+
+test {
+  useJUnitPlatform()
+}

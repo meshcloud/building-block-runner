@@ -1,0 +1,22 @@
+pluginManagement {
+  repositories {
+    gradlePluginPortal()
+    mavenCentral()
+  }
+}
+
+dependencyResolutionManagement {
+  repositories {
+    gradlePluginPortal()
+    mavenCentral()
+  }
+}
+
+includeBuild('../platforms')
+
+rootProject.name = 'build-plugins'
+
+include('jvm')
+include('kotlin')
+include('kotlin-library')
+include('spring-boot-application')

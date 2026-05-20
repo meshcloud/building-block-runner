@@ -32,17 +32,4 @@ open class MeshException(
     userMessage: String,
     cause: Throwable? = null
   ) : this(systemMessage = userMessage, userMessage = userMessage, cause = cause)
-
-  /**
-   * This builds a new exception but with a new user message. This is helpful
-   * if you want to rewrite the user facing message on a "higher layer" where more
-   * information is available then where the message is thrown.
-   */
-  fun copyWithUserMessage(userMessage: String): MeshException {
-    return MeshException(
-      userMessage = userMessage,
-      systemMessage = systemMessage,
-      cause = cause
-    )
-  }
 }

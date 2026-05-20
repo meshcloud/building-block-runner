@@ -7,8 +7,6 @@ description = "manual-block-runner"
 
 dependencies {
   implementation project(":block-runner-core")
-
-  implementation('org.springframework.boot:spring-boot-starter')
 }
 
 test {

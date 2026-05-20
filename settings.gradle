@@ -14,10 +14,6 @@ dependencyResolutionManagement {
 
 rootProject.name = 'runners-jvm'
 
-// Composite builds for our convention plugins and platforms
-includeBuild('build-plugins')
-includeBuild('platforms')
-
 /**
  * Building Blocks — JVM block runners.
  * Core libraries are now integrated into block-runner-core as internal packages.

@@ -1,5 +1,10 @@
 plugins {
-  id('io.meshcloud.meshstack.spring-boot-application')
+  id('org.jetbrains.kotlin.jvm')
+  id('org.jetbrains.kotlin.plugin.allopen')
+  id('org.jetbrains.kotlin.plugin.spring')
+  id('org.jetbrains.kotlin.plugin.jpa')
+  id('org.jlleitschuh.gradle.ktlint')
+  id('org.springframework.boot')
 }
 
 group = "io.meshcloud.buildingblocks"
@@ -15,8 +20,4 @@ dependencies {
   implementation('com.fasterxml.jackson.datatype:jackson-datatype-jdk8')
 
   testImplementation('org.wiremock:wiremock-jetty12')
-}
-
-test {
-  useJUnitPlatform()
 }

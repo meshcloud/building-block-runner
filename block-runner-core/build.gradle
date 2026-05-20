@@ -1,5 +1,10 @@
 plugins {
-  id('io.meshcloud.meshstack.kotlin-library')
+  id('org.jetbrains.kotlin.jvm')
+  id('org.jetbrains.kotlin.plugin.allopen')
+  id('org.jetbrains.kotlin.plugin.spring')
+  id('org.jetbrains.kotlin.plugin.jpa')
+  id('org.jlleitschuh.gradle.ktlint')
+  id('java-library')
 }
 
 group = "io.meshcloud.buildingblocks"

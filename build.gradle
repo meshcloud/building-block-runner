@@ -115,6 +115,7 @@ subprojects {
     }
 
     bootJar {
+      archiveFileName = "${project.name}.jar"
       launchScript()
       preserveFileTimestamps = false
       reproducibleFileOrder = true

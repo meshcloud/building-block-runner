@@ -15,9 +15,82 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-publish: # only publish on main
-    name: ${{ matrix.name }} - test & build
+  jvm-runners-ci:
+    name: ${{ matrix.name }} - check
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: block-runner-core
+            gradle-task: :block-runner-core:check
+          - name: manual-block-runner
+            gradle-task: :manual-block-runner:check
+          - name: github-block-runner
+            gradle-task: :github-block-runner:check
+          - name: gitlab-block-runner
+            gradle-task: :gitlab-block-runner:check
+          - name: azure-devops-block-runner
+            gradle-task: :azure-devops-block-runner:check
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Run module check
+        run: ./gradlew ${{ matrix.gradle-task }}
+
+  jvm-runners-image-pr:
+    name: ${{ matrix.image }} - image (PR)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    needs: jvm-runners-ci
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: manual-block-runner
+            module: manual-block-runner
+          - image: github-block-runner
+            module: github-block-runner
+          - image: gitlab-block-runner
+            module: gitlab-block-runner
+          - image: azure-devops-block-runner
+            module: azure-devops-block-runner
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
+      - name: Build JVM runner image
+        if: github.repository_owner == 'meshcloud'
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: .
+          file: containers/Dockerfile-jvm
+          platforms: linux/amd64
+          push: false
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:${{ github.sha }}
+          build-args: |
+            RUNNER_MODULE=${{ matrix.module }}
+
+  jvm-runners-image:
+    name: ${{ matrix.image }} - image
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: jvm-runners-ci
     permissions:
       contents: read
       packages: write
@@ -25,17 +98,58 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: run-controller
-            working-directory: run-controller
-            dockerfile: run-controller/Dockerfile
-            image: run-controller
-          - name: tf-block-runner
-            working-directory: tf-block-runner
-            dockerfile: tf-block-runner/Dockerfile
-            image: tf-block-runner
+          - image: manual-block-runner
+            module: manual-block-runner
+          - image: github-block-runner
+            module: github-block-runner
+          - image: gitlab-block-runner
+            module: gitlab-block-runner
+          - image: azure-devops-block-runner
+            module: azure-devops-block-runner
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
+      - name: Login to GHCR
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push JVM runner image
+        if: github.repository_owner == 'meshcloud'
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: .
+          file: containers/Dockerfile-jvm
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:main
+          build-args: |
+            RUNNER_MODULE=${{ matrix.module }}
+
+  go-runners-ci:
+    name: ${{ matrix.app }} - test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: run-controller
+            go-dir: run-controller
+          - app: tf-block-runner
+            go-dir: tf-block-runner
     defaults:
       run:
-        working-directory: ${{ matrix.working-directory }}
+        working-directory: ${{ matrix.go-dir }}
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -47,17 +161,72 @@ jobs:
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
-          go-version-file: ${{ matrix.working-directory }}/go.mod
+          go-version-file: ${{ matrix.go-dir }}/go.mod
           cache: false
 
       - name: Test
         run: go test ./...
 
+  go-runners-image-pr:
+    name: ${{ matrix.app }} - image (PR)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    needs: go-runners-ci
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: run-controller
+            dockerfile: run-controller/Dockerfile
+          - app: tf-block-runner
+            dockerfile: tf-block-runner/Dockerfile
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
+      - name: Build Docker image
+        if: github.repository_owner == 'meshcloud'
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: false
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:${{ github.sha }}
+          build-args: |
+            VERSION=dev
+            COMMIT_SHA=${{ github.sha }}
+
+  go-runners-image:
+    name: ${{ matrix.app }} - image
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: go-runners-ci
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: run-controller
+            dockerfile: run-controller/Dockerfile
+          - app: tf-block-runner
+            dockerfile: tf-block-runner/Dockerfile
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
       - name: Login to GHCR
-        if: github.ref == 'refs/heads/main'
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ${{ env.REGISTRY }}
@@ -71,9 +240,9 @@ jobs:
           context: .
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64
-          push: ${{ github.ref == 'refs/heads/main' }}
+          push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:main
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:main
           build-args: |
             VERSION=dev:${{ steps.commit.outputs.commit }}

@@ -8,14 +8,10 @@ description = "azure-devops-block-runner"
 dependencies {
   implementation project(":block-runner-core")
 
-  implementation('org.springframework.boot:spring-boot-starter')
-
   implementation('com.fasterxml.jackson.module:jackson-module-kotlin')
   implementation('com.fasterxml.jackson.datatype:jackson-datatype-jsr310')
-  implementation('com.fasterxml.jackson.dataformat:jackson-dataformat-yaml')
   implementation('com.fasterxml.jackson.datatype:jackson-datatype-jdk8')
 
-  testImplementation('org.assertj:assertj-core')
   testImplementation('org.wiremock:wiremock-jetty12')
 }
 

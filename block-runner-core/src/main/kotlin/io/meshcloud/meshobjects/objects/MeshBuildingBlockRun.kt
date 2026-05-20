@@ -1,28 +1,22 @@
 package io.meshcloud.meshobjects.objects
 
 import com.fasterxml.jackson.annotation.JsonIgnore
+import com.fasterxml.jackson.annotation.JsonPropertyOrder
 import com.fasterxml.jackson.annotation.JsonSubTypes
 import com.fasterxml.jackson.annotation.JsonTypeInfo
-import io.meshcloud.meshobjects.IMeshObject
 import io.meshcloud.meshobjects.MeshHalMediaTypes
-import io.meshcloud.meshobjects.MeshKind
-import io.meshcloud.meshobjects.MeshObject
 
-@MeshObject(
-  kind = MeshKind.MeshBuildingBlockRun,
-  mediaTypes = [
-    MeshHalMediaTypes.MESHBUILDINGBLOCKRUN_MEDIA_TYPE_V1,
-  ]
-)
+@JsonPropertyOrder("kind", "apiVersion", "metadata", "spec", "status")
 data class MeshBuildingBlockRun(
-  override val apiVersion: String = "v1",
-  override val kind: MeshKind = MeshKind.MeshBuildingBlockRun,
+  val apiVersion: String = "v1",
+  val kind: String = "meshBuildingBlockRun",
   val metadata: MeshBuildingBlockRunMetadata,
   val spec: MeshBuildingBlockRunSpec,
   val status: RunStatus,
-) : IMeshObject {
+) {
 
-  override val meaningfulIdentifier = "meshBuildingBlockRun[${metadata.uuid}]"
+  @get:JsonIgnore
+  val meaningfulIdentifier = "meshBuildingBlockRun[${metadata.uuid}]"
 
   data class MeshBuildingBlockRunMetadata(
     val uuid: String

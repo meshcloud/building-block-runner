@@ -30,10 +30,6 @@ dependencies {
 
     api('org.springframework.boot:org.springframework.boot.gradle.plugin:3.5.13')
 
-    api('com.github.jk1.dependency-license-report:com.github.jk1.dependency-license-report.gradle.plugin:2.8')
-
-    api('com.epages.restdocs-api-spec:com.epages.restdocs-api-spec.gradle.plugin:0.19.4')
-
     api('org.jlleitschuh.gradle.ktlint:org.jlleitschuh.gradle.ktlint.gradle.plugin:14.0.1')
   }
 }

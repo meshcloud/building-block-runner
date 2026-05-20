@@ -7,7 +7,7 @@ description = "block-runner-core"
 
 dependencies {
   // Core libraries are now internal packages in this module
-  implementation('org.springframework.boot:spring-boot-starter')
+  implementation('org.springframework.boot:spring-boot-autoconfigure')
   // Explicitly add spring-web for org.springframework.http.MediaType
   implementation('org.springframework:spring-web')
 
@@ -25,10 +25,8 @@ dependencies {
   api('com.squareup.okhttp3:logging-interceptor')
 
   testImplementation('io.mockk:mockk')
-  testImplementation('org.junit.jupiter:junit-jupiter-api')
   testImplementation('org.springframework.boot:spring-boot-starter-test')
   testImplementation('com.github.tomakehurst:wiremock-jre8-standalone:2.35.2')
-  testRuntimeOnly('org.junit.jupiter:junit-jupiter-engine')
 }
 
 test {

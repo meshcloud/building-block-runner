@@ -17,7 +17,23 @@ jobs:
       packages: write
     strategy:
       matrix:
-        app: [run-controller, tf-block-runner]
+        include:
+          - app: run-controller
+            dockerfile: run-controller/Dockerfile
+          - app: tf-block-runner
+            dockerfile: tf-block-runner/Dockerfile
+          - app: manual-block-runner
+            dockerfile: containers/Dockerfile-jvm
+            runner-module: manual-block-runner
+          - app: github-block-runner
+            dockerfile: containers/Dockerfile-jvm
+            runner-module: github-block-runner
+          - app: gitlab-block-runner
+            dockerfile: containers/Dockerfile-jvm
+            runner-module: gitlab-block-runner
+          - app: azure-devops-block-runner
+            dockerfile: containers/Dockerfile-jvm
+            runner-module: azure-devops-block-runner
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -43,7 +59,7 @@ jobs:
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           context: .
-          file: ${{ matrix.app }}/Dockerfile
+          file: ${{ matrix.dockerfile }}
           platforms: linux/amd64
           push: true
           tags: |
@@ -51,3 +67,4 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:latest
           build-args: |
             VERSION=${{ steps.version.outputs.version }}
+            RUNNER_MODULE=${{ matrix.runner-module }}

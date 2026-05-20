@@ -1,5 +1,9 @@
 .gradle
+
 build/
+!tf-block-runner/build/
+!run-controller/build/
+
 out/
 .DS_Store
 .settings

@@ -55,7 +55,7 @@ ENV NIX_CONFIG="experimental-features = nix-command flakes"
 COPY --from=builder --chown=meshcloud:meshcloud --chmod=755 /app/tf-block-runner/tfrunner /app/tfrunner
 COPY --from=builder --chown=meshcloud:meshcloud /app/tf-block-runner/runner-config.yml /app/.
 COPY --from=builder --chown=meshcloud:meshcloud --chmod=644 /app/tf-block-runner/resources/known_hosts /app/known_hosts
-COPY --chown=meshcloud:meshcloud --chmod=755 containers/entrypoint.sh /app/entrypoint.sh
+COPY --chown=meshcloud:meshcloud --chmod=755 containers/entrypoint-go.sh /app/entrypoint.sh
 
 ENV SSH_KNOWN_HOSTS=/app/known_hosts
 

@@ -78,7 +78,7 @@ jobs:
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           context: .
-          file: containers/Dockerfile-jvm
+          file: containers/jvm.Dockerfile
           platforms: linux/amd64
           push: false
           tags: |
@@ -125,7 +125,7 @@ jobs:
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           context: .
-          file: containers/Dockerfile-jvm
+          file: containers/jvm.Dockerfile
           platforms: linux/amd64
           push: true
           tags: |

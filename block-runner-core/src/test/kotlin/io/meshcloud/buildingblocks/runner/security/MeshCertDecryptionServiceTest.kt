@@ -1,22 +1,19 @@
 package io.meshcloud.buildingblocks.runner.security
 
 import io.meshcloud.buildingblocks.runner.meshobject.ProcessableBlockRun
-import io.meshcloud.crypto.base.MeshCertBasedCrypto
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockIOType
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
 import io.meshcloud.meshobjects.objects.MeshManualBuildingBlockImplementation
 import io.mockk.MockKAnnotations
 import io.mockk.every
 import io.mockk.impl.annotations.MockK
+import io.mockk.spyk
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 
 class MeshCertDecryptionServiceTest {
-
-  @MockK
-  private lateinit var meshCertBasedCrypto: MeshCertBasedCrypto
 
   @MockK
   private lateinit var cryptoConfig: DecryptionService.PrivateKeyProvider
@@ -82,7 +79,12 @@ MRzugUiwGacCjQ3qjkw+nzrITjYPJrM=
   fun setup() {
     MockKAnnotations.init(this, relaxUnitFun = true)
     every { cryptoConfig.privateKey } returns testPrivateKey
-    sut = MeshCertDecryptionService(meshCertBasedCrypto, cryptoConfig)
+    sut = spyk(MeshCertDecryptionService(cryptoConfig))
+  }
+
+  @Test
+  fun `decrypt returns empty string for empty input`() {
+    assertEquals("", sut.decrypt(""))
   }
 
   @Test
@@ -130,7 +132,7 @@ MRzugUiwGacCjQ3qjkw+nzrITjYPJrM=
       inputs = inputs
     )
 
-    every { meshCertBasedCrypto.applyDecryption(any(), encryptedValue) } returns decryptedValue
+    every { sut.decrypt(encryptedValue) } returns decryptedValue
 
     // When
     val result = sut.decryptBlockRunInputs(run)
@@ -138,7 +140,7 @@ MRzugUiwGacCjQ3qjkw+nzrITjYPJrM=
     // Then
     assertEquals(1, result.meshObject.spec.buildingBlock.spec.inputs.size)
     assertEquals(decryptedValue, result.meshObject.spec.buildingBlock.spec.inputs[0].value)
-    verify(exactly = 1) { meshCertBasedCrypto.applyDecryption(any(), encryptedValue) }
+    verify(exactly = 1) { sut.decrypt(encryptedValue) }
   }
 
   @Test
@@ -161,7 +163,7 @@ MRzugUiwGacCjQ3qjkw+nzrITjYPJrM=
       inputs = inputs
     )
 
-    every { meshCertBasedCrypto.applyDecryption(any(), encryptedValue) } returns decryptedValue
+    every { sut.decrypt(encryptedValue) } returns decryptedValue
 
     // When
     val result = sut.decryptBlockRunInputs(run)
@@ -169,7 +171,7 @@ MRzugUiwGacCjQ3qjkw+nzrITjYPJrM=
     // Then
     assertEquals(1, result.meshObject.spec.buildingBlock.spec.inputs.size)
     assertEquals(decryptedValue, result.meshObject.spec.buildingBlock.spec.inputs[0].value)
-    verify(exactly = 1) { meshCertBasedCrypto.applyDecryption(any(), encryptedValue) }
+    verify(exactly = 1) { sut.decrypt(encryptedValue) }
   }
 
   @Test
@@ -192,7 +194,7 @@ MRzugUiwGacCjQ3qjkw+nzrITjYPJrM=
       inputs = inputs
     )
 
-    every { meshCertBasedCrypto.applyDecryption(any(), encryptedValue) } returns decryptedValue
+    every { sut.decrypt(encryptedValue) } returns decryptedValue
 
     // When
     val result = sut.decryptBlockRunInputs(run)
@@ -200,7 +202,7 @@ MRzugUiwGacCjQ3qjkw+nzrITjYPJrM=
     // Then
     assertEquals(1, result.meshObject.spec.buildingBlock.spec.inputs.size)
     assertEquals(decryptedValue, result.meshObject.spec.buildingBlock.spec.inputs[0].value)
-    verify(exactly = 1) { meshCertBasedCrypto.applyDecryption(any(), encryptedValue) }
+    verify(exactly = 1) { sut.decrypt(encryptedValue) }
   }
 
   @Test
@@ -255,7 +257,7 @@ MRzugUiwGacCjQ3qjkw+nzrITjYPJrM=
       inputs = inputs
     )
 
-    every { meshCertBasedCrypto.applyDecryption(any(), encryptedValue) } returns decryptedValue
+    every { sut.decrypt(encryptedValue) } returns decryptedValue
 
     // When
     val result = sut.decryptBlockRunInputs(run)
@@ -264,7 +266,7 @@ MRzugUiwGacCjQ3qjkw+nzrITjYPJrM=
     assertEquals(2, result.meshObject.spec.buildingBlock.spec.inputs.size)
     assertEquals("admin", result.meshObject.spec.buildingBlock.spec.inputs[0].value)
     assertEquals(decryptedValue, result.meshObject.spec.buildingBlock.spec.inputs[1].value)
-    verify(exactly = 1) { meshCertBasedCrypto.applyDecryption(any(), encryptedValue) }
+    verify(exactly = 1) { sut.decrypt(encryptedValue) }
   }
 
   @Test

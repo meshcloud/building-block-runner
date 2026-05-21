@@ -33,7 +33,6 @@ private val log = KotlinLogging.logger { }
 @ComponentScan(
   basePackages = [
     "io.meshcloud.buildingblocks.runner",
-    "io.meshcloud.crypto.base",
   ]
 )
 class TestConfiguration {

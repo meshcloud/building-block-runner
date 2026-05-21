@@ -37,7 +37,7 @@ ENV CUSTOM_CA_CERTS_PATH=/usr/local/share/ca-certificates
 
 COPY --from=builder --chown=meshcloud:meshcloud --chmod=755 /app/run-controller/run-controller /app/run-controller
 COPY --from=builder --chown=meshcloud:meshcloud /app/run-controller/runner-config.yml /app/.
-COPY --chown=meshcloud:meshcloud --chmod=755 containers/entrypoint.sh /app/entrypoint.sh
+COPY --chown=meshcloud:meshcloud --chmod=755 containers/entrypoint-go.sh /app/entrypoint.sh
 
 WORKDIR /app
 USER 2000

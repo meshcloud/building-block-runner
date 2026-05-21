@@ -23,16 +23,16 @@ jobs:
           - app: tf-block-runner
             dockerfile: tf-block-runner/Dockerfile
           - app: manual-block-runner
-            dockerfile: containers/Dockerfile-jvm
+            dockerfile: containers/jvm.Dockerfile
             runner-module: manual-block-runner
           - app: github-block-runner
-            dockerfile: containers/Dockerfile-jvm
+            dockerfile: containers/jvm.Dockerfile
             runner-module: github-block-runner
           - app: gitlab-block-runner
-            dockerfile: containers/Dockerfile-jvm
+            dockerfile: containers/jvm.Dockerfile
             runner-module: gitlab-block-runner
           - app: azure-devops-block-runner
-            dockerfile: containers/Dockerfile-jvm
+            dockerfile: containers/jvm.Dockerfile
             runner-module: azure-devops-block-runner
 
     steps:

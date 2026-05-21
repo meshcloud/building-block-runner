@@ -1,35 +1,53 @@
 package io.meshcloud.buildingblocks.runner.security
 
 import io.meshcloud.buildingblocks.runner.meshobject.ProcessableBlockRun
-import io.meshcloud.crypto.KeyLoader
-import io.meshcloud.crypto.base.MeshCertBasedCrypto
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockIOType
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
 import mu.KotlinLogging
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
 import org.springframework.context.annotation.Profile
 import org.springframework.stereotype.Service
-import java.nio.charset.Charset
+import java.io.BufferedReader
+import java.io.InputStream
+import java.io.InputStreamReader
+import java.nio.ByteBuffer
+import java.security.KeyFactory
+import java.security.interfaces.RSAPrivateKey
+import java.security.spec.PKCS8EncodedKeySpec
+import java.util.Base64
+import javax.crypto.Cipher
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 
 private val log = KotlinLogging.logger { }
 
 /**
- * This bean only loads if you component scan the crypto to make it more convenient to not
- * always use decryption (e.g. the manual runner or kubernetes mode where run-controller handles decryption).
+ * Decryption service for non-kubernetes runners.
  */
 @Service
 @Profile("!kubernetes")
-@ConditionalOnBean(MeshCertBasedCrypto::class)
 class MeshCertDecryptionService(
-  private val meshCertBasedCrypto: MeshCertBasedCrypto,
   private val cryptoConfig: DecryptionService.PrivateKeyProvider,
 ) : DecryptionService {
 
+  private val asymmetricCipherTransformation = "RSA/ECB/OAEPWithSHA1AndMGF1Padding"
+
   override fun decrypt(secret: String): String {
-    val decryptionKey = KeyLoader.loadPrivateKey(
-      cryptoConfig.privateKey.byteInputStream(Charset.defaultCharset())
-    )
-    return meshCertBasedCrypto.applyDecryption(decryptionKey, secret)
+    if (secret.isEmpty()) {
+      return ""
+    }
+
+    val decryptionKey = loadPrivateKey(cryptoConfig.privateKey.byteInputStream(Charsets.UTF_8))
+    val encryptedBytes = Base64.getDecoder().decode(secret)
+    val encryptedRandomKeyLength = decryptionKey.modulus.bitLength() / 8
+
+    val encryptedRandomKey = encryptedBytes.copyOfRange(0, encryptedRandomKeyLength)
+    val symmetricEncryptionResult = encryptedBytes.copyOfRange(encryptedRandomKeyLength, encryptedBytes.size)
+
+    val asymmetricCipher = Cipher.getInstance(asymmetricCipherTransformation)
+    asymmetricCipher.init(Cipher.DECRYPT_MODE, decryptionKey)
+    val symmetricKey = asymmetricCipher.doFinal(encryptedRandomKey)
+
+    return decryptSymmetricPayload(ByteBuffer.wrap(symmetricEncryptionResult), symmetricKey)
   }
 
   /**
@@ -76,5 +94,47 @@ class MeshCertDecryptionService(
         )
       )
     )
+  }
+
+  private fun decryptSymmetricPayload(encryptedBytes: ByteBuffer, key: ByteArray): String {
+    val ivLength = encryptedBytes.int
+    if (ivLength < 12 || ivLength >= 16) {
+      throw IllegalArgumentException("invalid iv length")
+    }
+
+    val iv = ByteArray(ivLength)
+    encryptedBytes.get(iv)
+
+    val cipherText = ByteArray(encryptedBytes.remaining())
+    encryptedBytes.get(cipherText)
+
+    if (key.size != 16) {
+      throw IllegalArgumentException("Invalid Key! Key must be exactly 16 Bytes long (16 characters)!")
+    }
+
+    val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+    val secretKey = SecretKeySpec(key, "AES")
+    cipher.init(Cipher.DECRYPT_MODE, secretKey, GCMParameterSpec(128, iv))
+
+    return String(cipher.doFinal(cipherText))
+  }
+
+  private fun loadPrivateKey(inputStream: InputStream): RSAPrivateKey {
+    val bufferedReader = BufferedReader(InputStreamReader(inputStream))
+
+    val stringBuilder = StringBuilder(bufferedReader.readLine())
+    bufferedReader.lines().forEach {
+      stringBuilder.append("\n" + it)
+    }
+
+    val privateKeyContent = stringBuilder.toString()
+      .replace("-----BEGIN PRIVATE KEY-----", "")
+      .replace("-----END PRIVATE KEY-----", "")
+      .replace("\n", "")
+
+    val decoded = Base64.getMimeDecoder().decode(privateKeyContent)
+    val keyFactory = KeyFactory.getInstance("RSA")
+
+    return keyFactory.generatePrivate(PKCS8EncodedKeySpec(decoded)) as RSAPrivateKey
   }
 }

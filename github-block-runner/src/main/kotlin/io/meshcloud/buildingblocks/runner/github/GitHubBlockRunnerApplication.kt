@@ -10,7 +10,6 @@ import org.springframework.boot.runApplication
 ])
 @SpringBootApplication(scanBasePackages = [
   "io.meshcloud.buildingblocks.runner",
-  "io.meshcloud.crypto.base",
 ])
 class GitHubBlockRunnerApplication
 

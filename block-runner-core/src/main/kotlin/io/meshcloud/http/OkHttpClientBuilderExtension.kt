@@ -1,6 +1,5 @@
 package io.meshcloud.http
 
-import io.meshcloud.http.auth.BasicProxyAuthenticator
 import mu.KLogger
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -47,13 +46,5 @@ fun OkHttpClient.Builder.addLogging(log: KLogger): OkHttpClient.Builder = apply 
       level = HttpLoggingInterceptor.Level.BODY
     }
     addInterceptor(loggingInterceptor)
-  }
-}
-
-fun OkHttpClient.Builder.addProxyAuth(): OkHttpClient.Builder = apply {
-  System.getProperty("http.proxyUser")?.let { proxyUser ->
-    System.getProperty("http.proxyPassword")?.let { proxyPassword ->
-      proxyAuthenticator(BasicProxyAuthenticator(proxyUser, proxyPassword))
-    }
   }
 }

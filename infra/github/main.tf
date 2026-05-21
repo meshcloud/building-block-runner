@@ -35,8 +35,22 @@ variable "main_required_status_checks" {
   description = "Status check contexts required for merging into main"
   type        = list(string)
   default = [
-    "run-controller - test & build",
-    "tf-block-runner - test & build",
+    "block-runner-core - check",
+    "manual-block-runner - check",
+    "github-block-runner - check",
+    "gitlab-block-runner - check",
+    "azure-devops-block-runner - check",
+
+    "manual-block-runner - image (PR)",
+    "github-block-runner - image (PR)",
+    "gitlab-block-runner - image (PR)",
+    "azure-devops-block-runner - image (PR)",
+
+    "run-controller - test",
+    "tf-block-runner - test",
+
+    "run-controller - image (PR)",
+    "tf-block-runner - image (PR)",
   ]
 }
 

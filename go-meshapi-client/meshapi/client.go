@@ -19,28 +19,21 @@ const (
 var (
 	runnerName    = "unknown-runner"
 	runnerVersion = "dev"
-	runnerCommit  = "unknown"
 )
 
 // SetClientMetadata configures the runner identity headers sent on all requests.
-func SetClientMetadata(name, version, commit string) {
+// The version parameter should include commit information if available (e.g., "1.0.0-abc123").
+func SetClientMetadata(name, version string) {
 	if name != "" {
 		runnerName = name
 	}
 	if version != "" {
 		runnerVersion = version
 	}
-	if commit != "" {
-		runnerCommit = commit
-	}
 }
 
 func userAgent() string {
-	if runnerCommit == "" || runnerCommit == "unknown" {
-		return fmt.Sprintf("meshcloud-%s/%s", runnerName, runnerVersion)
-	}
-
-	return fmt.Sprintf("meshcloud-%s/%s (%s)", runnerName, runnerVersion, runnerCommit)
+	return fmt.Sprintf("meshcloud-%s/%s", runnerName, runnerVersion)
 }
 
 // StatusError is returned when the meshfed API responds with an unexpected HTTP status code.
@@ -200,5 +193,4 @@ func (c *Client) setHeaders(req *http.Request) {
 	req.Header.Set("User-Agent", userAgent())
 	req.Header.Set("X-Meshcloud-Runner-Name", runnerName)
 	req.Header.Set("X-Meshcloud-Runner-Version", runnerVersion)
-	req.Header.Set("X-Meshcloud-Runner-Commit", runnerCommit)
 }

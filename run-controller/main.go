@@ -18,8 +18,8 @@ import (
 
 func main() {
 	logger := log.New(os.Stdout, "[RUN CONTROLLER] ", log.LstdFlags)
-	meshapi.SetClientMetadata("run-controller", build.Version, build.Commit)
-	logger.Printf("Build metadata: version=%s commit=%s", build.Version, build.Commit)
+	meshapi.SetClientMetadata("run-controller", build.Version)
+	logger.Printf("Build metadata: version=%s", build.Version)
 
 	controller.ReadConfig(logger)
 

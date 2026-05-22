@@ -21,8 +21,8 @@ const (
 
 func main() {
 	logger := log.New(os.Stdout, "[TF RUNNER] ", log.LstdFlags)
-	meshapi.SetClientMetadata("tf-block-runner", build.Version, build.Commit)
-	logger.Printf("Build metadata: version=%s commit=%s", build.Version, build.Commit)
+	meshapi.SetClientMetadata("tf-block-runner", build.Version)
+	logger.Printf("Build metadata: version=%s", build.Version)
 
 	if err := tfrun.ReadConfig(logger); err != nil {
 		logger.Fatalf("cannot read config: %s", err.Error())

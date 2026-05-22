@@ -10,11 +10,13 @@ import com.fasterxml.jackson.datatype.jdk8.Jdk8Module
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
-import io.meshcloud.exception.MeshException
-import io.meshcloud.http.*
-import io.meshcloud.http.MediaTypes.MEDIA_TYPE_JSON
+import io.meshcloud.buildingblocks.runner.http.EMPTY_REQUEST_BODY
+import io.meshcloud.buildingblocks.runner.http.MeshHttpException
+import io.meshcloud.buildingblocks.runner.http.MediaTypes.MEDIA_TYPE_JSON
+import io.meshcloud.buildingblocks.runner.http.addLogging
+import io.meshcloud.buildingblocks.runner.MeshException
 import io.meshcloud.meshobjects.MeshHalMediaTypes.MESHBUILDINGBLOCKRUN_MEDIA_TYPE_V1
-import mu.KotlinLogging
+import io.github.oshai.kotlinlogging.KotlinLogging
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -165,12 +167,20 @@ class GithubClient(
       .addHeader("Authorization", "Bearer $appAuthToken")
       .build()
 
-    return client.execute<String>(request)
-      .letWithStatus(HttpStatus.CREATED) {
-        val installationAuthToken = mapper.readValue(it.body, InstallationToken::class.java)
-        validateInstallationToken(installationAuthToken)
-        it.handled(installationAuthToken.token)
-      }.getContent()
+    return client.newCall(request).execute().use { response ->
+      val body = response.body?.string() ?: ""
+      if (!response.isSuccessful) {
+        throw MeshHttpException(
+          userMessage = "Failed to obtain GitHub installation token",
+          statusCode = response.code,
+          requestUrl = request.url,
+          responseBody = body,
+        )
+      }
+      val installationAuthToken = mapper.readValue(body, InstallationToken::class.java)
+      validateInstallationToken(installationAuthToken)
+      installationAuthToken.token
+    }
   }
 
   private fun validateInstallationToken(installationAuthToken: InstallationToken) {
@@ -202,11 +212,18 @@ class GithubClient(
       .addHeader("Authorization", "Bearer $appAuthToken")
       .build()
 
-    return client.execute<String>(request)
-      .letWithStatus(HttpStatus.OK) {
-        val installation = mapper.readValue(it.body, AppInstallation::class.java)
-        it.handled(installation.installationId)
-      }.getContent()
+    return client.newCall(request).execute().use { response ->
+      val body = response.body?.string() ?: ""
+      if (!response.isSuccessful) {
+        throw MeshHttpException(
+          userMessage = "Failed to obtain GitHub installation ID",
+          statusCode = response.code,
+          requestUrl = request.url,
+          responseBody = body,
+        )
+      }
+      mapper.readValue(body, AppInstallation::class.java).installationId
+    }
   }
 
   fun triggerWorkflow(
@@ -221,25 +238,23 @@ class GithubClient(
     val payloadBody = mapper.writeValueAsString(payload)
     val request = buildTriggerRequest(url, payloadBody, installationAuthToken)
 
-    return client.execute<TriggerWorkflowResult>(request)
-      .letIfSuccess {
-        it.handled(TriggerWorkflowResult.Success)
-      }
-      .letWithStatus(HttpStatus.UNPROCESSABLE_ENTITY) {
-        val foundUnsupportedInputs = recognizedUnsupportedInputs.filter { inputName ->
-          isUnsupportedInputError(it.body, inputName)
-        }.toSet()
-
-        if (foundUnsupportedInputs.isNotEmpty()) {
-          it.handled(TriggerWorkflowResult.UnsupportedInput(foundUnsupportedInputs, it.body))
-        } else {
-          it.handled(TriggerWorkflowResult.Error(it.status.value, it.body))
+    return client.newCall(request).execute().use { response ->
+      val body = response.body?.string() ?: ""
+      when {
+        response.isSuccessful -> TriggerWorkflowResult.Success
+        response.code == 422 -> {
+          val foundUnsupportedInputs = recognizedUnsupportedInputs.filter { inputName ->
+            isUnsupportedInputError(body, inputName)
+          }.toSet()
+          if (foundUnsupportedInputs.isNotEmpty()) {
+            TriggerWorkflowResult.UnsupportedInput(foundUnsupportedInputs, body)
+          } else {
+            TriggerWorkflowResult.Error(response.code, body)
+          }
         }
+        else -> TriggerWorkflowResult.Error(response.code, body)
       }
-      .letIfError { error ->
-        error.handled(TriggerWorkflowResult.Error(error.status.value, error.body))
-      }
-      .getContent()
+    }
   }
 
   private fun isUnsupportedInputError(responseContent: String, inputName: String): Boolean {
@@ -281,11 +296,18 @@ class GithubClient(
       .addHeader("Authorization", "Bearer $installationAuthToken")
       .build()
 
-    return client.execute<List<WorkflowRun>>(request)
-      .letWithStatus(HttpStatus.OK) {
-        val response = mapper.readValue(it.body, WorkflowRunsResponse::class.java)
-        it.handled(response.workflowRuns)
-      }.getContent()
+    return client.newCall(request).execute().use { response ->
+      val body = response.body?.string() ?: ""
+      if (!response.isSuccessful) {
+        throw MeshHttpException(
+          userMessage = "Failed to list GitHub workflow runs",
+          statusCode = response.code,
+          requestUrl = request.url,
+          responseBody = body,
+        )
+      }
+      mapper.readValue(body, WorkflowRunsResponse::class.java).workflowRuns
+    }
   }
 
   /**
@@ -307,11 +329,18 @@ class GithubClient(
       .addHeader("Authorization", "Bearer $installationAuthToken")
       .build()
 
-    return client.execute<WorkflowRun>(request)
-      .letWithStatus(HttpStatus.OK) {
-        val workflowRun = mapper.readValue(it.body, WorkflowRun::class.java)
-        it.handled(workflowRun)
-      }.getContent()
+    return client.newCall(request).execute().use { response ->
+      val body = response.body?.string() ?: ""
+      if (!response.isSuccessful) {
+        throw MeshHttpException(
+          userMessage = "Failed to get GitHub workflow run $runId",
+          statusCode = response.code,
+          requestUrl = request.url,
+          responseBody = body,
+        )
+      }
+      mapper.readValue(body, WorkflowRun::class.java)
+    }
   }
 
   /**
@@ -333,10 +362,17 @@ class GithubClient(
       .addHeader("Authorization", "Bearer $installationAuthToken")
       .build()
 
-    return client.execute<List<WorkflowJob>>(request)
-      .letWithStatus(HttpStatus.OK) {
-        val response = mapper.readValue(it.body, WorkflowJobsResponse::class.java)
-        it.handled(response.jobs)
-      }.getContent()
+    return client.newCall(request).execute().use { response ->
+      val body = response.body?.string() ?: ""
+      if (!response.isSuccessful) {
+        throw MeshHttpException(
+          userMessage = "Failed to list GitHub workflow jobs for run $runId",
+          statusCode = response.code,
+          requestUrl = request.url,
+          responseBody = body,
+        )
+      }
+      mapper.readValue(body, WorkflowJobsResponse::class.java).jobs
+    }
   }
 }

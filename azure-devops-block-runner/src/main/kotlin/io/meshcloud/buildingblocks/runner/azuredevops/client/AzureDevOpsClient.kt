@@ -7,9 +7,10 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import io.meshcloud.buildingblocks.runner.meshobject.ProcessableBlockRun
-import io.meshcloud.http.*
-import io.meshcloud.http.MediaTypes.MEDIA_TYPE_JSON
-import mu.KotlinLogging
+import io.meshcloud.buildingblocks.runner.http.MediaTypes.MEDIA_TYPE_JSON
+import io.meshcloud.buildingblocks.runner.http.addLogging
+import io.meshcloud.buildingblocks.runner.http.MeshHttpException
+import io.github.oshai.kotlinlogging.KotlinLogging
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -72,16 +73,19 @@ class AzureDevOpsClient(
 
     val request = buildTriggerRequest(url, payloadBody)
 
-    return client.execute<PipelineRun>(request)
-      .letWithStatus(HttpStatus.OK) {
-        val pipelineRun = mapper.readValue(it.body, PipelineRun::class.java)
-        it.handled(pipelineRun)
-      }.getContent()
+    return client.newCall(request).execute().use { response ->
+      val body = response.body?.string() ?: ""
+      if (!response.isSuccessful) {
+        throw MeshHttpException(
+          userMessage = "Failed to trigger Azure DevOps pipeline",
+          statusCode = response.code,
+          requestUrl = request.url,
+          responseBody = body,
+        )
+      }
+      mapper.readValue(body, PipelineRun::class.java)
+    }
   }
-
-  /**
-   * Gets the status of a pipeline run
-   */
   fun getPipelineRun(runId: Long): PipelineRun {
     val url = "$azureDevOpsBaseUrl/$organization/$project/_apis/pipelines/$pipelineId/runs/$runId?api-version=7.1".toHttpUrl()
 
@@ -92,11 +96,18 @@ class AzureDevOpsClient(
       .addAuthHeader()
       .build()
 
-    return client.execute<PipelineRun>(request)
-      .letWithStatus(HttpStatus.OK) {
-        val pipelineRun = mapper.readValue(it.body, PipelineRun::class.java)
-        it.handled(pipelineRun)
-      }.getContent()
+    return client.newCall(request).execute().use { response ->
+      val body = response.body?.string() ?: ""
+      if (!response.isSuccessful) {
+        throw MeshHttpException(
+          userMessage = "Failed to get Azure DevOps pipeline run $runId",
+          statusCode = response.code,
+          requestUrl = request.url,
+          responseBody = body,
+        )
+      }
+      mapper.readValue(body, PipelineRun::class.java)
+    }
   }
 
   /**
@@ -112,11 +123,18 @@ class AzureDevOpsClient(
       .addAuthHeader()
       .build()
 
-    return client.execute<TimelineResponse>(request)
-      .letWithStatus(HttpStatus.OK) {
-        val response = mapper.readValue(it.body, TimelineResponse::class.java)
-        it.handled(response)
-      }.getContent().records
+    return client.newCall(request).execute().use { response ->
+      val body = response.body?.string() ?: ""
+      if (!response.isSuccessful) {
+        throw MeshHttpException(
+          userMessage = "Failed to get Azure DevOps pipeline timeline for run $runId",
+          statusCode = response.code,
+          requestUrl = request.url,
+          responseBody = body,
+        )
+      }
+      mapper.readValue(body, TimelineResponse::class.java).records
+    }
   }
 
   private fun Request.Builder.addAuthHeader(): Request.Builder {

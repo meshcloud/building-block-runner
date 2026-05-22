@@ -1,35 +1,28 @@
 plugins {
   id('org.jetbrains.kotlin.jvm')
   id('org.jetbrains.kotlin.plugin.spring')
-  id('org.jetbrains.kotlin.plugin.jpa')
-  id('org.jlleitschuh.gradle.ktlint')
   id('java-library')
 }
 
-group = "io.meshcloud.buildingblocks"
 description = "block-runner-core"
 
 dependencies {
   implementation('org.springframework.boot:spring-boot-autoconfigure')
   implementation('org.springframework:spring-web')
 
-  implementation('com.fasterxml.jackson.module:jackson-module-kotlin')
-  implementation('com.fasterxml.jackson.datatype:jackson-datatype-jsr310')
+  // Exposed as api so runner subprojects can use Jackson types directly without redeclaring
+  api('com.fasterxml.jackson.module:jackson-module-kotlin')
+  api('com.fasterxml.jackson.datatype:jackson-datatype-jsr310')
+  api('com.fasterxml.jackson.datatype:jackson-datatype-jdk8')
   implementation('com.fasterxml.jackson.dataformat:jackson-dataformat-yaml')
-  implementation('com.fasterxml.jackson.datatype:jackson-datatype-jdk8')
-  implementation('org.hashids:hashids')
-  implementation('io.github.microutils:kotlin-logging')
 
-  // Using 'api' to make these transitively available to runners that depend on this module
+  implementation('org.hashids:hashids')
+  api('io.github.oshai:kotlin-logging')
+
   api('com.squareup.okhttp3:okhttp')
   api('com.squareup.okhttp3:logging-interceptor')
 
   testImplementation('io.mockk:mockk')
   testImplementation('org.springframework.boot:spring-boot-starter-test')
-  testImplementation('com.github.tomakehurst:wiremock-jre8-standalone:2.35.2')
-}
-
-test {
-  useJUnitPlatform()
-  jvmArgs '--add-opens', 'java.base/java.io=ALL-UNNAMED'
+  testImplementation('org.wiremock:wiremock-jetty12')
 }

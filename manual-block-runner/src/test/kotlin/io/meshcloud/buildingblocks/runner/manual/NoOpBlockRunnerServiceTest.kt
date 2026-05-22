@@ -6,28 +6,28 @@ import io.meshcloud.buildingblocks.runner.runclient.BlockRunClientFetcher
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockIOType
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
 import io.meshcloud.meshobjects.objects.MeshManualBuildingBlockImplementation
-import io.mockk.MockKAnnotations
 import io.mockk.every
 import io.mockk.impl.annotations.MockK
+import io.mockk.junit5.MockKExtension
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
 
+@ExtendWith(MockKExtension::class)
 class NoOpBlockRunnerServiceTest {
 
-  @MockK
+  @MockK(relaxUnitFun = true)
   private lateinit var blockRunClientFetcher: BlockRunClientFetcher
 
-  @MockK
+  @MockK(relaxUnitFun = true)
   private lateinit var blockRunClient: BlockRunClient
 
   private lateinit var service: NoOpBlockRunnerService
 
   @BeforeEach
   fun setUp() {
-    MockKAnnotations.init(this, relaxUnitFun = true)
-
     service = NoOpBlockRunnerService(blockRunClientFetcher = blockRunClientFetcher)
   }
 

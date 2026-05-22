@@ -5,7 +5,7 @@ import io.meshcloud.buildingblocks.runner.github.GithubClient.WorkflowJobStatus
 import io.meshcloud.buildingblocks.runner.github.GithubClient.WorkflowRunStatus
 import io.meshcloud.buildingblocks.runner.meshobject.HalLink
 import io.meshcloud.buildingblocks.runner.meshobject.ProcessableBlockRun
-import io.meshcloud.exception.MeshException
+import io.meshcloud.buildingblocks.runner.MeshException
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockGithubImplementation
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Assertions

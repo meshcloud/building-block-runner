@@ -1,6 +1,6 @@
 package io.meshcloud.buildingblocks.runner.logging
 
-import mu.withLoggingContext
+import io.github.oshai.kotlinlogging.withLoggingContext
 import org.hashids.Hashids
 import java.time.LocalDateTime
 

@@ -2,20 +2,23 @@ package io.meshcloud.buildingblocks.runner.gitlab
 
 import io.meshcloud.buildingblocks.runner.UrlSanitizerService
 import io.mockk.every
-import io.mockk.mockk
+import io.mockk.impl.annotations.MockK
+import io.mockk.junit5.MockKExtension
 import io.mockk.verify
-import org.junit.Assert.*
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
 
+@ExtendWith(MockKExtension::class)
 class GitLabClientFactoryTest {
 
-  private lateinit var sut: GitLabClientFactory
+  @MockK
   private lateinit var urlSanitizer: UrlSanitizerService
 
-  @Before
+  private lateinit var sut: GitLabClientFactory
+
+  @BeforeEach
   fun setUp() {
-    urlSanitizer = mockk()
     sut = GitLabClientFactory(urlSanitizer)
   }
 

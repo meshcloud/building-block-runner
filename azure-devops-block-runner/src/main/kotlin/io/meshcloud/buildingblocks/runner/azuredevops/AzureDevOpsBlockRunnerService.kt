@@ -3,10 +3,10 @@ package io.meshcloud.buildingblocks.runner.azuredevops
 import io.meshcloud.buildingblocks.runner.BlockRunnerService
 import io.meshcloud.buildingblocks.runner.azuredevops.client.AzureDevOpsClientFactory
 import io.meshcloud.buildingblocks.runner.runclient.BlockRunClientFetcher
-import io.meshcloud.http.exception.MeshHttpException
+import io.meshcloud.buildingblocks.runner.http.MeshHttpException
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockAzureDevOpsImplementation
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
-import mu.KotlinLogging
+import io.github.oshai.kotlinlogging.KotlinLogging
 
 private val log = KotlinLogging.logger { }
 

@@ -4,7 +4,7 @@ import io.meshcloud.buildingblocks.runner.azuredevops.client.AzureDevOpsClient
 import io.meshcloud.buildingblocks.runner.azuredevops.client.PipelineRun
 import io.meshcloud.buildingblocks.runner.azuredevops.client.PipelineRunState
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
-import mu.KotlinLogging
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant

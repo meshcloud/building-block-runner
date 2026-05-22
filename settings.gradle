@@ -1,34 +1,8 @@
-pluginManagement {
-  repositories {
-    gradlePluginPortal()
-    mavenCentral()
-  }
-}
-
-dependencyResolutionManagement {
-  repositories {
-    gradlePluginPortal()
-    mavenCentral()
-  }
-}
-
 rootProject.name = 'runners-jvm'
 
-/**
- * Building Blocks — JVM block runners.
- * Core libraries are now integrated into block-runner-core as internal packages.
- */
-include ':block-runner-core'
-project(':block-runner-core').projectDir = "$rootDir/block-runner-core" as File
+include 'block-runner-core'
+include 'manual-block-runner'
+include 'github-block-runner'
+include 'gitlab-block-runner'
+include 'azure-devops-block-runner'
 
-include ':manual-block-runner'
-project(':manual-block-runner').projectDir = "$rootDir/manual-block-runner" as File
-
-include ':github-block-runner'
-project(':github-block-runner').projectDir = "$rootDir/github-block-runner" as File
-
-include ':gitlab-block-runner'
-project(':gitlab-block-runner').projectDir = "$rootDir/gitlab-block-runner" as File
-
-include ':azure-devops-block-runner'
-project(':azure-devops-block-runner').projectDir = "$rootDir/azure-devops-block-runner" as File

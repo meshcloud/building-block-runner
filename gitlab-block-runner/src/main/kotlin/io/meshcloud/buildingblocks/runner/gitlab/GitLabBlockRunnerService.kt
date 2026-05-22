@@ -4,10 +4,10 @@ import io.meshcloud.buildingblocks.runner.BlockRunnerService
 import io.meshcloud.buildingblocks.runner.runclient.BlockRunClient
 import io.meshcloud.buildingblocks.runner.runclient.BlockRunClientFetcher
 import io.meshcloud.buildingblocks.runner.security.DecryptionService
-import io.meshcloud.http.exception.MeshHttpException
+import io.meshcloud.buildingblocks.runner.http.MeshHttpException
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockGitlabImplementation
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
-import mu.KotlinLogging
+import io.github.oshai.kotlinlogging.KotlinLogging
 
 private val log = KotlinLogging.logger { }
 
@@ -80,7 +80,7 @@ class GitLabBlockRunnerService(
           id = STEP_ID,
           status = MeshBuildingBlockRun.ExecutionStatus.FAILED,
           userMessage = "Could not trigger the GitLab pipeline",
-          systemMessage = "GitLab responded with status: ${ex.response.status} and body: ${ex.getResponseBody()}"
+          systemMessage = "GitLab responded with status: ${ex.statusCode} and body: ${ex.getResponseBody()}"
         )
       ),
     )

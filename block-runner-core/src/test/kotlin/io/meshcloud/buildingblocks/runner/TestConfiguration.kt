@@ -2,7 +2,7 @@ package io.meshcloud.buildingblocks.runner
 
 import io.meshcloud.buildingblocks.runner.security.DecryptionService
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
-import mu.KotlinLogging
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan
 import org.springframework.context.annotation.ComponentScan

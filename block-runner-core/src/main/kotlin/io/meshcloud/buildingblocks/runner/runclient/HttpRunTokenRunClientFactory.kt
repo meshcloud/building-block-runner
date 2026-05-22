@@ -2,9 +2,9 @@ package io.meshcloud.buildingblocks.runner.runclient
 
 import io.meshcloud.buildingblocks.runner.BlockRunnerApiConfig
 import io.meshcloud.buildingblocks.runner.meshobject.ProcessableBlockRun
-import io.meshcloud.http.addLogging
-import io.meshcloud.http.auth.BearerAuthInterceptor
-import mu.KotlinLogging
+import io.meshcloud.buildingblocks.runner.http.addLogging
+import io.meshcloud.buildingblocks.runner.http.auth.BearerAuthInterceptor
+import io.github.oshai.kotlinlogging.KotlinLogging
 import okhttp3.OkHttpClient
 import org.springframework.stereotype.Component
 

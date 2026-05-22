@@ -3,15 +3,15 @@ package io.meshcloud.buildingblocks.runner.runclient
 import io.meshcloud.buildingblocks.runner.BlockRunnerApiConfig
 import io.meshcloud.buildingblocks.runner.meshobject.MeshObjectApiObjectMapper
 import io.meshcloud.buildingblocks.runner.meshobject.ProcessableBlockRun
-import io.meshcloud.http.HttpStatus
 import io.meshcloud.meshobjects.MeshHalMediaTypes
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
-import mu.KotlinLogging
+import io.github.oshai.kotlinlogging.KotlinLogging
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.springframework.http.HttpStatus
 
 private val log = KotlinLogging.logger { }
 

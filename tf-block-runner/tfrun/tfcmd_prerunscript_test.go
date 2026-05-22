@@ -143,6 +143,36 @@ func Test_runPreRunScript_failedScript_userMessageFile_stillSetAsUserMessage(t *
 	assert.Contains(t, *userMsg, "partial output")
 }
 
+func Test_runPreRunScript_failedScript_userMessageLoggedToSystemLog(t *testing.T) {
+	// When a script fails and has written to $MESHSTACK_USER_MESSAGE, the user message
+	// must appear in the system (operator/update) log so it is visible in the run logs.
+	script := "echo 'user-visible pre-run failure' >> \"$MESHSTACK_USER_MESSAGE\"\nexit 1"
+	sut, readSystemLog := makePreRunScriptTfCmd(t, &script, "APPLY", false)
+
+	_, _ = sut.runPreRunScript(nil)
+
+	assert.Contains(t, readSystemLog(), "user-visible pre-run failure")
+}
+
+func Test_runPreRunScript_failedScript_userMessageBecomesStepUserMessage(t *testing.T) {
+	// When the script fails and has written to $MESHSTACK_USER_MESSAGE, the caller should
+	// propagate that message via failWithUserMsg so the step's UserMessage is the
+	// platform-engineer-provided text, not the generic error string.
+	script := "echo 'user-visible pre-run failure' >> \"$MESHSTACK_USER_MESSAGE\"\nexit 1"
+	sut, _ := makePreRunScriptTfCmd(t, &script, "APPLY", false)
+
+	userMsg, err := sut.runPreRunScript(nil)
+
+	require.Error(t, err)
+	require.NotNil(t, userMsg)
+	sut.failWithUserMsg(err, userMsg)
+
+	stepMsg := sut.runContextInfo.runStatus.currentStepStatus().UserMessage
+	require.NotNil(t, stepMsg)
+	assert.Contains(t, *stepMsg, "user-visible pre-run failure")
+	assert.NotContains(t, *stepMsg, "exit status")
+}
+
 func Test_runPreRunScript_failedScript_stdoutGoesToSystemLog(t *testing.T) {
 	script := "echo 'debug detail'\nexit 1"
 	sut, readSystemLog := makePreRunScriptTfCmd(t, &script, "APPLY", false)

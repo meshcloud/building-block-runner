@@ -67,6 +67,15 @@ func (tfcmd *GenericTfCmd) Printfln(format string, v ...any) {
 }
 
 func (tfcmd *GenericTfCmd) fail(err error) {
+	tfcmd.failWithUserMsg(err, nil)
+}
+
+// failWithUserMsg is like fail but allows the caller to supply a pre-computed
+// user-facing message (e.g. content written by a pre-run script to
+// $MESHSTACK_USER_MESSAGE). When overrideUserMsg is non-nil it becomes the
+// step's UserMessage instead of the generic error-derived text. The error is
+// still logged to the update logs so operators can see the technical detail.
+func (tfcmd *GenericTfCmd) failWithUserMsg(err error, overrideUserMsg *string) {
 	tfcmd.runContextInfo.runStatus.failRunAndNotFinishedSteps()
 
 	stepStatus := tfcmd.runContextInfo.runStatus.currentStepStatus()
@@ -94,7 +103,12 @@ func (tfcmd *GenericTfCmd) fail(err error) {
 			msgText = fmt.Sprintf("execution step cancelled: %s", context.Cause(tfcmd.ctx).Error())
 			tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(msgText)
 		}
-		userMsg = &msgText
+
+		if overrideUserMsg != nil {
+			userMsg = overrideUserMsg
+		} else {
+			userMsg = &msgText
+		}
 	}
 
 	tfcmd.setCurrentStepMessage(userMsg)
@@ -686,15 +700,18 @@ func (tfcmd *GenericTfCmd) runPreRunScript(extraEnv map[string]string) (*string,
 		ExtraEnv:        extraEnv,
 	})
 
+	var userMessage *string
+	if result.UserMessage != "" {
+		userMessage = &result.UserMessage
+		if runErr != nil {
+			tfcmd.runContextInfo.logwrap.PrintlnToLocalAndUpdateLogs(result.UserMessage)
+		}
+	}
+
 	if result.SystemMessage != "" {
 		tfcmd.runContextInfo.logwrap.PrintlnToLocalAndUpdateLogs(result.SystemMessage)
 	}
 	tfcmd.runContextInfo.logwrap.PrintlnToLocalAndUpdateLogs(fmt.Sprintf("pre-run script exited with code %d", result.ExitCode))
-
-	var userMessage *string
-	if result.UserMessage != "" {
-		userMessage = &result.UserMessage
-	}
 
 	return userMessage, runErr
 }

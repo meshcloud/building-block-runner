@@ -152,7 +152,7 @@ func (tfcmd *TfDestroyCommand) execute() {
 
 	preRunUserMsg, err := tfcmd.runPreRunScript(tfEnv)
 	if err != nil {
-		tfcmd.fail(err)
+		tfcmd.failWithUserMsg(err, preRunUserMsg)
 		return
 	}
 

@@ -51,7 +51,7 @@ func (c RunApiConfig) NewAuthProvider() meshapi.AuthProvider {
 
 const (
 	defaultConfigFile     = "runner-config.yml"
-	defaultPrivateKeyFile = "/app/runner-private.pem"
+	defaultPrivateKeyFile = "runner-private.pem"
 
 	envConfigFile       = "RUNNER_CONFIG_FILE"
 	envRunnerUuid       = "RUNNER_UUID"
@@ -85,7 +85,7 @@ func ReadConfig(logger *log.Logger) error {
 	applyEnvVars(logger)
 
 	// Try to load the private key from the configured file path (highest priority).
-	// Uses RUNNER_PRIVATE_KEY_FILE env var path if set, otherwise the default /app/private.key.
+	// Uses RUNNER_PRIVATE_KEY_FILE env var path if set, otherwise the default ./runner-private.pem.
 	// Falls back to privateKey from runner-config.yml if the file is not found.
 	applyPrivateKeyFile(AppConfig.PrivateKeyFile, &AppConfig, logger)
 
@@ -118,38 +118,38 @@ func ReadConfig(logger *log.Logger) error {
 // Environment variables take precedence over config file values.
 func applyEnvVars(logger *log.Logger) {
 	if envUuid := os.Getenv(envRunnerUuid); envUuid != "" {
-		logger.Printf("Using %s from environment: %s\n", envRunnerUuid, envUuid)
+		logger.Printf("Using %s from environment\n", envRunnerUuid)
 		AppConfig.RunnerUuid = envUuid
 	}
 
-	if envApiUrl := os.Getenv(envApiUrl); envApiUrl != "" {
+	if apiUrl := os.Getenv(envApiUrl); apiUrl != "" {
 		logger.Printf("Using %s from environment\n", envApiUrl)
-		AppConfig.RunApiBackend.Url = envApiUrl
+		AppConfig.RunApiBackend.Url = apiUrl
 	}
 
-	if envUsername := os.Getenv(envAuthUsername); envUsername != "" {
+	if username := os.Getenv(envAuthUsername); username != "" {
 		logger.Printf("Using %s from environment\n", envAuthUsername)
-		AppConfig.RunApiBackend.User = envUsername
+		AppConfig.RunApiBackend.User = username
 	}
 
-	if envPassword := os.Getenv(envAuthPassword); envPassword != "" {
+	if password := os.Getenv(envAuthPassword); password != "" {
 		logger.Printf("Using %s from environment\n", envAuthPassword)
-		AppConfig.RunApiBackend.Password = envPassword
+		AppConfig.RunApiBackend.Password = password
 	}
 
-	if envClientId := os.Getenv(envAuthClientId); envClientId != "" {
+	if clientId := os.Getenv(envAuthClientId); clientId != "" {
 		logger.Printf("Using %s from environment\n", envAuthClientId)
-		AppConfig.RunApiBackend.ClientId = envClientId
+		AppConfig.RunApiBackend.ClientId = clientId
 	}
 
-	if envClientSecret := os.Getenv(envAuthClientSecret); envClientSecret != "" {
+	if clientSecret := os.Getenv(envAuthClientSecret); clientSecret != "" {
 		logger.Printf("Using %s from environment\n", envAuthClientSecret)
-		AppConfig.RunApiBackend.ClientSecret = envClientSecret
+		AppConfig.RunApiBackend.ClientSecret = clientSecret
 	}
 
-	if envPrivateKeyFile := os.Getenv(envPrivateKeyFile); envPrivateKeyFile != "" {
+	if privateKeyFile := os.Getenv(envPrivateKeyFile); privateKeyFile != "" {
 		logger.Printf("Using %s from environment\n", envPrivateKeyFile)
-		AppConfig.PrivateKeyFile = envPrivateKeyFile
+		AppConfig.PrivateKeyFile = privateKeyFile
 	} else if AppConfig.PrivateKeyFile == "" {
 		// Use default private key file path if not configured via config file or env var
 		AppConfig.PrivateKeyFile = defaultPrivateKeyFile

@@ -3,7 +3,7 @@ package io.meshcloud.buildingblocks.runner.security
 import io.meshcloud.buildingblocks.runner.meshobject.ProcessableBlockRun
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockIOType
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
-import mu.KotlinLogging
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.springframework.context.annotation.Profile
 import org.springframework.stereotype.Service
 import java.io.BufferedReader

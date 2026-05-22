@@ -1,24 +1,25 @@
 package io.meshcloud.buildingblocks.runner
 
-import io.mockk.MockKAnnotations
 import io.mockk.every
 import io.mockk.impl.annotations.MockK
+import io.mockk.junit5.MockKExtension
 import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
 
+@ExtendWith(MockKExtension::class)
 class ImmediateRetryDecoratorTest {
 
-  @MockK
+  @MockK(relaxUnitFun = true)
   private lateinit var wrappedService: BlockRunnerService
 
   private lateinit var sut: ImmediateRetryDecorator
 
   @BeforeEach
   fun setup() {
-    MockKAnnotations.init(this, relaxUnitFun = true)
     sut = ImmediateRetryDecorator(wrappedService)
   }
 

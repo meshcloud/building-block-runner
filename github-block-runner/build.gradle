@@ -1,22 +1,18 @@
 plugins {
   id('org.jetbrains.kotlin.jvm')
   id('org.jetbrains.kotlin.plugin.spring')
-  id('org.jetbrains.kotlin.plugin.jpa')
-  id('org.jlleitschuh.gradle.ktlint')
   id('org.springframework.boot')
 }
 
-group = "io.meshcloud.buildingblocks"
 description = "github-block-runner"
 
 dependencies {
   implementation project(":block-runner-core")
-
+  implementation('org.springframework.boot:spring-boot-starter-web')
   implementation('com.auth0:java-jwt')
-  implementation('org.bouncycastle:bcprov-jdk15on')
-  implementation('com.fasterxml.jackson.module:jackson-module-kotlin')
-  implementation('com.fasterxml.jackson.datatype:jackson-datatype-jsr310')
-  implementation('com.fasterxml.jackson.datatype:jackson-datatype-jdk8')
+  implementation('org.bouncycastle:bcprov-jdk18on')
 
+  testImplementation('org.springframework.boot:spring-boot-starter-test')
   testImplementation('org.wiremock:wiremock-jetty12')
+  testImplementation('io.mockk:mockk')
 }

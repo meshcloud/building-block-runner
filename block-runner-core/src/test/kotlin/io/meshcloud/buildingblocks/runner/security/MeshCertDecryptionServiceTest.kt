@@ -4,15 +4,17 @@ import io.meshcloud.buildingblocks.runner.meshobject.ProcessableBlockRun
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockIOType
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
 import io.meshcloud.meshobjects.objects.MeshManualBuildingBlockImplementation
-import io.mockk.MockKAnnotations
 import io.mockk.every
 import io.mockk.impl.annotations.MockK
+import io.mockk.junit5.MockKExtension
 import io.mockk.spyk
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
 
+@ExtendWith(MockKExtension::class)
 class MeshCertDecryptionServiceTest {
 
   @MockK
@@ -77,7 +79,6 @@ MRzugUiwGacCjQ3qjkw+nzrITjYPJrM=
 
   @BeforeEach
   fun setup() {
-    MockKAnnotations.init(this, relaxUnitFun = true)
     every { cryptoConfig.privateKey } returns testPrivateKey
     sut = spyk(MeshCertDecryptionService(cryptoConfig))
   }

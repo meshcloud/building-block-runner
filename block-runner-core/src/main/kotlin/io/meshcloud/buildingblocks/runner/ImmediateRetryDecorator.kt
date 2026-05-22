@@ -1,7 +1,7 @@
 package io.meshcloud.buildingblocks.runner
 
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
-import mu.KotlinLogging
+import io.github.oshai.kotlinlogging.KotlinLogging
 
 private val log = KotlinLogging.logger { }
 

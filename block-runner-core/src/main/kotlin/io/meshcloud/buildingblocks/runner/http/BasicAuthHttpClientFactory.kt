@@ -1,9 +1,8 @@
 package io.meshcloud.buildingblocks.runner.http
 
 import io.meshcloud.buildingblocks.runner.BlockRunnerApiConfig
-import io.meshcloud.http.addLogging
-import io.meshcloud.http.auth.BasicAuthInterceptor
-import mu.KotlinLogging
+import io.meshcloud.buildingblocks.runner.http.auth.BasicAuthInterceptor
+import io.github.oshai.kotlinlogging.KotlinLogging
 import okhttp3.OkHttpClient
 import org.springframework.context.annotation.Profile
 import org.springframework.stereotype.Component

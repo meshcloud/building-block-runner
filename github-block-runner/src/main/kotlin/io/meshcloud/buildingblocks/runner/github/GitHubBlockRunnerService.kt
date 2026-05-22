@@ -5,11 +5,10 @@ import io.meshcloud.buildingblocks.runner.meshobject.ProcessableBlockRun
 import io.meshcloud.buildingblocks.runner.runclient.BlockRunClient
 import io.meshcloud.buildingblocks.runner.runclient.BlockRunClientFetcher
 import io.meshcloud.buildingblocks.runner.security.DecryptionService
-import io.meshcloud.exception.MeshException
-import io.meshcloud.http.exception.MeshHttpException
+import io.meshcloud.buildingblocks.runner.http.MeshHttpException
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockGithubImplementation
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
-import mu.KotlinLogging
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -213,7 +212,6 @@ class GithubBlockRunnerService(
     return triggerResult
   }
 
-  // TODO This polling can be improved by tackling this ticket: https://app.clickup.com/t/86c8knqvg
   private fun pollWorkflowCompletion(
     blockRunClient: BlockRunClient,
     blockRun: MeshBuildingBlockRun,
@@ -276,10 +274,7 @@ class GithubBlockRunnerService(
       val maxPollingDuration = Duration.ofMinutes(MAX_POLLING_MINUTES_WORKFLOWS.toLong())
       while (currentRun != null && !isWorkflowRunComplete(currentRun)) {
         if (Instant.now(clock).isAfter(triggerTime.plus(maxPollingDuration))) {
-          updateFailedBlockStatusWithException(
-            blockRunClient,
-            MeshException("Workflow polling timeout after $MAX_POLLING_MINUTES_WORKFLOWS minutes")
-          )
+          updateFailedBlockStatusWithTimeout(blockRunClient)
           return
         }
 
@@ -463,7 +458,7 @@ class GithubBlockRunnerService(
 
     updateFailedBlockStatusWithMessage(
       blockRunClient,
-      "Request: ${ex.response.request.url}\nGitHub responded with status: ${ex.response.status} and body: ${ex.getResponseBody()}"
+      "Request: ${ex.requestUrl}\nGitHub responded with status: ${ex.statusCode} and body: ${ex.getResponseBody()}"
     )
   }
 
@@ -473,6 +468,17 @@ class GithubBlockRunnerService(
     updateFailedBlockStatusWithMessage(
       blockRunClient,
       "There was an internal error while trying to contact GitHub: ${ex.message}"
+    )
+  }
+
+  private fun updateFailedBlockStatusWithTimeout(blockRunClient: BlockRunClient) {
+    val message = "Workflow polling timeout after $MAX_POLLING_MINUTES_WORKFLOWS minutes"
+
+    log.error { "Timeout when contacting GitHub: $message" }
+
+    updateFailedBlockStatusWithMessage(
+      blockRunClient,
+      "There was an internal error while trying to contact GitHub: $message"
     )
   }
 

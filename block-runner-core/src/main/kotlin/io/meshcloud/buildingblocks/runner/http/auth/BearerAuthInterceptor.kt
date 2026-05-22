@@ -1,4 +1,4 @@
-package io.meshcloud.http.auth
+package io.meshcloud.buildingblocks.runner.http.auth
 
 import okhttp3.Interceptor
 import okhttp3.Response

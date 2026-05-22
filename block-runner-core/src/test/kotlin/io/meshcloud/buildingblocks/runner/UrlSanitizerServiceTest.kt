@@ -1,14 +1,15 @@
 package io.meshcloud.buildingblocks.runner
 
-import org.junit.Assert
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
 
 class UrlSanitizerServiceTest {
 
   private lateinit var sut: UrlSanitizerService
 
-  @Before
+  @BeforeEach
   fun setUp() {
     sut = UrlSanitizerService()
   }
@@ -20,7 +21,7 @@ class UrlSanitizerServiceTest {
 
     val result = sut.sanitize(input)
 
-    Assert.assertEquals(expected, result)
+    assertEquals(expected, result)
   }
 
   @Test
@@ -30,7 +31,7 @@ class UrlSanitizerServiceTest {
 
     val result = sut.sanitize(input)
 
-    Assert.assertEquals(expected, result)
+    assertEquals(expected, result)
   }
 
   @Test
@@ -40,25 +41,25 @@ class UrlSanitizerServiceTest {
 
     val result = sut.sanitize(input)
 
-    Assert.assertEquals(expected, result)
+    assertEquals(expected, result)
   }
 
 
   @Test
   fun `sanitize throws exception for empty URL`() {
-    val exception = Assert.assertThrows(IllegalArgumentException::class.java) {
+    val exception = assertThrows(IllegalArgumentException::class.java) {
       sut.sanitize("")
     }
 
-    Assert.assertEquals("URL should not be empty", exception.message)
+    assertEquals("URL should not be empty", exception.message)
   }
 
   @Test
   fun `sanitize throws exception for whitespace-only URL`() {
-    val exception = Assert.assertThrows(IllegalArgumentException::class.java) {
+    val exception = assertThrows(IllegalArgumentException::class.java) {
       sut.sanitize("   ")
     }
 
-    Assert.assertEquals("URL should not be empty", exception.message)
+    assertEquals("URL should not be empty", exception.message)
   }
 }

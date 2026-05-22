@@ -5,9 +5,9 @@ import io.meshcloud.buildingblocks.runner.azuredevops.client.TimelineRecord
 import io.meshcloud.buildingblocks.runner.azuredevops.client.TimelineRecordState
 import io.meshcloud.buildingblocks.runner.azuredevops.client.TimelineRecordType
 import io.meshcloud.buildingblocks.runner.runclient.BlockRunClient
-import io.meshcloud.http.exception.MeshHttpException
+import io.meshcloud.buildingblocks.runner.http.MeshHttpException
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
-import mu.KotlinLogging
+import io.github.oshai.kotlinlogging.KotlinLogging
 
 private val log = KotlinLogging.logger { }
 
@@ -42,7 +42,7 @@ class AzureDevOpsStatusUpdater(
   fun updateFailedBlockStatusWithMeshException(ex: MeshHttpException) {
     log.error(ex) { "Error contacting Azure DevOps" }
     updateFailedBlockStatusWithMessage(
-      "Request: ${ex.response.request.url}\nAzure DevOps responded with status: ${ex.response.status} and body: ${ex.getResponseBody()}"
+      "Request: ${ex.requestUrl}\nAzure DevOps responded with status: ${ex.statusCode} and body: ${ex.getResponseBody()}"
     )
   }
 

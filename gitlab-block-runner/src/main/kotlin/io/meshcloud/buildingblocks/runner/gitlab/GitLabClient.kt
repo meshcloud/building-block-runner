@@ -5,10 +5,10 @@ import com.fasterxml.jackson.datatype.jdk8.Jdk8Module
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
+import io.meshcloud.buildingblocks.runner.http.addLogging
 import io.meshcloud.buildingblocks.runner.meshobject.ProcessableBlockRun
-import io.meshcloud.http.*
-import io.meshcloud.http.exception.MeshHttpException
-import mu.KotlinLogging
+import io.meshcloud.buildingblocks.runner.http.MeshHttpException
+import io.github.oshai.kotlinlogging.KotlinLogging
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -62,42 +62,50 @@ class GitLabClient(
       .post(body)
       .build()
 
-    client.execute<Unit>(request)
-      .letIfSuccess { it.handled(Unit) }
-      .letWithStatus(HttpStatus.NOT_FOUND) {
+    client.newCall(request).execute().use { response ->
+      val body = response.body?.string() ?: ""
+      if (response.isSuccessful) return
+
+      if (response.code == 404) {
         throw MeshHttpException(
           userMessage = "GitLab pipeline could not be triggered successfully. Please contact support.",
           systemMessage = "GitLab reported 404, which can happen if you have entered a wrong projectId.",
-          response = it
+          statusCode = response.code,
+          requestUrl = request.url,
+          responseBody = body,
         )
       }
-      .letIfError {
-        val gitlabError = try {
-          mapper.readValue(it.body, GitLabErrorBody::class.java)
-        } catch (e: Exception) {
-          log.error(e) { "Could not deserialize the GitLab error response." }
-          throw MeshHttpException(
-            userMessage = "There was a problem while communicating with GitLab.",
-            response = it
-          )
-        }
 
-        if (gitlabError.isIdentityVerificationRequired()) {
-          throw MeshHttpException(
-            userMessage = "There is a problem with the pipeline trigger token. Please contact support.",
-            systemMessage = "Your GitLab account is not verified and can not trigger a pipeline. " +
-              "Please visit GitLab and verify your account first.",
-            response = it
-          )
-        } else {
-          throw MeshHttpException(
-            userMessage = "There was an error communicating with GitLab.",
-            systemMessage = "GitLab did not process the request, and responded with: $gitlabError",
-            response = it
-          )
-        }
+      val gitlabError = try {
+        mapper.readValue(body, GitLabErrorBody::class.java)
+      } catch (e: Exception) {
+        log.error(e) { "Could not deserialize the GitLab error response." }
+        throw MeshHttpException(
+          userMessage = "There was a problem while communicating with GitLab.",
+          statusCode = response.code,
+          requestUrl = request.url,
+          responseBody = body,
+        )
       }
-      .getContent()
+
+      if (gitlabError.isIdentityVerificationRequired()) {
+        throw MeshHttpException(
+          userMessage = "There is a problem with the pipeline trigger token. Please contact support.",
+          systemMessage = "Your GitLab account is not verified and can not trigger a pipeline. " +
+            "Please visit GitLab and verify your account first.",
+          statusCode = response.code,
+          requestUrl = request.url,
+          responseBody = body,
+        )
+      }
+      throw MeshHttpException(
+        userMessage = "There was an error communicating with GitLab.",
+        systemMessage = "GitLab did not process the request, and responded with: $gitlabError",
+        statusCode = response.code,
+        requestUrl = request.url,
+        responseBody = body,
+      )
+    }
   }
 
   private fun buildPayload(

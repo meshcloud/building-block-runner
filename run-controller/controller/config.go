@@ -120,9 +120,9 @@ type ResourceSpec struct {
 }
 
 const (
-	defaultConfigFile = "/app/runner-config.yml"
+	defaultConfigFile = "runner-config.yml"
 
-	envConfigFile = "CONFIG_FILE"
+	envConfigFile = "RUNCONTROLLER_CONFIG_FILE"
 )
 
 func ReadConfig(logger *log.Logger) *ControllerConfig {

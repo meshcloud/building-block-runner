@@ -83,7 +83,7 @@ jobs:
         with:
           context: .
           file: containers/jvm.Dockerfile
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: false
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:${{ github.sha }}
@@ -135,7 +135,7 @@ jobs:
         with:
           context: .
           file: containers/jvm.Dockerfile
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:${{ github.sha }}
@@ -205,13 +205,12 @@ jobs:
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: false
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:${{ github.sha }}
           build-args: |
-            VERSION=dev
-            COMMIT_SHA=${{ github.sha }}
+            VERSION=dev:${{ steps.commit.outputs.commit }}
 
   go-runners-image:
     name: ${{ matrix.app }} - image
@@ -253,7 +252,7 @@ jobs:
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:${{ github.sha }}

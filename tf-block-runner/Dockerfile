@@ -41,12 +41,18 @@ USER 2000
 # Install nix in single-user mode for meshcloud.
 # Runtime package installs can then be done with:
 #   nix profile add nixpkgs#<package>
+ARG TARGETARCH
 ARG NIX_VERSION=2.34.7
 ARG NIX_INSTALL_SHA256=e9d447ce3d2ff62d7ff9cb6ef401de6fa8acb148839dd00f7271945d7b638b14
 RUN set -eux; \
   curl -fsSL -o /tmp/nix-install "https://releases.nixos.org/nix/nix-${NIX_VERSION}/install"; \
   echo "${NIX_INSTALL_SHA256}  /tmp/nix-install" | sha256sum -c -; \
-  sh /tmp/nix-install --no-daemon; \
+  if [ "${TARGETARCH:-}" = "arm64" ]; then \
+    NIX_CONFIG=$'sandbox = false\nfilter-syscalls = false' \
+      sh /tmp/nix-install --no-daemon --yes --no-channel-add; \
+  else \
+    sh /tmp/nix-install --no-daemon; \
+  fi; \
   rm -f /tmp/nix-install
 
 ENV PATH="/home/meshcloud/.nix-profile/bin:${PATH}"

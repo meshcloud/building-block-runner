@@ -1,0 +1,10 @@
+# Test profile: API key auth
+# Expected behavior: a short-lived Bearer token is fetched via POST /api/login using the API key credentials
+blockrunner:
+  uuid: test-uuid-api-key
+  api:
+    url: http://localhost:8080
+  auth:
+    apiKey:
+      clientId: test-client-id
+      clientSecret: test-client-secret

@@ -70,6 +70,10 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Parse commit
+        id: commit
+        run: echo "commit=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
@@ -85,6 +89,7 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:${{ github.sha }}
           build-args: |
             RUNNER_MODULE=${{ matrix.module }}
+            VERSION=dev:${{ steps.commit.outputs.commit }}
 
   jvm-runners-image:
     name: ${{ matrix.image }} - image
@@ -110,6 +115,10 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Parse commit
+        id: commit
+        run: echo "commit=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
@@ -133,6 +142,7 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:main
           build-args: |
             RUNNER_MODULE=${{ matrix.module }}
+            VERSION=dev:${{ steps.commit.outputs.commit }}
 
   go-runners-ci:
     name: ${{ matrix.app }} - test
@@ -222,6 +232,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Parse commit
+        id: commit
+        run: echo "commit=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0

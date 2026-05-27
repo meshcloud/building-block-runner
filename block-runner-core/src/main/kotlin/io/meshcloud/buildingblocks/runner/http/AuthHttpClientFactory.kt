@@ -1,6 +1,7 @@
 package io.meshcloud.buildingblocks.runner.http
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.meshcloud.buildingblocks.runner.BlockRunnerApiConfig
 import io.meshcloud.buildingblocks.runner.StandaloneBlockRunnerApiConfig
 import io.meshcloud.buildingblocks.runner.http.auth.ApiKeyAuthInterceptor
 import io.meshcloud.buildingblocks.runner.http.auth.BasicAuthInterceptor
@@ -25,13 +26,18 @@ private val log = KotlinLogging.logger { }
 @Profile("!kubernetes")
 class AuthHttpClientFactory(
   config: StandaloneBlockRunnerApiConfig,
+  blockRunnerConfig: BlockRunnerApiConfig
 ) {
 
-  private val client: OkHttpClient = OkHttpClient.Builder()
-    .followRedirects(false)
-    .addLogging(log)
-    .addInterceptor(buildAuthInterceptor(config))
-    .build()
+  private val client: OkHttpClient
+
+  init {
+    client = OkHttpClient.Builder()
+      .followRedirects(false)
+      .addRunnerVersionHeader(blockRunnerConfig.version)
+      .addLogging(log)
+      .addInterceptor(buildAuthInterceptor(config)).build()
+  }
 
   fun buildHttpClient(): OkHttpClient {
     return client
@@ -60,5 +66,19 @@ class AuthHttpClientFactory(
         },
       )
     }
+
+  private fun OkHttpClient.Builder.addRunnerVersionHeader(version: String): OkHttpClient.Builder = apply {
+    addInterceptor { chain ->
+      val requestWithRunnerVersion = chain.request().newBuilder()
+        .header(RUNNER_VERSION_HEADER, version)
+        .build()
+
+      chain.proceed(requestWithRunnerVersion)
+    }
+  }
+
+  companion object {
+    private const val RUNNER_VERSION_HEADER = "X-Meshcloud-Runner-Version"
+  }
 }
 

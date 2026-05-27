@@ -1,6 +1,8 @@
 package io.meshcloud.buildingblocks.runner.http
 
 import io.meshcloud.buildingblocks.runner.StandaloneBlockRunnerApiConfig
+import io.meshcloud.buildingblocks.runner.http.auth.ApiKeyAuthInterceptor
+import io.meshcloud.buildingblocks.runner.http.auth.BasicAuthInterceptor
 import io.mockk.every
 import io.mockk.mockk
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -9,49 +11,83 @@ import org.junit.jupiter.api.Test
 
 class BasicAuthHttpClientFactoryTest {
 
-  private fun buildConfig(username: String = "test-user", password: String = "test-password") =
+  private fun buildBasicAuthConfig(username: String = "test-user", password: String = "test-password") =
     mockk<StandaloneBlockRunnerApiConfig> {
+      every { api } returns StandaloneBlockRunnerApiConfig.ApiConfig(url = "http://localhost:8080")
       every { auth } returns StandaloneBlockRunnerApiConfig.AuthConfig(
         username = username,
         password = password,
+        apiKey = null,
       )
     }
 
+  private fun buildApiKeyConfig(clientId: String = "test-client-id", clientSecret: String = "test-secret") =
+    mockk<StandaloneBlockRunnerApiConfig> {
+      every { api } returns StandaloneBlockRunnerApiConfig.ApiConfig(url = "http://localhost:8080")
+      every { auth } returns StandaloneBlockRunnerApiConfig.AuthConfig(
+        username = null,
+        password = null,
+        apiKey = StandaloneBlockRunnerApiConfig.ApiKeyConfig(
+          clientId = clientId,
+          clientSecret = clientSecret,
+        ),
+      )
+    }
+
+  // -------------------------------------------------------- basic auth path --
+
   @Test
-  fun `buildClient returns configured OkHttpClient`() {
-    // Given
-    val factory = BasicAuthHttpClientFactory(buildConfig())
+  fun `buildClient returns configured OkHttpClient for basic auth`() {
+    val client = BasicAuthHttpClientFactory(buildBasicAuthConfig()).buildHttpClient()
 
-    // When
-    val client = factory.buildHttpClient()
-
-    // Then
     assertNotNull(client, "Client should not be null")
     assertTrue(client.interceptors.isNotEmpty(), "Client should have interceptors configured")
   }
 
   @Test
   fun `buildClient returns same client instance on multiple calls`() {
-    // Given
-    val factory = BasicAuthHttpClientFactory(buildConfig())
+    val factory = BasicAuthHttpClientFactory(buildBasicAuthConfig())
 
-    // When
-    val client1 = factory.buildHttpClient()
-    val client2 = factory.buildHttpClient()
-
-    // Then
-    assertTrue(client1 === client2, "Factory should return the same client instance")
+    assertTrue(factory.buildHttpClient() === factory.buildHttpClient(), "Factory should return the same client instance")
   }
 
   @Test
   fun `buildClient configures client to not follow redirects`() {
-    // Given
-    val factory = BasicAuthHttpClientFactory(buildConfig())
+    val client = BasicAuthHttpClientFactory(buildBasicAuthConfig()).buildHttpClient()
 
-    // When
-    val client = factory.buildHttpClient()
+    assertTrue(!client.followRedirects, "Client should not follow redirects")
+  }
 
-    // Then
+  @Test
+  fun `buildClient uses BasicAuthInterceptor when only username and password are configured`() {
+    val client = BasicAuthHttpClientFactory(buildBasicAuthConfig()).buildHttpClient()
+
+    val hasBasicAuth = client.interceptors.any { it is BasicAuthInterceptor }
+    assertTrue(hasBasicAuth, "Client should have a BasicAuthInterceptor when apiKey is not configured")
+  }
+
+  // --------------------------------------------------------- api key path --
+
+  @Test
+  fun `buildClient uses ApiKeyAuthInterceptor when apiKey is configured`() {
+    val client = BasicAuthHttpClientFactory(buildApiKeyConfig()).buildHttpClient()
+
+    val hasApiKeyAuth = client.interceptors.any { it is ApiKeyAuthInterceptor }
+    assertTrue(hasApiKeyAuth, "Client should have an ApiKeyAuthInterceptor when apiKey is configured")
+  }
+
+  @Test
+  fun `buildClient does not use BasicAuthInterceptor when apiKey is configured`() {
+    val client = BasicAuthHttpClientFactory(buildApiKeyConfig()).buildHttpClient()
+
+    val hasBasicAuth = client.interceptors.any { it is BasicAuthInterceptor }
+    assertTrue(!hasBasicAuth, "Client should not have a BasicAuthInterceptor when apiKey is configured")
+  }
+
+  @Test
+  fun `buildClient configures client to not follow redirects when using API key`() {
+    val client = BasicAuthHttpClientFactory(buildApiKeyConfig()).buildHttpClient()
+
     assertTrue(!client.followRedirects, "Client should not follow redirects")
   }
 }

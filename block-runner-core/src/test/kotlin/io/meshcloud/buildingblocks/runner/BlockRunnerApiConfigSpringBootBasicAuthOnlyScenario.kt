@@ -7,8 +7,9 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.test.context.ActiveProfiles
 
 /**
- * Real Spring Boot integration tests that verify BlockRunnerApiConfig can be correctly
- * bound from YAML configuration using Spring's @ConfigurationProperties mechanism.
+ * Real Spring Boot integration tests that verify BlockRunnerApiConfig and
+ * StandaloneBlockRunnerApiConfig can be correctly bound from YAML configuration
+ * using Spring's @ConfigurationProperties mechanism.
  *
  * These tests actually start a Spring Boot context with different profiles to ensure
  * the configuration binding works correctly in a real Spring environment.
@@ -20,19 +21,24 @@ class BlockRunnerApiConfigSpringBootBasicAuthOnlyScenario {
   @Autowired
   lateinit var config: BlockRunnerApiConfig
 
+  @Autowired
+  lateinit var standaloneConfig: StandaloneBlockRunnerApiConfig
+
   @Test
   fun `Spring context loads successfully with basic auth only configuration`() {
     // Then - Spring context loaded successfully
     assertNotNull(config)
 
-    // Verify configuration values
+    // Verify shared configuration values
     assertEquals("test-uuid-basic-auth", config.uuid)
-    assertEquals("http://localhost:8080", config.api.url)
 
-    // Verify auth behavior - basic auth provided
-    assertNotNull(config.auth, "Auth should be configured")
-    assertEquals("test-user", config.auth?.username)
-    assertEquals("test-password", config.auth?.password)
+    // Verify standalone URL config is present and bound correctly
+    assertNotNull(standaloneConfig, "StandaloneBlockRunnerApiConfig should be present in non-kubernetes mode")
+    assertEquals("http://localhost:8080", standaloneConfig.api.url)
+
+    // Verify auth is on the standalone config and bound correctly
+    assertEquals("test-user", standaloneConfig.auth.username)
+    assertEquals("test-password", standaloneConfig.auth.password)
   }
 }
 

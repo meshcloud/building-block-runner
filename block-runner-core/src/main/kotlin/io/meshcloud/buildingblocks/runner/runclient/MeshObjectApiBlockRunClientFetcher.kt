@@ -1,6 +1,7 @@
 package io.meshcloud.buildingblocks.runner.runclient
 
 import io.meshcloud.buildingblocks.runner.BlockRunnerApiConfig
+import io.meshcloud.buildingblocks.runner.StandaloneBlockRunnerApiConfig
 import io.meshcloud.buildingblocks.runner.http.BasicAuthHttpClientFactory
 import io.meshcloud.buildingblocks.runner.meshobject.ProcessableBlockRun
 import io.meshcloud.buildingblocks.runner.http.EMPTY_REQUEST_BODY
@@ -23,14 +24,15 @@ private val log = KotlinLogging.logger { }
 class MeshObjectApiBlockRunClientFetcher(
   basicAuthHttpClientFactory: BasicAuthHttpClientFactory,
   private val blockRunClientFactory: BlockRunClientFactory,
+  private val standaloneBlockRunnerApiConfig: StandaloneBlockRunnerApiConfig,
   private val config: BlockRunnerApiConfig,
-  private val processableRunFactory: ProcessableRunFactory
+  private val processableRunFactory: ProcessableRunFactory,
 ) : BlockRunClientFetcher {
 
   private val httpClient = basicAuthHttpClientFactory.buildHttpClient()
 
   override fun fetchBlockRunClient(): BlockRunClient? {
-    val url = config.api.url.toHttpUrl().newBuilder()
+    val url = standaloneBlockRunnerApiConfig.api.url.toHttpUrl().newBuilder()
       .addPathSegments("api/meshobjects/meshbuildingblockruns/create")
       .addQueryParameter("forRunnerUuid", config.uuid)
       .build()

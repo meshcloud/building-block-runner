@@ -274,6 +274,7 @@ const (
 	RunnerTypeGitHubWorkflow      RunnerImplementationType = "GITHUB_WORKFLOW"
 	RunnerTypeGitLabPipeline      RunnerImplementationType = "GITLAB_PIPELINE"
 	RunnerTypeAzureDevOpsPipeline RunnerImplementationType = "AZURE_DEVOPS_PIPELINE"
+	RunnerTypeAll                 RunnerImplementationType = "ALL"
 )
 
 // ToRunnerType maps an ImplementationType to the corresponding RunnerImplementationType.

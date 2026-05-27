@@ -6,20 +6,21 @@ import (
 	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
 )
 
-// BuildRunnerRegistrationDTO creates the MeshBuildingBlockRunnerDTO from RunnerConfig.
+// BuildRunnerRegistrationDTO creates the MeshBuildingBlockRunnerDTO from the global AppConfig.
 // WIF configuration is auto-constructed based on the controller's oidcIssuer and namespace.
-func BuildRunnerRegistrationDTO(runner *RunnerConfig, namespace string, oidcIssuer string) *meshapi.MeshBuildingBlockRunnerDTO {
+// The implementation type is set to ALL to signal that this controller handles all run types.
+func BuildRunnerRegistrationDTO(namespace string, oidcIssuer string) *meshapi.MeshBuildingBlockRunnerDTO {
 	dto := &meshapi.MeshBuildingBlockRunnerDTO{
 		ApiVersion: "v1-preview",
 		Kind:       "meshBuildingBlockRunner",
 		Metadata: meshapi.MeshBuildingBlockRunnerMetaDTO{
-			Uuid:             runner.Uuid,
-			OwnedByWorkspace: runner.OwnedByWorkspace,
+			Uuid:             AppConfig.Uuid,
+			OwnedByWorkspace: AppConfig.OwnedByWorkspace,
 		},
 		Spec: meshapi.MeshBuildingBlockRunnerSpecDTO{
-			DisplayName:        runner.DisplayName,
-			PublicKey:          runner.Crypto.PublicKey,
-			ImplementationType: runner.ImplementationType,
+			DisplayName:        AppConfig.DisplayName,
+			PublicKey:          AppConfig.Crypto.PublicKey,
+			ImplementationType: string(meshapi.RunnerTypeAll),
 		},
 	}
 

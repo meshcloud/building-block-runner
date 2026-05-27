@@ -58,13 +58,13 @@ func getKubernetesConfig() (*rest.Config, error) {
 	return kubeConfig.ClientConfig()
 }
 
-func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase64 string, runner *RunnerConfig, metrics *MetricsCollector) error {
+func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase64 string, implType string, jobSpec *JobSpecTemplate, metrics *MetricsCollector) error {
 	k.logger.Printf("Preparing to create runner job for run %s", runInfo.Uuid)
 
 	// Measure job creation duration
 	start := time.Now()
 	defer func() {
-		metrics.jobCreationDuration.WithLabelValues(runner.Uuid, runner.DisplayName).Observe(time.Since(start).Seconds())
+		metrics.jobCreationDuration.WithLabelValues(AppConfig.Uuid).Observe(time.Since(start).Seconds())
 	}()
 
 	jobName := fmt.Sprintf("runner-%s", runInfo.Uuid)
@@ -79,18 +79,18 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 		return nil
 	}
 
-	k.logger.Printf("Creating job %s for run %s with runner %s in namespace %s", jobName, runInfo.Uuid, runner.Uuid, namespace)
+	k.logger.Printf("Creating job %s for run %s with controller %s in namespace %s", jobName, runInfo.Uuid, AppConfig.Uuid, namespace)
 
 	// Check if the run JSON data exceeds the Kubernetes secret size limit (1MiB).
 	// Kubernetes secrets are limited to 1MiB of data. If the run data is too large,
 	// we cannot create a secret and must report the error back to meshfed.
 	runJsonSize, err := estimateRunJsonSize(runJsonBase64)
 	if err != nil {
-		metrics.jobCreationErrors.WithLabelValues(runner.Uuid, runner.DisplayName, ErrorTypeJobCreation).Inc()
+		metrics.jobCreationErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeJobCreation).Inc()
 		return fmt.Errorf("failed to estimate run json size: %w", err)
 	}
 	if runJsonSize > EffectiveMaxRunJsonSize {
-		metrics.jobCreationErrors.WithLabelValues(runner.Uuid, runner.DisplayName, ErrorTypeRunTooLarge).Inc()
+		metrics.jobCreationErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeRunTooLarge).Inc()
 		return &RunTooLargeError{
 			RunId:    runInfo.Uuid,
 			DataSize: runJsonSize,
@@ -104,18 +104,18 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 	// as sub: "system:serviceaccount:<namespace>:workspace.<bbd-workspace>.buildingblockdefinition.<bbd-uuid>"
 	// IMPORTANT: this should align with subject pattern in dtos.go BuildRunnerRegistrationDTO()
 	serviceAccountName := fmt.Sprintf("workspace.%s.buildingblockdefinition.%s", runInfo.BuildingBlockDefinitionWorkspace, runInfo.BuildingBlockDefinitionUuid)
-	err = k.createServiceAccount(namespace, serviceAccountName, runInfo.Uuid, runner.Uuid, metrics)
+	err = k.createServiceAccount(namespace, serviceAccountName, runInfo.Uuid, metrics)
 	if err != nil {
-		metrics.jobCreationErrors.WithLabelValues(runner.Uuid, runner.DisplayName, ErrorTypeJobCreation).Inc()
+		metrics.jobCreationErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeJobCreation).Inc()
 		return fmt.Errorf("failed to create service account: %w", err)
 	}
 
 	// Create Secret with run JSON data to avoid environment variable size limits.
 	// The run data is stored as a file in a secret and mounted into the runner pod.
 	runJsonSecretName := fmt.Sprintf("run-json-%s", runInfo.Uuid)
-	err = k.createRunJsonSecret(namespace, runJsonSecretName, runJsonBase64, runInfo.Uuid, runner.Uuid)
+	err = k.createRunJsonSecret(namespace, runJsonSecretName, runJsonBase64, runInfo.Uuid)
 	if err != nil {
-		metrics.jobCreationErrors.WithLabelValues(runner.Uuid, runner.DisplayName, ErrorTypeJobCreation).Inc()
+		metrics.jobCreationErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeJobCreation).Inc()
 		return fmt.Errorf("failed to create run json secret: %w", err)
 	}
 
@@ -127,8 +127,8 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 			Labels: map[string]string{
 				"app.kubernetes.io/name":   "runner",
 				"meshcloud.io/run-id":      runInfo.Uuid,
-				"meshcloud.io/runner-id":   runner.Uuid,
-				"meshcloud.io/runner-type": runner.ImplementationType,
+				"meshcloud.io/runner-id":   AppConfig.Uuid,
+				"meshcloud.io/runner-type": implType,
 			},
 		},
 		Spec: batchv1.JobSpec{
@@ -143,15 +143,15 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 					Labels: map[string]string{
 						"app.kubernetes.io/name":   "runner",
 						"meshcloud.io/run-id":      runInfo.Uuid,
-						"meshcloud.io/runner-id":   runner.Uuid,
-						"meshcloud.io/runner-type": runner.ImplementationType,
+						"meshcloud.io/runner-id":   AppConfig.Uuid,
+						"meshcloud.io/runner-type": implType,
 					},
 				},
 				Spec: corev1.PodSpec{
 					RestartPolicy:      corev1.RestartPolicyNever,
 					ServiceAccountName: serviceAccountName,
 					ImagePullSecrets:   k.buildImagePullSecrets(),
-					Volumes:            k.createVolumes(namespace, runner, runJsonSecretName),
+					Volumes:            k.createVolumes(namespace, jobSpec, runJsonSecretName),
 					// Disable service-link env injection (MARIADB_*, KUBERNETES_* etc.) to keep
 					// the container environment clean and avoid leaking service discovery info.
 					EnableServiceLinks: new(false),
@@ -161,13 +161,13 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 					Containers: []corev1.Container{
 						{
 							Name:            "runner",
-							Image:           runner.JobSpecTemplate.Image,
-							Command:         k.buildCommand(runner),
-							Args:            k.buildArgs(runner),
+							Image:           jobSpec.Image,
+							Command:         k.buildCommand(jobSpec),
+							Args:            k.buildArgs(jobSpec),
 							ImagePullPolicy: corev1.PullIfNotPresent,
-							Env:             k.buildEnvVars(runner),
-							VolumeMounts:    k.createVolumeMounts(runner),
-							Resources:       buildResourceRequirements(runner.JobSpecTemplate.Resources),
+							Env:             k.buildEnvVars(jobSpec),
+							VolumeMounts:    k.createVolumeMounts(jobSpec),
+							Resources:       buildResourceRequirements(jobSpec.Resources),
 							SecurityContext: &corev1.SecurityContext{
 								AllowPrivilegeEscalation: new(false),
 								RunAsNonRoot:             new(true),
@@ -187,7 +187,7 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 
 	createdJob, err := k.clientset.BatchV1().Jobs(namespace).Create(context.TODO(), job, metav1.CreateOptions{})
 	if err != nil {
-		metrics.jobCreationErrors.WithLabelValues(runner.Uuid, runner.DisplayName, ErrorTypeJobCreation).Inc()
+		metrics.jobCreationErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeJobCreation).Inc()
 		// Clean up the secret since the job failed to create
 		_ = k.clientset.CoreV1().Secrets(namespace).Delete(context.TODO(), runJsonSecretName, metav1.DeleteOptions{})
 		return fmt.Errorf("failed to create job: %w", err)
@@ -199,7 +199,7 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 		k.logger.Printf("Warning: failed to set owner reference on secret %s: %v (secret will need manual cleanup)", runJsonSecretName, err)
 	}
 
-	metrics.jobsCreatedTotal.WithLabelValues(runner.Uuid, runner.DisplayName).Inc()
+	metrics.jobsCreatedTotal.WithLabelValues(AppConfig.Uuid).Inc()
 	k.logger.Printf("Successfully created job %s", jobName)
 	return nil
 }
@@ -302,27 +302,27 @@ func (k *KubernetesClient) buildImagePullSecrets() []corev1.LocalObjectReference
 	return imagePullSecrets
 }
 
-func (k *KubernetesClient) buildCommand(runner *RunnerConfig) []string {
-	// Return custom command from runner config if provided
-	if len(runner.JobSpecTemplate.Command) > 0 {
-		return runner.JobSpecTemplate.Command
+func (k *KubernetesClient) buildCommand(jobSpec *JobSpecTemplate) []string {
+	// Return custom command from job spec if provided
+	if len(jobSpec.Command) > 0 {
+		return jobSpec.Command
 	}
 
 	// No custom command: use default container entrypoint
 	return nil
 }
 
-func (k *KubernetesClient) buildArgs(runner *RunnerConfig) []string {
-	// Return custom args from runner config if provided
-	if len(runner.JobSpecTemplate.Args) > 0 {
-		return runner.JobSpecTemplate.Args
+func (k *KubernetesClient) buildArgs(jobSpec *JobSpecTemplate) []string {
+	// Return custom args from job spec if provided
+	if len(jobSpec.Args) > 0 {
+		return jobSpec.Args
 	}
 
 	// No custom args: use default
 	return nil
 }
 
-func (k *KubernetesClient) createServiceAccount(namespace, name, runID, runnerUuid string, metrics *MetricsCollector) error {
+func (k *KubernetesClient) createServiceAccount(namespace, name, runID string, metrics *MetricsCollector) error {
 	serviceAccount := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -330,7 +330,7 @@ func (k *KubernetesClient) createServiceAccount(namespace, name, runID, runnerUu
 			Labels: map[string]string{
 				"app.kubernetes.io/name": "runner",
 				"meshcloud.io/run-id":    runID,
-				"meshcloud.io/runner-id": runnerUuid,
+				"meshcloud.io/runner-id": AppConfig.Uuid,
 			},
 		},
 	}
@@ -344,18 +344,18 @@ func (k *KubernetesClient) createServiceAccount(namespace, name, runID, runnerUu
 
 	_, err = k.clientset.CoreV1().ServiceAccounts(namespace).Create(context.TODO(), serviceAccount, metav1.CreateOptions{})
 	if err != nil {
-		metrics.serviceAccountCreationErrors.WithLabelValues(runnerUuid, ErrorTypeServiceAccountCreation).Inc()
+		metrics.serviceAccountCreationErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeServiceAccountCreation).Inc()
 		return fmt.Errorf("failed to create service account: %w", err)
 	}
 
-	metrics.serviceAccountsCreatedTotal.WithLabelValues(runnerUuid).Inc()
+	metrics.serviceAccountsCreatedTotal.WithLabelValues(AppConfig.Uuid).Inc()
 	k.logger.Printf("Successfully created service account %s in namespace %s", name, namespace)
 	return nil
 }
 
 // createRunJsonSecret creates a Kubernetes secret containing the run JSON data.
 // The data is stored as a decoded JSON file (not base64-encoded) so runners can read it directly.
-func (k *KubernetesClient) createRunJsonSecret(namespace, secretName, runJsonBase64, runID, runnerUuid string) error {
+func (k *KubernetesClient) createRunJsonSecret(namespace, secretName, runJsonBase64, runID string) error {
 	// Decode base64 to get the raw JSON bytes for the secret
 	runJsonBytes, err := base64.StdEncoding.DecodeString(runJsonBase64)
 	if err != nil {
@@ -369,7 +369,7 @@ func (k *KubernetesClient) createRunJsonSecret(namespace, secretName, runJsonBas
 			Labels: map[string]string{
 				"app.kubernetes.io/name": "runner",
 				"meshcloud.io/run-id":    runID,
-				"meshcloud.io/runner-id": runnerUuid,
+				"meshcloud.io/runner-id": AppConfig.Uuid,
 			},
 		},
 		Data: map[string][]byte{
@@ -426,7 +426,7 @@ func (k *KubernetesClient) setSecretOwnerReference(namespace, secretName string,
 	return nil
 }
 
-func (k *KubernetesClient) createVolumes(namespace string, runner *RunnerConfig, runJsonSecretName string) []corev1.Volume {
+func (k *KubernetesClient) createVolumes(namespace string, jobSpec *JobSpecTemplate, runJsonSecretName string) []corev1.Volume {
 	expirationSeconds := int64(7200)
 
 	volumes := []corev1.Volume{
@@ -488,8 +488,8 @@ func (k *KubernetesClient) createVolumes(namespace string, runner *RunnerConfig,
 		},
 	}
 
-	// Add runner-specific extra volumes
-	for _, extraVol := range runner.JobSpecTemplate.ExtraVolumes {
+	// Add extra volumes from job spec
+	for _, extraVol := range jobSpec.ExtraVolumes {
 		volume := corev1.Volume{Name: extraVol.Name}
 
 		// Set the appropriate volume source based on what's configured
@@ -521,7 +521,7 @@ func (k *KubernetesClient) createVolumes(namespace string, runner *RunnerConfig,
 	return volumes
 }
 
-func (k *KubernetesClient) createVolumeMounts(runner *RunnerConfig) []corev1.VolumeMount {
+func (k *KubernetesClient) createVolumeMounts(jobSpec *JobSpecTemplate) []corev1.VolumeMount {
 	volumeMounts := []corev1.VolumeMount{
 		{
 			Name:      "run-json",
@@ -545,8 +545,8 @@ func (k *KubernetesClient) createVolumeMounts(runner *RunnerConfig) []corev1.Vol
 		},
 	}
 
-	// Add runner-specific extra volume mounts
-	for _, extraMount := range runner.JobSpecTemplate.ExtraVolumeMounts {
+	// Add extra volume mounts from job spec
+	for _, extraMount := range jobSpec.ExtraVolumeMounts {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      extraMount.Name,
 			MountPath: extraMount.MountPath,
@@ -561,7 +561,7 @@ func (k *KubernetesClient) createVolumeMounts(runner *RunnerConfig) []corev1.Vol
 const runJsonFilePath = "/var/run/secrets/meshstack/run.json"
 
 // buildEnvVars constructs the environment variables for the runner container
-func (k *KubernetesClient) buildEnvVars(runner *RunnerConfig) []corev1.EnvVar {
+func (k *KubernetesClient) buildEnvVars(jobSpec *JobSpecTemplate) []corev1.EnvVar {
 	envVars := []corev1.EnvVar{
 		{
 			// Path to the mounted run JSON file containing the decrypted run specification.
@@ -570,7 +570,7 @@ func (k *KubernetesClient) buildEnvVars(runner *RunnerConfig) []corev1.EnvVar {
 		},
 		{
 			Name:  "RUNNER_UUID",
-			Value: runner.Uuid,
+			Value: AppConfig.Uuid,
 		},
 		{
 			// The API URL is used as a fallback for building callback URLs.
@@ -580,8 +580,8 @@ func (k *KubernetesClient) buildEnvVars(runner *RunnerConfig) []corev1.EnvVar {
 		},
 	}
 
-	// Add custom environment variables from jobSpecTemplate
-	for key, value := range runner.JobSpecTemplate.Env {
+	// Add custom environment variables from job spec
+	for key, value := range jobSpec.Env {
 		envVars = append(envVars, corev1.EnvVar{
 			Name:  key,
 			Value: value,

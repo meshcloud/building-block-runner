@@ -20,9 +20,9 @@ type RunApiClient struct {
 }
 
 type RunApi interface {
-	FetchRunDetails(nodePostfix string, runner *RunnerConfig) (string, *meshapi.RunDetailsDTO, error)
-	RegisterSource(runId string, runner *RunnerConfig) error
-	UpdateRunStatus(runId string, runner *RunnerConfig, status string, summary string, stepMessage string) error
+	FetchRunDetails(nodePostfix string) (string, *meshapi.RunDetailsDTO, error)
+	RegisterSource(runId string) error
+	UpdateRunStatus(runId string, status string, summary string, stepMessage string) error
 }
 
 func newApi() RunApi {
@@ -32,26 +32,26 @@ func newApi() RunApi {
 	}
 }
 
-func (api *RunApiClient) newMeshClient(runner *RunnerConfig, nodeID string) *meshapi.Client {
-	return meshapi.NewClient(api.url, nodeID, runner.Api.NewAuthProvider(api.url))
+func (api *RunApiClient) newMeshClient(nodeID string) *meshapi.Client {
+	return meshapi.NewClient(api.url, nodeID, AppConfig.Api.NewAuthProvider(api.url))
 }
 
-func (api *RunApiClient) FetchRunDetails(nodePostfix string, runner *RunnerConfig) (string, *meshapi.RunDetailsDTO, error) {
+func (api *RunApiClient) FetchRunDetails(nodePostfix string) (string, *meshapi.RunDetailsDTO, error) {
 	requester := fmt.Sprintf("%s-%s", requesterPrefix, nodePostfix)
 
 	// Measure fetch duration
 	start := time.Now()
 	defer func() {
-		api.metrics.runsFetchDuration.WithLabelValues(runner.Uuid, runner.DisplayName).Observe(time.Since(start).Seconds())
+		api.metrics.runsFetchDuration.WithLabelValues(AppConfig.Uuid).Observe(time.Since(start).Seconds())
 	}()
 
-	client := api.newMeshClient(runner, requester)
-	dto, rawBytes, err := client.FetchRun(runner.Uuid)
+	client := api.newMeshClient(requester)
+	dto, rawBytes, err := client.FetchRun(AppConfig.Uuid)
 	if err != nil {
 		if statusErr, ok := err.(*meshapi.StatusError); ok && statusErr.Status != http.StatusNotFound {
-			api.metrics.runsFetchErrors.WithLabelValues(runner.Uuid, runner.DisplayName, ErrorTypeFetchAPI).Inc()
+			api.metrics.runsFetchErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeFetchAPI).Inc()
 		} else if !ok {
-			api.metrics.runsFetchErrors.WithLabelValues(runner.Uuid, runner.DisplayName, ErrorTypeFetchAPI).Inc()
+			api.metrics.runsFetchErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeFetchAPI).Inc()
 		}
 		return "", nil, err
 	}
@@ -62,13 +62,13 @@ func (api *RunApiClient) FetchRunDetails(nodePostfix string, runner *RunnerConfi
 
 // RegisterSource registers the run-controller as a status source for a run.
 // Idempotent: if the source is already registered (HTTP 409 Conflict), the call succeeds silently.
-func (api *RunApiClient) RegisterSource(runId string, runner *RunnerConfig) error {
-	requester := fmt.Sprintf("%s-%s", requesterPrefix, runner.Uuid)
-	client := api.newMeshClient(runner, requester)
+func (api *RunApiClient) RegisterSource(runId string) error {
+	requester := fmt.Sprintf("%s-%s", requesterPrefix, AppConfig.Uuid)
+	client := api.newMeshClient(requester)
 
 	registration := meshapi.RegistrationDTO{
 		Source: meshapi.SourceDTO{
-			Id: runner.Uuid,
+			Id: AppConfig.Uuid,
 		},
 		Steps: []meshapi.StepRegistrationDTO{
 			{
@@ -88,9 +88,9 @@ func (api *RunApiClient) RegisterSource(runId string, runner *RunnerConfig) erro
 
 // UpdateRunStatus sends a PATCH status update for a run.
 // It must be called after RegisterSource has been called for the same run.
-func (api *RunApiClient) UpdateRunStatus(runId string, runner *RunnerConfig, status string, summary string, stepMessage string) error {
-	requester := fmt.Sprintf("%s-%s", requesterPrefix, runner.Uuid)
-	client := api.newMeshClient(runner, requester)
+func (api *RunApiClient) UpdateRunStatus(runId string, status string, summary string, stepMessage string) error {
+	requester := fmt.Sprintf("%s-%s", requesterPrefix, AppConfig.Uuid)
+	client := api.newMeshClient(requester)
 
 	dto := meshapi.StatusUpdateDTO{
 		Status:  &status,
@@ -106,7 +106,7 @@ func (api *RunApiClient) UpdateRunStatus(runId string, runner *RunnerConfig, sta
 		},
 	}
 
-	if _, err := client.PatchStatus(runId, runner.Uuid, dto); err != nil {
+	if _, err := client.PatchStatus(runId, AppConfig.Uuid, dto); err != nil {
 		return fmt.Errorf("update status failed: %w", err)
 	}
 

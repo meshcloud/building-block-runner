@@ -2,6 +2,7 @@ package controller
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"sync"
@@ -16,7 +17,7 @@ type Controller struct {
 	shutdownCalled bool
 	runApi         RunApi
 	k8sClient      *KubernetesClient
-	cryptoMap      map[string]*meshcrypto.MeshCertBasedCrypto // Map runner UUID to crypto instance
+	crypto         *meshcrypto.MeshCertBasedCrypto
 	metrics        *MetricsCollector
 }
 
@@ -27,30 +28,26 @@ func NewController() *Controller {
 		log.Fatalf("Failed to create Kubernetes client: %v", err)
 	}
 
-	// Initialize crypto instances for each runner
-	cryptoMap := make(map[string]*meshcrypto.MeshCertBasedCrypto)
-	for _, runner := range AppConfig.Runners {
-		cryptoInstance, err := meshcrypto.NewCertBasedDecryptorWithValidation(
-			runner.Crypto.PrivateKey,
-			[]byte(runner.Crypto.PublicKey),
-		)
-		if err != nil {
-			log.Fatalf("Failed to initialize crypto for runner %s: %v", runner.Uuid, err)
-		}
-		cryptoMap[runner.Uuid] = cryptoInstance
-		log.Printf("Initialized crypto for runner: %s (keys validated)", runner.Uuid)
+	// Initialize a single crypto instance for the universal controller
+	cryptoInstance, err := meshcrypto.NewCertBasedDecryptorWithValidation(
+		AppConfig.Crypto.PrivateKey,
+		[]byte(AppConfig.Crypto.PublicKey),
+	)
+	if err != nil {
+		log.Fatalf("Failed to initialize crypto for controller %s: %v", AppConfig.Uuid, err)
 	}
+	log.Printf("Initialized crypto for controller: %s (keys validated)", AppConfig.Uuid)
 
 	// Initialize metrics collector
 	metrics := NewMetricsCollector()
-	metrics.activeRunners.Set(float64(len(AppConfig.Runners)))
+	metrics.activeRunners.Set(1)
 
 	return &Controller{
 		logger:         log.New(os.Stdout, "[CONTROLLER] ", log.LstdFlags),
 		shutdownCalled: false,
 		runApi:         newApi(),
 		k8sClient:      k8sClient,
-		cryptoMap:      cryptoMap,
+		crypto:         cryptoInstance,
 		metrics:        metrics,
 	}
 }
@@ -92,37 +89,53 @@ func (c *Controller) run() {
 }
 
 func (c *Controller) processRuns() {
-	// Process runs for each configured runner
-	for _, runner := range AppConfig.Runners {
-		c.processRunsForRunner(&runner)
-	}
+	c.processNextRun()
 }
 
-func (c *Controller) processRunsForRunner(runner *RunnerConfig) {
-	// Fetch available runs from meshfed API
-	runJsonBase64, runDetails, err := c.runApi.FetchRunDetails(runner.Uuid, runner)
+func (c *Controller) processNextRun() {
+	// Fetch the next available run for this universal controller
+	runJsonBase64, runDetails, err := c.runApi.FetchRunDetails(AppConfig.Uuid)
 
 	if err != nil {
 		if !isNoRunError(err) {
-			c.logger.Printf("Error fetching runs for runner %s: %v", runner.Uuid, err)
+			c.logger.Printf("Error fetching run: %v", err)
 		}
 		// 404 means no runs available - this is normal, don't log
 		return
 	}
 
-	// Decrypt the run JSON using the runner's crypto instance
-	cryptoInstance := c.cryptoMap[runner.Uuid]
-	decryptedRunJsonBase64, err := decryptRunDetails(runJsonBase64, cryptoInstance)
+	// Decrypt the run JSON using the controller's crypto instance
+	decryptedRunJsonBase64, err := decryptRunDetails(runJsonBase64, c.crypto)
 	if err != nil {
 		c.logger.Printf("Failed to decrypt run details for run %s: %v", runDetails.Metadata.Uuid, err)
-		c.metrics.decryptionErrors.WithLabelValues(runner.Uuid, runner.DisplayName).Inc()
+		c.metrics.decryptionErrors.WithLabelValues(AppConfig.Uuid).Inc()
 		return
 	}
 
-	c.logger.Printf("Processing run %s for runner %s", runDetails.Metadata.Uuid, runner.Uuid)
+	// Determine the implementation type from the fetched run
+	implType, err := runDetails.Spec.Definition.Spec.GetImplementationType()
+	if err != nil {
+		c.logger.Printf("Failed to determine implementation type for run %s: %v", runDetails.Metadata.Uuid, err)
+		c.reportRunFailure(runDetails.Metadata.Uuid, "Failed to determine implementation type: "+err.Error())
+		return
+	}
+
+	// Map the implementation type to the corresponding runner type key used in the config
+	runnerType := string(meshapi.ToRunnerType(implType))
+
+	// Look up the job spec for this implementation type
+	jobSpec, ok := AppConfig.Implementations[runnerType]
+	if !ok {
+		msg := fmt.Sprintf("no implementation handler configured for type '%s'", runnerType)
+		c.logger.Printf("Cannot process run %s: %s", runDetails.Metadata.Uuid, msg)
+		c.reportRunFailure(runDetails.Metadata.Uuid, msg)
+		return
+	}
+
+	c.logger.Printf("Processing run %s (type: %s)", runDetails.Metadata.Uuid, runnerType)
 
 	// Create Kubernetes job for the run with decrypted data
-	err = c.k8sClient.CreateRunnerJob(runDetails.GetRunInfo(), decryptedRunJsonBase64, runner, c.metrics)
+	err = c.k8sClient.CreateRunnerJob(runDetails.GetRunInfo(), decryptedRunJsonBase64, runnerType, &jobSpec, c.metrics)
 	if err != nil {
 		c.logger.Printf("Failed to create job for run %s: %v", runDetails.Metadata.Uuid, err)
 
@@ -135,25 +148,21 @@ func (c *Controller) processRunsForRunner(runner *RunnerConfig) {
 		} else {
 			errorMessage = "Failed to create job for run: " + err.Error()
 		}
+		c.reportRunFailure(runDetails.Metadata.Uuid, errorMessage)
+	}
+}
 
-		// When the job can't be created, no runner will register as a source,
-		// so the run-controller must register itself and report the failure.
-		if regErr := c.runApi.RegisterSource(runDetails.Metadata.Uuid, runner); regErr != nil {
-			c.logger.Printf("Failed to register as status source for run %s: %v", runDetails.Metadata.Uuid, regErr)
-			return
-		}
-
-		if statusErr := c.runApi.UpdateRunStatus(
-			runDetails.Metadata.Uuid,
-			runner,
-			"FAILED",
-			errorMessage,
-			errorMessage,
-		); statusErr != nil {
-			c.logger.Printf("Failed to report error back to meshfed for run %s: %v", runDetails.Metadata.Uuid, statusErr)
-		}
-
+// reportRunFailure registers the controller as a status source and marks the run as FAILED.
+func (c *Controller) reportRunFailure(runId string, errorMessage string) {
+	// When the job can't be created, no runner will register as a source,
+	// so the run-controller must register itself and report the failure.
+	if regErr := c.runApi.RegisterSource(runId); regErr != nil {
+		c.logger.Printf("Failed to register as status source for run %s: %v", runId, regErr)
 		return
+	}
+
+	if statusErr := c.runApi.UpdateRunStatus(runId, "FAILED", errorMessage, errorMessage); statusErr != nil {
+		c.logger.Printf("Failed to report error back to meshfed for run %s: %v", runId, statusErr)
 	}
 }
 

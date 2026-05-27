@@ -68,7 +68,7 @@ func NewMetricsCollector() *MetricsCollector {
 					Name: "run_controller_runs_fetch_errors_total",
 					Help: "Total number of errors while fetching building block runs",
 				},
-				[]string{"runner_uuid", "runner_name", "error_type"},
+				[]string{"controller_uuid", "error_type"},
 			),
 			runsFetchDuration: promauto.NewHistogramVec(
 				prometheus.HistogramOpts{
@@ -76,21 +76,21 @@ func NewMetricsCollector() *MetricsCollector {
 					Help:    "Duration of run fetch operations in seconds",
 					Buckets: prometheus.DefBuckets,
 				},
-				[]string{"runner_uuid", "runner_name"},
+				[]string{"controller_uuid"},
 			),
 			jobsCreatedTotal: promauto.NewCounterVec(
 				prometheus.CounterOpts{
 					Name: "run_controller_jobs_created_total",
 					Help: "Total number of Kubernetes jobs created for building block runs",
 				},
-				[]string{"runner_uuid", "runner_name"},
+				[]string{"controller_uuid"},
 			),
 			jobCreationErrors: promauto.NewCounterVec(
 				prometheus.CounterOpts{
 					Name: "run_controller_job_creation_errors_total",
 					Help: "Total number of errors while creating Kubernetes jobs",
 				},
-				[]string{"runner_uuid", "runner_name", "error_type"},
+				[]string{"controller_uuid", "error_type"},
 			),
 			jobCreationDuration: promauto.NewHistogramVec(
 				prometheus.HistogramOpts{
@@ -98,42 +98,42 @@ func NewMetricsCollector() *MetricsCollector {
 					Help:    "Duration of Kubernetes job creation operations in seconds",
 					Buckets: prometheus.DefBuckets,
 				},
-				[]string{"runner_uuid", "runner_name"},
+				[]string{"controller_uuid"},
 			),
 			serviceAccountsCreatedTotal: promauto.NewCounterVec(
 				prometheus.CounterOpts{
 					Name: "run_controller_service_accounts_created_total",
 					Help: "Total number of Kubernetes service accounts created for workload identity",
 				},
-				[]string{"runner_uuid"},
+				[]string{"controller_uuid"},
 			),
 			serviceAccountCreationErrors: promauto.NewCounterVec(
 				prometheus.CounterOpts{
 					Name: "run_controller_service_account_creation_errors_total",
 					Help: "Total number of errors while creating Kubernetes service accounts",
 				},
-				[]string{"runner_uuid", "error_type"},
+				[]string{"controller_uuid", "error_type"},
 			),
 			decryptionErrors: promauto.NewCounterVec(
 				prometheus.CounterOpts{
 					Name: "run_controller_decryption_errors_total",
 					Help: "Total number of errors while decrypting run details",
 				},
-				[]string{"runner_uuid", "runner_name"},
+				[]string{"controller_uuid"},
 			),
 			runnerRegistrationSuccess: promauto.NewCounterVec(
 				prometheus.CounterOpts{
 					Name: "run_controller_runner_registration_success_total",
 					Help: "Total number of successful runner registrations on startup",
 				},
-				[]string{"runner_uuid", "runner_name"},
+				[]string{"controller_uuid"},
 			),
 			runnerRegistrationErrors: promauto.NewCounterVec(
 				prometheus.CounterOpts{
 					Name: "run_controller_runner_registration_errors_total",
 					Help: "Total number of runner registration errors on startup",
 				},
-				[]string{"runner_uuid", "runner_name", "error_type"},
+				[]string{"controller_uuid", "error_type"},
 			),
 			controllerLoopIterations: promauto.NewCounter(
 				prometheus.CounterOpts{

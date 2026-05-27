@@ -1,25 +1,14 @@
 package controller
 
 import (
+	"strings"
 	"testing"
 )
 
-func createValidRunnerConfig(uuid string) RunnerConfig {
-	return RunnerConfig{
-		Uuid:               uuid,
-		DisplayName:        "Test Runner " + uuid,
-		OwnedByWorkspace:   "test-workspace",
-		ImplementationType: "TERRAFORM",
-		Api: ApiConfig{
-			Username: "user",
-			Password: "pass",
-		},
-		Crypto: CryptoConfig{
-			PublicKey:  "public-key",
-			PrivateKey: "private-key",
-		},
-		JobSpecTemplate: JobSpecTemplate{
-			Image: "test-image:latest",
+func createValidImplementations() map[string]JobSpecTemplate {
+	return map[string]JobSpecTemplate{
+		"TERRAFORM": {
+			Image: "tf-block-runner:latest",
 		},
 	}
 }
@@ -32,9 +21,14 @@ func createValidConfig() *ControllerConfig {
 			Username: "api-user",
 			Password: "api-pass",
 		},
-		Runners: []RunnerConfig{
-			createValidRunnerConfig("uuid-1"),
+		Uuid:             "46b7c17a-61f0-4062-9601-5785e60ce11f",
+		OwnedByWorkspace: "test-workspace",
+		DisplayName:      "Test Controller",
+		Crypto: CryptoConfig{
+			PublicKey:  "public-key",
+			PrivateKey: "private-key",
 		},
+		Implementations: createValidImplementations(),
 	}
 }
 
@@ -45,76 +39,93 @@ func TestValidateConfig_ValidConfig(t *testing.T) {
 	}
 }
 
-func TestValidateConfig_DuplicateRunnerUUIDs(t *testing.T) {
+func TestValidateConfig_MultipleImplementations(t *testing.T) {
 	config := createValidConfig()
-	config.Runners = []RunnerConfig{
-		createValidRunnerConfig("duplicate-uuid"),
-		createValidRunnerConfig("unique-uuid"),
-		createValidRunnerConfig("duplicate-uuid"),
-	}
-
-	if err := validateConfig(config); err == nil {
-		t.Error("expected error for duplicate runner UUIDs")
-	}
-}
-
-func TestValidateConfig_MultipleRunnersWithUniqueUUIDs(t *testing.T) {
-	config := createValidConfig()
-	config.Runners = []RunnerConfig{
-		createValidRunnerConfig("uuid-1"),
-		createValidRunnerConfig("uuid-2"),
-		createValidRunnerConfig("uuid-3"),
+	config.Implementations = map[string]JobSpecTemplate{
+		"TERRAFORM":             {Image: "tf-runner:latest"},
+		"GITHUB_WORKFLOW":       {Image: "gh-runner:latest"},
+		"GITLAB_PIPELINE":       {Image: "gl-runner:latest"},
+		"AZURE_DEVOPS_PIPELINE": {Image: "ado-runner:latest"},
+		"MANUAL":                {Image: "manual-runner:latest"},
 	}
 
 	if err := validateConfig(config); err != nil {
-		t.Errorf("expected no error for unique UUIDs, got: %v", err)
+		t.Errorf("expected no error for all implementation types, got: %v", err)
 	}
 }
 
 func TestValidateConfig_InvalidConfigs(t *testing.T) {
 	tests := []struct {
-		name   string
-		mutate func(*ControllerConfig)
+		name           string
+		mutate         func(*ControllerConfig)
+		expectedErrSub string
 	}{
 		{
-			name:   "empty namespace",
-			mutate: func(c *ControllerConfig) { c.Namespace = "" },
+			name:           "empty namespace",
+			mutate:         func(c *ControllerConfig) { c.Namespace = "" },
+			expectedErrSub: "namespace is required",
 		},
 		{
-			name:   "no runners",
-			mutate: func(c *ControllerConfig) { c.Runners = []RunnerConfig{} },
+			name:           "missing uuid",
+			mutate:         func(c *ControllerConfig) { c.Uuid = "" },
+			expectedErrSub: "uuid is required",
 		},
 		{
-			name:   "empty runner UUID",
-			mutate: func(c *ControllerConfig) { c.Runners[0].Uuid = "" },
+			name:           "missing ownedByWorkspace",
+			mutate:         func(c *ControllerConfig) { c.OwnedByWorkspace = "" },
+			expectedErrSub: "ownedByWorkspace is required",
 		},
 		{
-			name:   "empty runner display name",
-			mutate: func(c *ControllerConfig) { c.Runners[0].DisplayName = "" },
+			name:           "missing displayName",
+			mutate:         func(c *ControllerConfig) { c.DisplayName = "" },
+			expectedErrSub: "displayName is required",
 		},
 		{
-			name:   "empty runner workspace",
-			mutate: func(c *ControllerConfig) { c.Runners[0].OwnedByWorkspace = "" },
+			name:           "missing crypto public key",
+			mutate:         func(c *ControllerConfig) { c.Crypto.PublicKey = "" },
+			expectedErrSub: "crypto.publicKey is required",
 		},
 		{
-			name:   "empty implementation type",
-			mutate: func(c *ControllerConfig) { c.Runners[0].ImplementationType = "" },
+			name:           "missing crypto private key",
+			mutate:         func(c *ControllerConfig) { c.Crypto.PrivateKey = "" },
+			expectedErrSub: "crypto.privateKey is required",
 		},
 		{
-			name:   "invalid implementation type",
-			mutate: func(c *ControllerConfig) { c.Runners[0].ImplementationType = "INVALID" },
+			name:           "empty implementations map",
+			mutate:         func(c *ControllerConfig) { c.Implementations = map[string]JobSpecTemplate{} },
+			expectedErrSub: "at least one implementation handler",
 		},
 		{
-			name:   "empty private key",
-			mutate: func(c *ControllerConfig) { c.Runners[0].Crypto.PrivateKey = "" },
+			name:           "nil implementations map",
+			mutate:         func(c *ControllerConfig) { c.Implementations = nil },
+			expectedErrSub: "at least one implementation handler",
 		},
 		{
-			name:   "empty public key",
-			mutate: func(c *ControllerConfig) { c.Runners[0].Crypto.PublicKey = "" },
+			name: "invalid implementation type key",
+			mutate: func(c *ControllerConfig) {
+				c.Implementations = map[string]JobSpecTemplate{
+					"INVALID_TYPE": {Image: "some-image:latest"},
+				}
+			},
+			expectedErrSub: "implementations key 'INVALID_TYPE' is invalid",
 		},
 		{
-			name:   "empty image",
-			mutate: func(c *ControllerConfig) { c.Runners[0].JobSpecTemplate.Image = "" },
+			name: "ALL not valid as handler key",
+			mutate: func(c *ControllerConfig) {
+				c.Implementations = map[string]JobSpecTemplate{
+					"ALL": {Image: "some-image:latest"},
+				}
+			},
+			expectedErrSub: "implementations key 'ALL' is invalid",
+		},
+		{
+			name: "empty image in implementation spec",
+			mutate: func(c *ControllerConfig) {
+				c.Implementations = map[string]JobSpecTemplate{
+					"TERRAFORM": {Image: ""},
+				}
+			},
+			expectedErrSub: "implementations.TERRAFORM.image is required",
 		},
 	}
 
@@ -123,14 +134,19 @@ func TestValidateConfig_InvalidConfigs(t *testing.T) {
 			config := createValidConfig()
 			tt.mutate(config)
 
-			if err := validateConfig(config); err == nil {
+			err := validateConfig(config)
+			if err == nil {
 				t.Errorf("expected validation error for %s", tt.name)
+				return
+			}
+			if tt.expectedErrSub != "" && !strings.Contains(err.Error(), tt.expectedErrSub) {
+				t.Errorf("expected error containing %q, got: %v", tt.expectedErrSub, err)
 			}
 		})
 	}
 }
 
-func TestValidateConfig_ValidImplementationTypes(t *testing.T) {
+func TestValidateConfig_ValidImplementationTypeKeys(t *testing.T) {
 	validTypes := []string{
 		"TERRAFORM",
 		"GITHUB_WORKFLOW",
@@ -142,12 +158,13 @@ func TestValidateConfig_ValidImplementationTypes(t *testing.T) {
 	for _, implType := range validTypes {
 		t.Run(implType, func(t *testing.T) {
 			config := createValidConfig()
-			config.Runners[0].ImplementationType = implType
+			config.Implementations = map[string]JobSpecTemplate{
+				implType: {Image: "test-image:latest"},
+			}
 
 			err := validateConfig(config)
-
 			if err != nil {
-				t.Errorf("validateConfig() error = %v, expected no error for valid implementationType %s", err, implType)
+				t.Errorf("validateConfig() error = %v, expected no error for valid key %s", err, implType)
 			}
 		})
 	}
@@ -166,18 +183,6 @@ func TestValidateConfig_ApiKeyAuth(t *testing.T) {
 		}
 	})
 
-	t.Run("valid api key auth on runner api", func(t *testing.T) {
-		config := createValidConfig()
-		config.Runners[0].Api.Username = ""
-		config.Runners[0].Api.Password = ""
-		config.Runners[0].Api.ClientId = "my-client-id"
-		config.Runners[0].Api.ClientSecret = "my-client-secret"
-
-		if err := validateConfig(config); err != nil {
-			t.Errorf("expected no error for valid runner API key auth, got: %v", err)
-		}
-	})
-
 	t.Run("both auth methods set on global api", func(t *testing.T) {
 		config := createValidConfig()
 		config.Api.ClientId = "my-client-id"
@@ -186,34 +191,31 @@ func TestValidateConfig_ApiKeyAuth(t *testing.T) {
 		err := validateConfig(config)
 		if err == nil {
 			t.Error("expected error when both auth methods are set on api")
-		} else if !contains(err.Error(), "ambiguous authentication configuration") {
+		} else if !strings.Contains(err.Error(), "ambiguous authentication configuration") {
 			t.Errorf("expected ambiguous auth error, got: %v", err)
 		}
 	})
 
-	t.Run("both auth methods set on runner api", func(t *testing.T) {
+	t.Run("missing api url", func(t *testing.T) {
 		config := createValidConfig()
-		config.Runners[0].Api.ClientId = "my-client-id"
-		config.Runners[0].Api.ClientSecret = "my-client-secret"
+		config.Api.Url = ""
 
 		err := validateConfig(config)
 		if err == nil {
-			t.Error("expected error when both auth methods are set on runner api")
-		} else if !contains(err.Error(), "ambiguous authentication configuration") {
-			t.Errorf("expected ambiguous auth error, got: %v", err)
+			t.Error("expected error for missing api url")
 		}
 	})
-}
 
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
-}
+	t.Run("no auth configured", func(t *testing.T) {
+		config := createValidConfig()
+		config.Api.Username = ""
+		config.Api.Password = ""
 
-func containsHelper(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
+		err := validateConfig(config)
+		if err == nil {
+			t.Error("expected error when no auth method is configured")
+		} else if !strings.Contains(err.Error(), "no authentication configured") {
+			t.Errorf("expected no-auth error, got: %v", err)
 		}
-	}
-	return false
+	})
 }

@@ -16,11 +16,15 @@ var DiscoveredOidcIssuer string = ""
 
 // ControllerConfig holds the main configuration for the run controller
 type ControllerConfig struct {
-	Namespace              string         `yaml:"namespace"`              // Kubernetes namespace where jobs are created
-	ImagePullSecrets       []string       `yaml:"imagePullSecrets"`       // Image pull secrets for runner jobs (optional)
-	PollingIntervalSeconds int            `yaml:"pollingIntervalSeconds"` // Polling interval in seconds (default: 10)
-	Api                    ApiConfig      `yaml:"api"`                    // Global API config used by controller to fetch runs and register runners
-	Runners                []RunnerConfig `yaml:"runners"`                // List of runner configurations
+	Namespace              string                     `yaml:"namespace"`              // Kubernetes namespace where jobs are created
+	ImagePullSecrets       []string                   `yaml:"imagePullSecrets"`       // Image pull secrets for runner jobs (optional)
+	PollingIntervalSeconds int                        `yaml:"pollingIntervalSeconds"` // Polling interval in seconds (default: 10)
+	Api                    ApiConfig                  `yaml:"api"`                    // Global API config used by controller to fetch runs and register runners
+	Uuid                   string                     `yaml:"uuid"`                   // Unique identifier for this universal run controller
+	OwnedByWorkspace       string                     `yaml:"ownedByWorkspace"`       // The workspace that owns this runner (required for registration)
+	DisplayName            string                     `yaml:"displayName"`            // Human-readable display name for this controller (required for registration)
+	Crypto                 CryptoConfig               `yaml:"crypto"`                 // Cryptographic keys for secure communication
+	Implementations        map[string]JobSpecTemplate `yaml:"implementations"`        // Kubernetes job templates keyed by implementation type (e.g. TERRAFORM, GITHUB_WORKFLOW)
 }
 
 // ApiConfig holds API connection and authentication details.
@@ -45,17 +49,6 @@ func (c ApiConfig) NewAuthProvider(fallbackURL string) meshapi.AuthProvider {
 		return meshapi.NewApiKeyAuth(url, c.ClientId, c.ClientSecret)
 	}
 	return meshapi.BasicAuth{Username: c.Username, Password: c.Password}
-}
-
-// RunnerConfig holds configuration for a specific runner
-type RunnerConfig struct {
-	Uuid               string          `yaml:"uuid"`               // Unique identifier for this runner
-	DisplayName        string          `yaml:"displayName"`        // Human-readable name for the runner (used for self-registration)
-	OwnedByWorkspace   string          `yaml:"ownedByWorkspace"`   // Workspace that owns this runner (required by meshObject API)
-	ImplementationType string          `yaml:"implementationType"` // Runner implementation type: MANUAL, TERRAFORM, GITHUB_WORKFLOW, GITLAB_PIPELINE, AZURE_DEVOPS_PIPELINE
-	Api                ApiConfig       `yaml:"api"`                // Per-runner API credentials passed to runner jobs for status reporting
-	Crypto             CryptoConfig    `yaml:"crypto"`             // Cryptographic keys for secure communication
-	JobSpecTemplate    JobSpecTemplate `yaml:"jobSpecTemplate"`    // Kubernetes job configuration template
 }
 
 // CryptoConfig holds cryptographic keys for secure communication
@@ -191,45 +184,32 @@ func validateConfig(config *ControllerConfig) error {
 	if err := validateApiAuth(config.Api, "api"); err != nil {
 		return err
 	}
-	if len(config.Runners) == 0 {
-		return fmt.Errorf("at least one runner must be configured")
+	if config.Uuid == "" {
+		return fmt.Errorf("uuid is required")
 	}
-
-	// Check for duplicate runner UUIDs
-	if err := checkDuplicateRunnerUUIDs(config.Runners); err != nil {
-		return err
+	if config.OwnedByWorkspace == "" {
+		return fmt.Errorf("ownedByWorkspace is required")
 	}
-
-	for i, runner := range config.Runners {
-		if runner.Uuid == "" {
-			return fmt.Errorf("runner[%d].uuid is required", i)
+	if config.DisplayName == "" {
+		return fmt.Errorf("displayName is required")
+	}
+	if config.Crypto.PublicKey == "" {
+		return fmt.Errorf("crypto.publicKey is required")
+	}
+	if config.Crypto.PrivateKey == "" {
+		return fmt.Errorf("crypto.privateKey is required")
+	}
+	if len(config.Implementations) == 0 {
+		return fmt.Errorf("at least one implementation handler must be configured under 'implementations'")
+	}
+	for key, spec := range config.Implementations {
+		if !isValidHandlerImplementationType(key) {
+			return fmt.Errorf("implementations key '%s' is invalid; valid values are: TERRAFORM, GITHUB_WORKFLOW, GITLAB_PIPELINE, AZURE_DEVOPS_PIPELINE, MANUAL", key)
 		}
-		if runner.DisplayName == "" {
-			return fmt.Errorf("runner[%d].displayName is required", i)
-		}
-		if runner.OwnedByWorkspace == "" {
-			return fmt.Errorf("runner[%d].ownedByWorkspace is required", i)
-		}
-		if runner.ImplementationType == "" {
-			return fmt.Errorf("runner[%d].implementationType is required", i)
-		}
-		if !isValidImplementationType(runner.ImplementationType) {
-			return fmt.Errorf("runner[%d].implementationType '%s' is invalid. Valid values are: TERRAFORM, GITHUB_WORKFLOW, GITLAB_PIPELINE, AZURE_DEVOPS_PIPELINE, MANUAL", i, runner.ImplementationType)
-		}
-		if err := validateApiAuth(runner.Api, fmt.Sprintf("runner[%d].api", i)); err != nil {
-			return err
-		}
-		if runner.Crypto.PrivateKey == "" {
-			return fmt.Errorf("runner[%d].crypto.privateKey is required", i)
-		}
-		if runner.Crypto.PublicKey == "" {
-			return fmt.Errorf("runner[%d].crypto.publicKey is required", i)
-		}
-		if runner.JobSpecTemplate.Image == "" {
-			return fmt.Errorf("runner[%d].jobSpecTemplate.image is required", i)
+		if spec.Image == "" {
+			return fmt.Errorf("implementations.%s.image is required", key)
 		}
 	}
-
 	return nil
 }
 
@@ -248,15 +228,14 @@ func logConfig(logger *log.Logger, config *ControllerConfig) {
 		logger.Printf("API Username: %s\n", config.Api.Username)
 	}
 
-	logger.Printf("Configured runners: %d\n", len(config.Runners))
-	for i, runner := range config.Runners {
-		logger.Printf("  Runner %d:\n", i+1)
-		logger.Printf("    UUID: %s\n", runner.Uuid)
-		logger.Printf("    Display Name: %s\n", runner.DisplayName)
-		logger.Printf("    Image: %s\n", runner.JobSpecTemplate.Image)
-		if len(runner.JobSpecTemplate.Env) > 0 {
-			logger.Printf("    Custom Env Vars: %d\n", len(runner.JobSpecTemplate.Env))
+	logger.Printf("Controller UUID: %s\n", config.Uuid)
+	logger.Printf("Configured implementations: %d\n", len(config.Implementations))
+	for implType, spec := range config.Implementations {
+		logger.Printf("  %s: image=%s", implType, spec.Image)
+		if len(spec.Env) > 0 {
+			logger.Printf(" (%d custom env vars)", len(spec.Env))
 		}
+		logger.Println()
 	}
 	logger.Println("--------------------------------------------------------------------")
 }
@@ -273,21 +252,9 @@ func ReadInYmlConfig(file string) (*ControllerConfig, error) {
 	return config, err
 }
 
-// checkDuplicateRunnerUUIDs returns an error if any runner UUIDs are duplicated
-func checkDuplicateRunnerUUIDs(runners []RunnerConfig) error {
-	// Track seen UUIDs with their first index
-	seen := make(map[string]int)
-	for i, runner := range runners {
-		if prevIndex, exists := seen[runner.Uuid]; exists {
-			return fmt.Errorf("duplicate runner UUID '%s' found at runners [%d %d]", runner.Uuid, prevIndex, i)
-		}
-		seen[runner.Uuid] = i
-	}
-	return nil
-}
-
-// isValidImplementationType checks if the given implementation type is valid
-func isValidImplementationType(implType string) bool {
+// isValidHandlerImplementationType checks if the given implementation type is a valid handler key.
+// Note: "ALL" is a registration concept only and cannot be used as a handler key.
+func isValidHandlerImplementationType(implType string) bool {
 	switch meshapi.RunnerImplementationType(implType) {
 	case meshapi.RunnerTypeTerraform,
 		meshapi.RunnerTypeGitHubWorkflow,

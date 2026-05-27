@@ -12,6 +12,8 @@ FROM eclipse-temurin:21-jre
 RUN useradd meshcloud --uid 2000 --user-group && \
   chmod 0777 /opt/java/openjdk/lib/security/cacerts
 
+ARG VERSION=dev
+ENV VERSION=${VERSION}
 ENV CUSTOM_CA_CERTS_PATH=/certs
 
 ARG RUNNER_MODULE

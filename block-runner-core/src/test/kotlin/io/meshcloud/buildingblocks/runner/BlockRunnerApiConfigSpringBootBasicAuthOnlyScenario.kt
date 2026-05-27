@@ -31,6 +31,7 @@ class BlockRunnerApiConfigSpringBootBasicAuthOnlyScenario {
 
     // Verify shared configuration values
     assertEquals("test-uuid-basic-auth", config.uuid)
+    assertEquals("test-version-basic-auth", config.version)
 
     // Verify standalone URL config is present and bound correctly
     assertNotNull(standaloneConfig, "StandaloneBlockRunnerApiConfig should be present in non-kubernetes mode")

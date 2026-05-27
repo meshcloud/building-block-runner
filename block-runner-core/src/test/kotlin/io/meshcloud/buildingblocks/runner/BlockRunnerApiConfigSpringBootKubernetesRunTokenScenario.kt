@@ -32,6 +32,7 @@ class BlockRunnerApiConfigSpringBootKubernetesRunTokenScenario {
 
     // Verify shared config is bound
     Assertions.assertEquals("test-kubernetes-run-token", config.uuid)
+    Assertions.assertEquals("test-version-kubernetes", config.version)
 
     // Critical: StandaloneBlockRunnerApiConfig must NOT be present — api.url and auth
     // are not needed in kubernetes mode because the run object provides its own self-link

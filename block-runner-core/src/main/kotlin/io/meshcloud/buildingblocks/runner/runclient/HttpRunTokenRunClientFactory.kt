@@ -16,11 +16,13 @@ class HttpRunTokenRunClientFactory(
 ) : BlockRunClientFactory {
   override fun buildBlockRunClient(run: ProcessableBlockRun): BlockRunClient {
     val httpClient = buildHttpClientWithRunnerToken(run)
+    val urlProvider = ActiveRunBasedUrlProvider(run, config)
 
     return HttpBlockRunClient(
       httpClient = httpClient,
       config = config,
-      activeBlockRun = run
+      activeBlockRun = run,
+      urlProvider = urlProvider,
     )
   }
 

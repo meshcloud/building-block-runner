@@ -17,8 +17,9 @@ private val log = KotlinLogging.logger { }
 
 class HttpBlockRunClient(
   override val activeBlockRun: ProcessableBlockRun,
+  private val urlProvider: UrlProvider,
   private val httpClient: OkHttpClient,
-  private val config: BlockRunnerApiConfig
+  private val config: BlockRunnerApiConfig,
 ) : BlockRunClient {
 
   private val mapper = MeshObjectApiObjectMapper.mapper
@@ -41,10 +42,7 @@ class HttpBlockRunClient(
     val body = mapper.writeValueAsString(sourceRegistration)
       .toRequestBody(MeshHalMediaTypes.MESHBUILDINGBLOCKRUN_MEDIA_TYPE_V1.toMediaType())
 
-    val runUuid = activeBlockRun.meshObject.metadata.uuid
-    val url = config.api.url.toHttpUrl().newBuilder()
-      .addPathSegments("api/meshobjects/meshbuildingblockruns/$runUuid/status/source")
-      .build()
+    val url = urlProvider.getRegisterSourceUrl().toHttpUrl()
 
     val request = Request.Builder()
       .url(url)
@@ -73,10 +71,7 @@ class HttpBlockRunClient(
       .writeValueAsString(sourceUpdate)
       .toRequestBody(MeshHalMediaTypes.MESHBUILDINGBLOCKRUN_MEDIA_TYPE_V1.toMediaType())
 
-    val runUuid = activeBlockRun.meshObject.metadata.uuid
-    val url = config.api.url.toHttpUrl().newBuilder()
-      .addPathSegments("api/meshobjects/meshbuildingblockruns/$runUuid/status/source/${config.uuid}")
-      .build()
+    val url = urlProvider.getUpdateSourceUrl().toHttpUrl()
 
     val request = Request.Builder()
       .url(url)

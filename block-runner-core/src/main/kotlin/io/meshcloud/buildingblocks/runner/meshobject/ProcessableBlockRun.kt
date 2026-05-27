@@ -17,6 +17,23 @@ data class ProcessableBlockRun(
   @JsonProperty("_links")
   val links: Map<String, HalLink>
 ) {
+  fun selfLink(): String {
+    return extractLinkStr("self")
+  }
+
+  fun registerSourceLink(): String {
+    return extractLinkStr("registerSource")
+  }
+
+  fun updateSourceLink(): String {
+    return extractLinkStr("updateSource")
+  }
+
+  private fun extractLinkStr(key: String): String {
+    return links[key]?.href
+      ?: throw IllegalStateException("No $key link present in the provided _links property")
+  }
+
   companion object {
     fun test(
       implementation: BuildingBlockImplementation,

@@ -1,6 +1,6 @@
 package io.meshcloud.buildingblocks.runner.http
 
-import io.meshcloud.buildingblocks.runner.BlockRunnerApiConfig
+import io.meshcloud.buildingblocks.runner.StandaloneBlockRunnerApiConfig
 import io.mockk.every
 import io.mockk.mockk
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -9,17 +9,18 @@ import org.junit.jupiter.api.Test
 
 class BasicAuthHttpClientFactoryTest {
 
+  private fun buildConfig(username: String = "test-user", password: String = "test-password") =
+    mockk<StandaloneBlockRunnerApiConfig> {
+      every { auth } returns StandaloneBlockRunnerApiConfig.AuthConfig(
+        username = username,
+        password = password,
+      )
+    }
+
   @Test
   fun `buildClient returns configured OkHttpClient`() {
     // Given
-    val authConfig = BlockRunnerApiConfig.BlockRunnerAuthConfig(
-      username = "test-user",
-      password = "test-password"
-    )
-    val config = mockk<BlockRunnerApiConfig> {
-      every { auth } returns authConfig
-    }
-    val factory = BasicAuthHttpClientFactory(config)
+    val factory = BasicAuthHttpClientFactory(buildConfig())
 
     // When
     val client = factory.buildHttpClient()
@@ -32,14 +33,7 @@ class BasicAuthHttpClientFactoryTest {
   @Test
   fun `buildClient returns same client instance on multiple calls`() {
     // Given
-    val authConfig = BlockRunnerApiConfig.BlockRunnerAuthConfig(
-      username = "test-user",
-      password = "test-password"
-    )
-    val config = mockk<BlockRunnerApiConfig> {
-      every { auth } returns authConfig
-    }
-    val factory = BasicAuthHttpClientFactory(config)
+    val factory = BasicAuthHttpClientFactory(buildConfig())
 
     // When
     val client1 = factory.buildHttpClient()
@@ -52,14 +46,7 @@ class BasicAuthHttpClientFactoryTest {
   @Test
   fun `buildClient configures client to not follow redirects`() {
     // Given
-    val authConfig = BlockRunnerApiConfig.BlockRunnerAuthConfig(
-      username = "test-user",
-      password = "test-password"
-    )
-    val config = mockk<BlockRunnerApiConfig> {
-      every { auth } returns authConfig
-    }
-    val factory = BasicAuthHttpClientFactory(config)
+    val factory = BasicAuthHttpClientFactory(buildConfig())
 
     // When
     val client = factory.buildHttpClient()

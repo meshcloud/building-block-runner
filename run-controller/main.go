@@ -51,11 +51,11 @@ func main() {
 
 	retryInterval := 10 * time.Second
 	for {
-		if err := controller.RegisterAllRunners(logger); err != nil {
-			logger.Printf("Runner registration failed, retrying in %s: %v", retryInterval, err)
+		if err := controller.RegisterController(logger); err != nil {
+			logger.Printf("Controller registration failed, retrying in %s: %v", retryInterval, err)
 			select {
 			case <-ctx.Done():
-				logger.Fatalf("Failed to register runners after %s: %v", timeout, err)
+				logger.Fatalf("Failed to register controller after %s: %v", timeout, err)
 			case <-time.After(retryInterval):
 				continue
 			}

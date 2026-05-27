@@ -20,7 +20,7 @@ const (
 
 // RegistrationApi interface for runner registration
 type RegistrationApi interface {
-	RegisterRunner(runner *RunnerConfig, metrics *MetricsCollector) error
+	RegisterController(metrics *MetricsCollector) error
 }
 
 // RegistrationApiClient implements the RegistrationApi
@@ -45,48 +45,48 @@ func NewRegistrationApi(logger *log.Logger) RegistrationApi {
 	}
 }
 
-// RegisterRunner registers or creates a runner via the meshObject API
-// It first tries PUT (update), and if the runner doesn't exist (404), falls back to POST (create)
-func (api *RegistrationApiClient) RegisterRunner(runner *RunnerConfig, metrics *MetricsCollector) error {
+// RegisterController registers or creates the universal run controller via the meshObject API.
+// It first tries PUT (update), and if the controller doesn't exist (404), falls back to POST (create).
+func (api *RegistrationApiClient) RegisterController(metrics *MetricsCollector) error {
 	// Build the registration DTO with auto-constructed WIF
-	dto := BuildRunnerRegistrationDTO(runner, api.namespace, api.oidcIssuer)
+	dto := BuildRunnerRegistrationDTO(api.namespace, api.oidcIssuer)
 
 	// Marshal to JSON
 	jsonBody, err := json.Marshal(dto)
 	if err != nil {
-		metrics.runnerRegistrationErrors.WithLabelValues(runner.Uuid, runner.DisplayName, ErrorTypeRegistrationMarshal).Inc()
+		metrics.runnerRegistrationErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeRegistrationMarshal).Inc()
 		return fmt.Errorf("failed to marshal runner registration: %w", err)
 	}
 
-	// Try PUT first (update existing runner)
-	statusCode, err := api.putRunner(runner, jsonBody)
+	// Try PUT first (update existing controller registration)
+	statusCode, err := api.putController(jsonBody)
 	if err != nil {
-		metrics.runnerRegistrationErrors.WithLabelValues(runner.Uuid, runner.DisplayName, ErrorTypeRegistrationPut).Inc()
+		metrics.runnerRegistrationErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeRegistrationPut).Inc()
 		return err
 	}
 
-	// If runner doesn't exist, create it with POST
+	// If controller doesn't exist, create it with POST
 	if statusCode == http.StatusNotFound {
-		api.logger.Printf("Runner %s not found, creating new runner", runner.Uuid)
-		err = api.postRunner(runner, jsonBody)
+		api.logger.Printf("Controller %s not found, creating new registration", AppConfig.Uuid)
+		err = api.postController(jsonBody)
 		if err != nil {
-			metrics.runnerRegistrationErrors.WithLabelValues(runner.Uuid, runner.DisplayName, ErrorTypeRegistrationPost).Inc()
+			metrics.runnerRegistrationErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeRegistrationPost).Inc()
 			return err
 		}
-		metrics.runnerRegistrationSuccess.WithLabelValues(runner.Uuid, runner.DisplayName).Inc()
+		metrics.runnerRegistrationSuccess.WithLabelValues(AppConfig.Uuid).Inc()
 		return nil
 	}
 
-	metrics.runnerRegistrationSuccess.WithLabelValues(runner.Uuid, runner.DisplayName).Inc()
-	api.logger.Printf("Successfully updated runner %s (%s)", runner.DisplayName, runner.Uuid)
+	metrics.runnerRegistrationSuccess.WithLabelValues(AppConfig.Uuid).Inc()
+	api.logger.Printf("Successfully updated controller registration %s", AppConfig.Uuid)
 	return nil
 }
 
-// putRunner attempts to update an existing runner via PUT
-func (api *RegistrationApiClient) putRunner(runner *RunnerConfig, jsonBody []byte) (int, error) {
-	url := fmt.Sprintf(EP_RunnerWithUuid, api.url, runner.Uuid)
+// putController attempts to update the existing controller registration via PUT
+func (api *RegistrationApiClient) putController(jsonBody []byte) (int, error) {
+	url := fmt.Sprintf(EP_RunnerWithUuid, api.url, AppConfig.Uuid)
 
-	api.logger.Printf("Updating runner %s (%s) at %s", runner.DisplayName, runner.Uuid, url)
+	api.logger.Printf("Updating controller registration %s at %s", AppConfig.Uuid, url)
 
 	req, err := http.NewRequest(http.MethodPut, url, bytes.NewReader(jsonBody))
 	if err != nil {
@@ -101,7 +101,7 @@ func (api *RegistrationApiClient) putRunner(runner *RunnerConfig, jsonBody []byt
 	}
 	defer resp.Body.Close()
 
-	// 404 means runner doesn't exist - caller should try POST
+	// 404 means controller doesn't exist - caller should try POST
 	if resp.StatusCode == http.StatusNotFound {
 		return http.StatusNotFound, nil
 	}
@@ -114,11 +114,11 @@ func (api *RegistrationApiClient) putRunner(runner *RunnerConfig, jsonBody []byt
 	return resp.StatusCode, nil
 }
 
-// postRunner creates a new runner via POST
-func (api *RegistrationApiClient) postRunner(runner *RunnerConfig, jsonBody []byte) error {
+// postController creates a new controller registration via POST
+func (api *RegistrationApiClient) postController(jsonBody []byte) error {
 	url := fmt.Sprintf(EP_Runners, api.url)
 
-	api.logger.Printf("Creating runner %s (%s) at %s", runner.DisplayName, runner.Uuid, url)
+	api.logger.Printf("Creating controller registration %s at %s", AppConfig.Uuid, url)
 
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(jsonBody))
 	if err != nil {
@@ -138,7 +138,7 @@ func (api *RegistrationApiClient) postRunner(runner *RunnerConfig, jsonBody []by
 		return fmt.Errorf("POST failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	api.logger.Printf("Successfully created runner %s (%s)", runner.DisplayName, runner.Uuid)
+	api.logger.Printf("Successfully created controller registration %s", AppConfig.Uuid)
 	return nil
 }
 
@@ -149,32 +149,21 @@ func (api *RegistrationApiClient) setHeaders(req *http.Request) {
 	req.Header.Set("Accept", MeshBuildingBlockRunner_MediaType_V1Preview)
 }
 
-// RegisterAllRunners registers all configured runners
-func RegisterAllRunners(logger *log.Logger) error {
+// RegisterController registers the universal run controller on startup.
+func RegisterController(logger *log.Logger) error {
 	if UseTestClient {
-		logger.Println("Test mode enabled - skipping runner registration")
+		logger.Println("Test mode enabled - skipping controller registration")
 		return nil
 	}
 
 	api := NewRegistrationApi(logger)
 	metrics := NewMetricsCollector()
 
-	logger.Println("Registering configured runners...")
-	var lastError error
-
-	for i := range AppConfig.Runners {
-		runner := &AppConfig.Runners[i]
-		if err := api.RegisterRunner(runner, metrics); err != nil {
-			logger.Printf("Warning: Failed to register runner %s: %v", runner.Uuid, err)
-			lastError = err
-			// Continue with other runners even if one fails
-		}
+	logger.Printf("Registering controller %s with implementationType ALL...", AppConfig.Uuid)
+	if err := api.RegisterController(metrics); err != nil {
+		return fmt.Errorf("controller registration failed: %w", err)
 	}
 
-	if lastError != nil {
-		return fmt.Errorf("one or more runners failed to register")
-	}
-
-	logger.Println("All runners registered successfully")
+	logger.Println("Controller registered successfully")
 	return nil
 }

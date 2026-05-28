@@ -2,7 +2,7 @@ package io.meshcloud.buildingblocks.runner.runclient
 
 import io.meshcloud.buildingblocks.runner.BlockRunnerApiConfig
 import io.meshcloud.buildingblocks.runner.StandaloneBlockRunnerApiConfig
-import io.meshcloud.buildingblocks.runner.http.BasicAuthHttpClientFactory
+import io.meshcloud.buildingblocks.runner.http.AuthHttpClientFactory
 import io.meshcloud.buildingblocks.runner.meshobject.ProcessableBlockRun
 import io.meshcloud.buildingblocks.runner.http.EMPTY_REQUEST_BODY
 import io.meshcloud.meshobjects.MeshHalMediaTypes
@@ -22,14 +22,14 @@ private val log = KotlinLogging.logger { }
 @Component
 @Profile("!kubernetes")
 class MeshObjectApiBlockRunClientFetcher(
-  basicAuthHttpClientFactory: BasicAuthHttpClientFactory,
+  authHttpClientFactory: AuthHttpClientFactory,
   private val blockRunClientFactory: BlockRunClientFactory,
   private val standaloneBlockRunnerApiConfig: StandaloneBlockRunnerApiConfig,
   private val config: BlockRunnerApiConfig,
   private val processableRunFactory: ProcessableRunFactory,
 ) : BlockRunClientFetcher {
 
-  private val httpClient = basicAuthHttpClientFactory.buildHttpClient()
+  private val httpClient = authHttpClientFactory.buildHttpClient()
 
   override fun fetchBlockRunClient(): BlockRunClient? {
     val url = standaloneBlockRunnerApiConfig.api.url.toHttpUrl().newBuilder()

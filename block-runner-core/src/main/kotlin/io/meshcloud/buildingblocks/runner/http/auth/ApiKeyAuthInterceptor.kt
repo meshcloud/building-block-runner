@@ -64,10 +64,9 @@ class ApiKeyAuthInterceptor(
   private val lock = ReentrantLock()
 
   @Volatile
-  private var cachedToken: String? = null
+  private var cachedToken: CachedToken? = null
 
-  @Volatile
-  private var expiresAt: Instant = Instant.EPOCH
+  private data class CachedToken(val token: String, val expiresAt: Instant)
 
   companion object {
     private val TOKEN_EXPIRY_BUFFER: Duration = Duration.ofSeconds(30)
@@ -85,16 +84,16 @@ class ApiKeyAuthInterceptor(
   private fun getValidToken(): String {
     // Fast path: cached token is still valid (no lock needed for a simple read).
     val current = cachedToken
-    if (current != null && Instant.now().isBefore(expiresAt)) {
-      return current
+    if (current != null && Instant.now().isBefore(current.expiresAt)) {
+      return current.token
     }
 
     // Slow path: fetch a fresh token under the lock.
     return lock.withLock {
       // Re-check after acquiring the lock (another thread may have refreshed it already).
       val locked = cachedToken
-      if (locked != null && Instant.now().isBefore(expiresAt)) {
-        locked
+      if (locked != null && Instant.now().isBefore(locked.expiresAt)) {
+        locked.token
       } else {
         fetchToken()
       }
@@ -136,8 +135,10 @@ class ApiKeyAuthInterceptor(
       val lifetime = Duration.ofSeconds(loginResponse.expiresIn.toLong()) - TOKEN_EXPIRY_BUFFER
       val effectiveLifetime = if (lifetime <= Duration.ZERO) MIN_TOKEN_LIFETIME else lifetime
 
-      cachedToken = loginResponse.accessToken
-      expiresAt = Instant.now().plus(effectiveLifetime)
+      cachedToken = CachedToken(
+        token = loginResponse.accessToken,
+        expiresAt = Instant.now().plus(effectiveLifetime)
+      )
 
       log.debug { "Obtained new API key access token, valid for ${effectiveLifetime.toSeconds()}s" }
 

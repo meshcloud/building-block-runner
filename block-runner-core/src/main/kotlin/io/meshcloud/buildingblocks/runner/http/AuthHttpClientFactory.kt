@@ -1,9 +1,9 @@
 package io.meshcloud.buildingblocks.runner.http
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.meshcloud.buildingblocks.runner.StandaloneBlockRunnerApiConfig
 import io.meshcloud.buildingblocks.runner.http.auth.ApiKeyAuthInterceptor
 import io.meshcloud.buildingblocks.runner.http.auth.BasicAuthInterceptor
-import io.github.oshai.kotlinlogging.KotlinLogging
 import okhttp3.OkHttpClient
 import org.springframework.context.annotation.Profile
 import org.springframework.stereotype.Component
@@ -23,7 +23,7 @@ private val log = KotlinLogging.logger { }
  */
 @Component
 @Profile("!kubernetes")
-class BasicAuthHttpClientFactory(
+class AuthHttpClientFactory(
   config: StandaloneBlockRunnerApiConfig,
 ) {
 
@@ -46,6 +46,10 @@ class BasicAuthHttpClientFactory(
         clientSecret = config.auth.apiKey.clientSecret,
       )
     } else {
+      /**
+       * @deprecated Basic auth is deprecated and should not be used for new deployments.
+       * It is still supported for backwards compatibility, but will eventually be removed in favor of API key authentication.
+       */
       log.info { "Using Basic authentication for meshStack API" }
       BasicAuthInterceptor(
         username = requireNotNull(config.auth.username) {

@@ -7,12 +7,7 @@ logging:
 spring:
   main:
     web-application-type: none
-
-blockrunner:
-  version: ${VERSION:dev}
-  api:
-    url: "http://localhost:8080"
-  uuid: "05cfa85f-2818-4bdd-b193-620e0187d7de"
-  auth:
-    username: bb-api
-    password: guest
+  config:
+    import:
+      - optional:classpath:runner-config.yml
+      - optional:file:./runner-config.yml

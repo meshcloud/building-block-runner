@@ -1,0 +1,14 @@
+# Test profile: blank api-key credentials (simulates YAML placeholder resolving to empty string
+# when RUNNER_API_CLIENT_ID / RUNNER_API_CLIENT_SECRET env vars are not set).
+# Expected behavior: apiKey appears null to consumers; basic auth credentials are used instead.
+blockrunner:
+  uuid: test-uuid-blank-api-key
+  version: test-version-blank-api-key
+  api:
+    url: http://localhost:8080
+  auth:
+    username: test-user
+    password: test-password
+    apiKey:
+      clientId: ""
+      clientSecret: ""

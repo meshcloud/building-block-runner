@@ -23,12 +23,17 @@ data class StandaloneBlockRunnerApiConfig(
    * Authentication configuration. Exactly one of [apiKey] or ([username] + [password]) must be set.
    * If [apiKey] is configured it takes precedence and a short-lived Bearer token is obtained via
    * POST /api/login. Otherwise, HTTP Basic auth with [username]/[password] is used.
+   *
+   * [apiKey] returns null when the bound credentials are blank (e.g. when YAML placeholders
+   * resolve to empty strings because the corresponding env vars are not set).
    */
-  data class AuthConfig(
+  class AuthConfig(
     val username: String? = null,
     val password: String? = null,
-    val apiKey: ApiKeyConfig? = null,
-  )
+    apiKey: ApiKeyConfig? = null,
+  ) {
+    val apiKey: ApiKeyConfig? = apiKey?.takeIf { it.clientId.isNotBlank() && it.clientSecret.isNotBlank() }
+  }
 
   /**
    * Credentials for the meshStack API key login flow.

@@ -406,6 +406,10 @@ func cleanSystemEnv() map[string]string {
 		"NIX_CONFIG",
 		// meshStack API base URL injected by the platform; pre-run scripts use it to call meshStack APIs.
 		"MESHSTACK_ENDPOINT",
+		// meshstack TF provider is also used inside BB runs (starter kits), and for smoke testing,
+		// meshstack-dev sets this env to true. We need to pass this on here.
+		// See https://github.com/meshcloud/terraform-provider-meshstack/blob/afb40fdecf98ac7ae3e08a937c2a9dc42e92f05e/client/client.go#L71-L71
+		"MESHSTACK_SKIP_VERSION_CHECK",
 		// Path to custom CA certificates, set in the Docker image; scripts that call HTTPS endpoints need this.
 		"CUSTOM_CA_CERTS_PATH",
 		// Terraform logging controls; operators set these to capture Terraform debug output.

@@ -17,7 +17,7 @@ ENV VERSION=${VERSION}
 ENV CUSTOM_CA_CERTS_PATH=/certs
 
 ARG RUNNER_MODULE
-COPY --from=builder --chown=meshcloud:meshcloud /workspace/${RUNNER_MODULE}/build/libs/${RUNNER_MODULE}.jar /app/executable
+COPY --from=builder --chown=meshcloud:meshcloud --chmod=755 /workspace/${RUNNER_MODULE}/build/libs/${RUNNER_MODULE}.jar /app/executable
 COPY --chown=meshcloud:meshcloud --chmod=755 containers/entrypoint-jvm.sh /app/entrypoint.sh
 
 WORKDIR /app

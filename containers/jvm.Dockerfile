@@ -22,4 +22,4 @@ COPY --chown=meshcloud:meshcloud --chmod=755 containers/entrypoint-jvm.sh /app/e
 
 WORKDIR /app
 USER 2000
-ENTRYPOINT ["/app/entrypoint.sh", "/app/executable"]
+ENTRYPOINT ["/app/entrypoint.sh", "java", "-jar", "/app/executable"]

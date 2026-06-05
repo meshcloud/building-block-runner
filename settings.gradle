@@ -1,4 +1,4 @@
-rootProject.name = 'runners-jvm'
+rootProject.name = 'building-block-runner'
 
 include 'block-runner-core'
 include 'manual-block-runner'

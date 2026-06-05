@@ -3,7 +3,7 @@ MODULES := go-meshapi-client run-controller tf-block-runner
 RUN_CONTROLLER_CONFIG := run-controller/runner-config.yml
 TF_BLOCK_RUNNER_CONFIG := tf-block-runner/runner-config.yml
 
-.PHONY: help run-run-controller run-tf-block-runner test test-run-controller test-tf-block-runner fmt vet tidy work-sync
+.PHONY: help start-run-controller start-tf-block-runner test test-run-controller test-tf-block-runner fmt vet tidy work-sync
 
 define run-in-modules
 	@set -e; \
@@ -15,8 +15,8 @@ endef
 
 help:
 	@echo "Available targets:"
-	@echo "  run-run-controller    Run run-controller"
-	@echo "  run-tf-block-runner   Run tf-block-runner"
+	@echo "  start-run-controller    Run run-controller"
+	@echo "  start-tf-block-runner   Run tf-block-runner"
 	@echo "  test                  Run all tests"
 	@echo "  test-run-controller   Run run-controller tests"
 	@echo "  test-tf-block-runner  Run tf-block-runner tests"
@@ -25,11 +25,11 @@ help:
 	@echo "  tidy                  Tidy modules"
 	@echo "  work-sync             Sync go.work entries"
 
-run-run-controller:
-	go run ./run-controller --config $(RUN_CONTROLLER_CONFIG)
+start-run-controller:
+	RUNCONTROLLER_CONFIG_FILE=$(RUN_CONTROLLER_CONFIG)	go run ./run-controller
 
-run-tf-block-runner:
-	go run ./tf-block-runner --config $(TF_BLOCK_RUNNER_CONFIG)
+start-tf-block-runner:
+	RUNNER_CONFIG_FILE=$(TF_BLOCK_RUNNER_CONFIG) go run ./tf-block-runner
 
 test:
 	$(call run-in-modules,go test ./...)

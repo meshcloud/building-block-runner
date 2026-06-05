@@ -13,7 +13,6 @@ import (
 
 const (
 	EP_RunnerWithUuid = "%s/api/meshobjects/meshbuildingblockrunners/%s"
-	EP_Runners        = "%s/api/meshobjects/meshbuildingblockrunners"
 
 	MeshBuildingBlockRunner_MediaType_V1Preview = "application/vnd.meshcloud.api.meshbuildingblockrunner.v1-preview.hal+json"
 )
@@ -45,36 +44,24 @@ func NewRegistrationApi(logger *log.Logger) RegistrationApi {
 	}
 }
 
-// RegisterController registers or creates the universal run controller via the meshObject API.
-// It first tries PUT (update), and if the controller doesn't exist (404), falls back to POST (create).
+// RegisterController updates the universal run controller registration via PUT. Must already exist.
 func (api *RegistrationApiClient) RegisterController(metrics *MetricsCollector) error {
-	// Build the registration DTO with auto-constructed WIF
 	dto := BuildRunnerRegistrationDTO(api.namespace, api.oidcIssuer)
 
-	// Marshal to JSON
 	jsonBody, err := json.Marshal(dto)
 	if err != nil {
 		metrics.runnerRegistrationErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeRegistrationMarshal).Inc()
 		return fmt.Errorf("failed to marshal runner registration: %w", err)
 	}
 
-	// Try PUT first (update existing controller registration)
 	statusCode, err := api.putController(jsonBody)
 	if err != nil {
 		metrics.runnerRegistrationErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeRegistrationPut).Inc()
 		return err
 	}
 
-	// If controller doesn't exist, create it with POST
 	if statusCode == http.StatusNotFound {
-		api.logger.Printf("Controller %s not found, creating new registration", AppConfig.Uuid)
-		err = api.postController(jsonBody)
-		if err != nil {
-			metrics.runnerRegistrationErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeRegistrationPost).Inc()
-			return err
-		}
-		metrics.runnerRegistrationSuccess.WithLabelValues(AppConfig.Uuid).Inc()
-		return nil
+		return fmt.Errorf("controller %s not found in meshfed — create it via the meshStack UI or API before starting the run-controller", AppConfig.Uuid)
 	}
 
 	metrics.runnerRegistrationSuccess.WithLabelValues(AppConfig.Uuid).Inc()
@@ -112,34 +99,6 @@ func (api *RegistrationApiClient) putController(jsonBody []byte) (int, error) {
 	}
 
 	return resp.StatusCode, nil
-}
-
-// postController creates a new controller registration via POST
-func (api *RegistrationApiClient) postController(jsonBody []byte) error {
-	url := fmt.Sprintf(EP_Runners, api.url)
-
-	api.logger.Printf("Creating controller registration %s at %s", AppConfig.Uuid, url)
-
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(jsonBody))
-	if err != nil {
-		return fmt.Errorf("failed to create POST request: %w", err)
-	}
-
-	api.setHeaders(req)
-
-	resp, err := api.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to execute POST request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("POST failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	api.logger.Printf("Successfully created controller registration %s", AppConfig.Uuid)
-	return nil
 }
 
 // setHeaders sets the common headers for API requests

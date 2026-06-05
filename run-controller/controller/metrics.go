@@ -28,7 +28,6 @@ const (
 	// Runner registration error types
 	ErrorTypeRegistrationMarshal = "marshal_error"
 	ErrorTypeRegistrationPut     = "put_error"
-	ErrorTypeRegistrationPost    = "post_error"
 )
 
 // MetricsCollector holds all Prometheus metrics for the run-controller

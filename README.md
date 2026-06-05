@@ -89,8 +89,8 @@ make work-sync     # sync go.work entries
 ### Run locally
 
 ```bash
-make run-run-controller    # start run-controller
-make run-tf-block-runner   # start tf-block-runner
+make start-run-controller    # start run-controller
+make start-tf-block-runner   # start tf-block-runner
 ```
 
 See the individual module READMEs for module-specific instructions:

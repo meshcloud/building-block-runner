@@ -22,6 +22,7 @@
           pkgs.golangci-lint
           pkgs.jdk21_headless
           pkgs.opentofu
+          pkgs.minikube
         ];
       in
       {

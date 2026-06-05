@@ -20,10 +20,10 @@ api:
 
 # Unique identifier for this universal run controller.
 # This UUID is used to fetch runs of all implementation types from meshfed-api.
-uuid: 46b7c17a-61f0-4062-9601-5785e60ce11f
+uuid: 98520496-627d-43e6-82da-ce499179ff3f
 
 # The workspace that owns this run controller (required for registration).
-ownedByWorkspace: my-workspace
+ownedByWorkspace: platform-team
 
 # Human-readable display name for this controller shown in the meshStack UI.
 displayName: Universal Run Controller
@@ -119,26 +119,26 @@ pollingIntervalSeconds: 10
 # AZURE_DEVOPS_PIPELINE, MANUAL
 implementations:
   MANUAL:
-    image: manual-block-runner-local
+    image: ghcr.io/meshcloud/manual-block-runner:main
     env:
       SPRING_PROFILES_ACTIVE: kubernetes
 
   GITHUB_WORKFLOW:
-    image: github-block-runner-local
+    image: ghcr.io/meshcloud/github-block-runner:main
     env:
       SPRING_PROFILES_ACTIVE: kubernetes
 
   GITLAB_PIPELINE:
-    image: gitlab-block-runner-local
+    image: ghcr.io/meshcloud/gitlab-block-runner:main
     env:
       SPRING_PROFILES_ACTIVE: kubernetes
 
   AZURE_DEVOPS_PIPELINE:
-    image: azure-devops-block-runner-local
+    image: ghcr.io/meshcloud/azure-devops-block-runner:main
     env:
       SPRING_PROFILES_ACTIVE: kubernetes
 
   TERRAFORM:
-    image: tf-block-runner-local
+    image: ghcr.io/meshcloud/tf-block-runner:main
     env:
       EXECUTION_MODE: single-run

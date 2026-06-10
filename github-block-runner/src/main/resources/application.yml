@@ -4,9 +4,12 @@ logging:
     ROOT: INFO
     io.meshcloud: INFO
 
+server:
+  port: ${PORT:8081}
+
 spring:
   main:
-    web-application-type: none
+    web-application-type: servlet
   config:
     import:
       - optional:classpath:runner-config.yml

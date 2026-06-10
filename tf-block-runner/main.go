@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"sync"
@@ -55,6 +57,7 @@ func main() {
 
 	// Standard polling mode
 	logger.Println("Running in polling mode")
+	startHealthServer(logger)
 	var wg sync.WaitGroup
 	wg.Add(1)
 
@@ -77,6 +80,29 @@ func main() {
 func isSingleRunMode() bool {
 	mode := os.Getenv(ENV_EXECUTION_MODE)
 	return mode == "single-run"
+}
+
+func startHealthServer(logger *log.Logger) {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8081"
+	}
+	addr := ":" + port
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		logger.Fatalf("Health server failed to bind on %s: %v", addr, err)
+	}
+	logger.Printf("Health server listening on %s", addr)
+	go func() {
+		if err := http.Serve(ln, mux); err != nil {
+			logger.Fatalf("Health server error: %v", err)
+		}
+	}()
 }
 
 func executeSingleRun(logger *log.Logger, tfBinaryProvider *tfrun.TfBinaries) {

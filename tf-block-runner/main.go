@@ -85,7 +85,7 @@ func isSingleRunMode() bool {
 func startHealthServer(logger *log.Logger) {
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8081"
+		port = "8100"
 	}
 	addr := ":" + port
 	mux := http.NewServeMux()

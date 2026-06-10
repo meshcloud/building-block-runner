@@ -62,6 +62,29 @@ Common tasks are available via `make`:
 make help
 ```
 
+## Health endpoint
+
+Every runner exposes a `/healthz` endpoint that returns `200 OK` with body `OK`. This is intended for liveness probes in container orchestrators.
+
+Each runner listens on a dedicated default port to avoid conflicts when running multiple runners locally alongside meshStack (which defaults to port 8080):
+
+| Runner                  | Default port |
+|-------------------------|--------------|
+| `tf-block-runner`       | 8100         |
+| `azure-devops-runner`   | 8101         |
+| `github-block-runner`   | 8102         |
+| `gitlab-block-runner`   | 8103         |
+| `manual-block-runner`   | 8104         |
+
+Override the port with the `PORT` environment variable:
+
+```bash
+PORT=9000 go run .           # tf-block-runner
+PORT=9000 ./gradlew bootRun  # JVM runners
+```
+
+If you are running a runner through a Docker image, it will default to PORT=8080 as well. You can still decide to override the `PORT` environment variable in your environment.
+
 ## Development
 
 ### Prerequisites

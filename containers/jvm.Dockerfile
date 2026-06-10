@@ -15,6 +15,8 @@ RUN useradd meshcloud --uid 2000 --user-group && \
 ARG VERSION=dev
 ENV VERSION=${VERSION}
 ENV CUSTOM_CA_CERTS_PATH=/certs
+ENV PORT=8080
+EXPOSE 8080
 
 ARG RUNNER_MODULE
 COPY --from=builder --chown=meshcloud:meshcloud --chmod=755 /workspace/${RUNNER_MODULE}/build/libs/${RUNNER_MODULE}.jar /app/executable

@@ -64,6 +64,8 @@ COPY --from=builder --chown=meshcloud:meshcloud --chmod=644 /app/tf-block-runner
 COPY --chown=meshcloud:meshcloud --chmod=755 containers/entrypoint-go.sh /app/entrypoint.sh
 
 ENV SSH_KNOWN_HOSTS=/app/known_hosts
+ENV PORT=8080
+EXPOSE 8080
 
 WORKDIR /app
 ENTRYPOINT ["/app/entrypoint.sh", "/app/tfrunner"]

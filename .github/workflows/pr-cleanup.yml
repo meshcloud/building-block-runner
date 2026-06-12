@@ -14,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       packages: write
+      pull-requests: read
     strategy:
       fail-fast: false
       matrix:
@@ -37,7 +38,7 @@ jobs:
             --jq '[.[].sha] | join(" ")')
           tags="$pr_tag $commit_shas"
 
-          versions=$(gh api "/orgs/${NAMESPACE}/packages/container/${IMAGE}/versions?per_page=100" \
+          versions=$(gh api --paginate "/orgs/${NAMESPACE}/packages/container/${IMAGE}/versions?per_page=100" \
             --jq '.[]')
 
           for tag in $tags; do
@@ -72,10 +73,17 @@ jobs:
           IMAGE: ${{ matrix.image }}
           NAMESPACE: ${{ env.IMAGE_NAMESPACE }}
         run: |
-          token=$(curl -sf -X POST "https://hub.docker.com/v2/users/login" \
+          set -euo pipefail
+
+          token=$(curl -sSf -X POST "https://hub.docker.com/v2/users/login" \
             -H "Content-Type: application/json" \
             -d "{\"username\":\"$DOCKERHUB_USERNAME\",\"password\":\"$DOCKERHUB_TOKEN\"}" \
             | jq -r .token)
+
+          if [ -z "$token" ] || [ "$token" = "null" ]; then
+            echo "Failed to obtain Docker Hub token" >&2
+            exit 1
+          fi
 
           pr_tag="pr-${PR_NUMBER}"
           commit_shas=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}/commits" \

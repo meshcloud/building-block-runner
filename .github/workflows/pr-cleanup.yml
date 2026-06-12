@@ -10,7 +10,7 @@ on:
 jobs:
   cleanup-ghcr:
     name: ${{ matrix.image }} - cleanup GHCR
-    if: github.repository_owner == 'meshcloud'
+    if: github.repository_owner == 'meshcloud' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       packages: write
@@ -47,7 +47,7 @@ jobs:
 
   cleanup-dockerhub:
     name: ${{ matrix.image }} - cleanup Docker Hub
-    if: github.repository_owner == 'meshcloud'
+    if: github.repository_owner == 'meshcloud' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

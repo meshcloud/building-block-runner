@@ -1,0 +1,97 @@
+name: PR Cleanup
+
+env:
+  IMAGE_NAMESPACE: ${{ github.repository_owner }}
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  cleanup-ghcr:
+    name: ${{ matrix.image }} - cleanup GHCR
+    if: github.repository_owner == 'meshcloud'
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - manual-block-runner
+          - github-block-runner
+          - gitlab-block-runner
+          - azure-devops-block-runner
+          - run-controller
+          - tf-block-runner
+    steps:
+      - name: Delete PR images from GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          IMAGE: ${{ matrix.image }}
+          NAMESPACE: ${{ env.IMAGE_NAMESPACE }}
+        run: |
+          pr_tag="pr-${PR_NUMBER}"
+          commit_shas=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}/commits" \
+            --jq '[.[].sha] | join(" ")')
+          tags="$pr_tag $commit_shas"
+
+          versions=$(gh api "/orgs/${NAMESPACE}/packages/container/${IMAGE}/versions?per_page=100" \
+            --jq '.[]')
+
+          for tag in $tags; do
+            version_id=$(echo "$versions" | jq -r "select(.metadata.container.tags[]? == \"$tag\") | .id")
+            if [ -n "$version_id" ]; then
+              gh api --method DELETE "/orgs/${NAMESPACE}/packages/container/${IMAGE}/versions/${version_id}"
+              echo "Deleted GHCR tag: $tag (version $version_id)"
+            fi
+          done
+
+  cleanup-dockerhub:
+    name: ${{ matrix.image }} - cleanup Docker Hub
+    if: github.repository_owner == 'meshcloud'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - manual-block-runner
+          - github-block-runner
+          - gitlab-block-runner
+          - azure-devops-block-runner
+          - run-controller
+          - tf-block-runner
+    steps:
+      - name: Delete PR images from Docker Hub
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          IMAGE: ${{ matrix.image }}
+          NAMESPACE: ${{ env.IMAGE_NAMESPACE }}
+        run: |
+          token=$(curl -sf -X POST "https://hub.docker.com/v2/users/login" \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"$DOCKERHUB_USERNAME\",\"password\":\"$DOCKERHUB_TOKEN\"}" \
+            | jq -r .token)
+
+          pr_tag="pr-${PR_NUMBER}"
+          commit_shas=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}/commits" \
+            --jq '[.[].sha] | join(" ")')
+          tags="$pr_tag $commit_shas"
+
+          for tag in $tags; do
+            status=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
+              -H "Authorization: Bearer $token" \
+              "https://hub.docker.com/v2/repositories/${NAMESPACE}/${IMAGE}/tags/${tag}/")
+            if [ "$status" = "204" ]; then
+              echo "Deleted Docker Hub tag: $tag"
+            elif [ "$status" = "404" ]; then
+              echo "Tag not found (skipping): $tag"
+            else
+              echo "Unexpected status $status for tag: $tag" >&2
+              exit 1
+            fi
+          done

@@ -2,6 +2,7 @@ name: CI
 
 env:
   REGISTRY: ghcr.io
+  DOCKERHUB_REGISTRY: docker.io
   IMAGE_NAMESPACE: ${{ github.repository_owner }}
 
 on:
@@ -54,6 +55,7 @@ jobs:
     needs: jvm-runners-ci
     permissions:
       contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -77,16 +79,35 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
-      - name: Build JVM runner image
+      - name: Login to GHCR
+        if: github.repository_owner == 'meshcloud'
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Hub
+        if: github.repository_owner == 'meshcloud'
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ${{ env.DOCKERHUB_REGISTRY }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push JVM runner image
         if: github.repository_owner == 'meshcloud'
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           context: .
           file: containers/jvm.Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: false
+          push: true
           tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:pr-${{ github.event.pull_request.number }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:${{ github.sha }}
+            ${{ env.DOCKERHUB_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:pr-${{ github.event.pull_request.number }}
+            ${{ env.DOCKERHUB_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:${{ github.sha }}
           build-args: |
             RUNNER_MODULE=${{ matrix.module }}
             VERSION=dev:${{ steps.commit.outputs.commit }}
@@ -129,6 +150,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Login to Docker Hub
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ${{ env.DOCKERHUB_REGISTRY }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Build and push JVM runner image
         if: github.repository_owner == 'meshcloud'
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
@@ -140,6 +168,8 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:main
+            ${{ env.DOCKERHUB_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:${{ github.sha }}
+            ${{ env.DOCKERHUB_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:main
           build-args: |
             RUNNER_MODULE=${{ matrix.module }}
             VERSION=dev:${{ steps.commit.outputs.commit }}
@@ -184,6 +214,7 @@ jobs:
     needs: go-runners-ci
     permissions:
       contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -196,19 +227,42 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Parse commit
+        id: commit
+        run: echo "commit=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
-      - name: Build Docker image
+      - name: Login to GHCR
+        if: github.repository_owner == 'meshcloud'
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Hub
+        if: github.repository_owner == 'meshcloud'
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ${{ env.DOCKERHUB_REGISTRY }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker image
         if: github.repository_owner == 'meshcloud'
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64,linux/arm64
-          push: false
+          push: true
           tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:pr-${{ github.event.pull_request.number }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:${{ github.sha }}
+            ${{ env.DOCKERHUB_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:pr-${{ github.event.pull_request.number }}
+            ${{ env.DOCKERHUB_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:${{ github.sha }}
           build-args: |
             VERSION=dev:${{ steps.commit.outputs.commit }}
 
@@ -246,6 +300,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Login to Docker Hub
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ${{ env.DOCKERHUB_REGISTRY }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Build and push Docker image
         if: github.repository_owner == 'meshcloud'
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
@@ -257,5 +318,7 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:main
+            ${{ env.DOCKERHUB_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:${{ github.sha }}
+            ${{ env.DOCKERHUB_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:main
           build-args: |
             VERSION=dev:${{ steps.commit.outputs.commit }}

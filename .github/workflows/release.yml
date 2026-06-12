@@ -2,6 +2,7 @@ name: Release
 
 env:
   REGISTRY: ghcr.io
+  DOCKERHUB_REGISTRY: docker.io
   IMAGE_NAMESPACE: ${{ github.repository_owner }}
 
 on:
@@ -54,6 +55,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Login to Docker Hub
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ${{ env.DOCKERHUB_REGISTRY }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Build and push ${{ matrix.app }}
         if: github.repository_owner == 'meshcloud'
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
@@ -65,6 +73,8 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:${{ steps.version.outputs.version }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:latest
+            ${{ env.DOCKERHUB_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:${{ steps.version.outputs.version }}
+            ${{ env.DOCKERHUB_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:latest
           build-args: |
             VERSION=${{ steps.version.outputs.version }}
             RUNNER_MODULE=${{ matrix.runner-module }}

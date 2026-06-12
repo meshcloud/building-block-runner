@@ -20,9 +20,9 @@ type TfFacade interface {
 
 	Output(ctx context.Context, opts ...tfexec.OutputOption) (map[string]tfexec.OutputMeta, error)
 
-	WorkspaceList(ctx context.Context) ([]string, string, error)
+	WorkspaceList(ctx context.Context, opts ...tfexec.WorkspaceListOption) ([]string, string, error)
 	WorkspaceNew(ctx context.Context, workspace string, opts ...tfexec.WorkspaceNewCmdOption) error
-	WorkspaceSelect(ctx context.Context, workspace string) error
+	WorkspaceSelect(ctx context.Context, workspace string, opts ...tfexec.WorkspaceSelectOption) error
 	WorkspaceDelete(ctx context.Context, workspace string, opts ...tfexec.WorkspaceDeleteCmdOption) error
 
 	SetEnv(env map[string]string) error

@@ -115,6 +115,9 @@ func (c *MeshCertBasedCrypto) EncryptMeshCertBased(plaintext string) (string, er
 }
 
 func (c *MeshCertBasedCrypto) DecryptMeshCertBased(encrypted string) (string, error) {
+	if c.privateKey == nil {
+		return "", errors.New("private key not loaded; cannot decrypt sensitive input")
+	}
 
 	// apply base64 decode first
 	data, err := base64.StdEncoding.DecodeString(encrypted)
@@ -190,12 +193,20 @@ func readRSAPrivateKey(pemContent []byte) (*rsa.PrivateKey, error) {
 		return nil, errors.New("no valid PEM block found")
 	}
 
+	if pk, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
+		return pk, nil
+	}
+
 	pk, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err != nil {
 		return nil, err
 	}
 
-	return pk.(*rsa.PrivateKey), nil
+	rsaKey, ok := pk.(*rsa.PrivateKey)
+	if !ok {
+		return nil, errors.New("private key is not an RSA key")
+	}
+	return rsaKey, nil
 }
 
 // validateKeyPair validates that a public and private key pair match

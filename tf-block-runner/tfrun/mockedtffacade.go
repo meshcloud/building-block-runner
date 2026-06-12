@@ -49,7 +49,7 @@ func (tf *MockedTfFacade) Output(ctx context.Context, opts ...tfexec.OutputOptio
 	return map[string]tfexec.OutputMeta{}, nil
 }
 
-func (tf *MockedTfFacade) WorkspaceList(ctx context.Context) ([]string, string, error) {
+func (tf *MockedTfFacade) WorkspaceList(ctx context.Context, opts ...tfexec.WorkspaceListOption) ([]string, string, error) {
 	return []string{}, "", nil
 }
 
@@ -57,7 +57,7 @@ func (tf *MockedTfFacade) WorkspaceNew(ctx context.Context, workspace string, op
 	return nil
 }
 
-func (tf *MockedTfFacade) WorkspaceSelect(ctx context.Context, workspace string) error {
+func (tf *MockedTfFacade) WorkspaceSelect(ctx context.Context, workspace string, opts ...tfexec.WorkspaceSelectOption) error {
 	return nil
 }
 

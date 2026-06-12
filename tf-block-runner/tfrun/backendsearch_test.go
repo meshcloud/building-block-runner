@@ -6,7 +6,7 @@ import (
 	"path"
 	"testing"
 
-	"github.com/meshcloud/meshfed-release/buildingblocks/tf-block-runner/tfrun"
+	"github.com/meshcloud/building-block-runner/tf-block-runner/tfrun"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

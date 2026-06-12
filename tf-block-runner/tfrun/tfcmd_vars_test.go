@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/hcl/v2"
-	"github.com/meshcloud/meshfed-release/buildingblocks/tf-block-runner/util"
+	"github.com/meshcloud/building-block-runner/tf-block-runner/util"
 	"github.com/sebdah/goldie/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

@@ -18,7 +18,7 @@ import (
 	"github.com/hashicorp/hcl/v2/hclwrite"
 	"github.com/hashicorp/terraform-exec/tfexec"
 	meshcrypto "github.com/meshcloud/building-block-runner/go-meshapi-client/crypto"
-	"github.com/meshcloud/meshfed-release/buildingblocks/tf-block-runner/util"
+	"github.com/meshcloud/building-block-runner/tf-block-runner/util"
 	"github.com/zclconf/go-cty/cty"
 )
 

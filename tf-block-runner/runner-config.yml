@@ -1,0 +1,68 @@
+runnerUuid: "66ddc814-1e69-4dad-b5f1-3a5bce51c01f"
+timeoutMins: 60
+wsTimeoutMins: 5
+initTimeoutMins: 3
+workingDir: /tmp/runner/wd
+tfInstallDir: /tmp/runner/tfbin
+api:
+  url: http://localhost:8080
+  # Option 1: Basic auth credentials
+  user: bb-api
+  password: guest
+  # Option 2: API key auth (takes precedence over user/password when both clientId and clientSecret are set)
+  # clientId: your-client-id
+  # clientSecret: your-client-secret
+insecureHostKeys: false
+privateKey: |
+  -----BEGIN PRIVATE KEY-----
+  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
+  zZYcO1dORsTf86yOVA4TxPyAczOmng==
+  -----END PRIVATE KEY-----

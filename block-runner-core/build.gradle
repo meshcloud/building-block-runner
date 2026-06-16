@@ -1,0 +1,29 @@
+plugins {
+  id('org.jetbrains.kotlin.jvm')
+  id('org.jetbrains.kotlin.plugin.spring')
+  id('java-library')
+}
+
+description = "block-runner-core"
+
+dependencies {
+  implementation('org.springframework.boot:spring-boot-autoconfigure')
+  implementation('org.springframework:spring-web')
+
+  // Exposed as api so runner subprojects can use Jackson types directly without redeclaring
+  api('com.fasterxml.jackson.module:jackson-module-kotlin')
+  api('com.fasterxml.jackson.datatype:jackson-datatype-jsr310')
+  api('com.fasterxml.jackson.datatype:jackson-datatype-jdk8')
+  implementation('com.fasterxml.jackson.dataformat:jackson-dataformat-yaml')
+
+  implementation('org.hashids:hashids')
+  api('io.github.oshai:kotlin-logging')
+
+  api('com.squareup.okhttp3:okhttp')
+  api('com.squareup.okhttp3:logging-interceptor')
+
+  testImplementation('io.mockk:mockk')
+  testImplementation('com.squareup.okhttp3:mockwebserver')
+  testImplementation('org.springframework.boot:spring-boot-starter-test')
+  testImplementation('org.wiremock:wiremock-jetty12')
+}

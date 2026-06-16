@@ -1,0 +1,41 @@
+.gradle
+
+build/
+!tf-block-runner/build/
+!run-controller/build/
+
+out/
+.DS_Store
+.settings
+.project
+.classpath
+bin/
+
+
+# IDE
+.idea/
+
+# Terraform directories
+.terraform
+
+# Terraform state files (only relevant if not using remote backend exclusively)
+*.tfstate
+*.tfstate.*
+
+# Terraform variable files that may contain secrets
+*.tfvars
+*.tfvars.json
+
+# Crash log files
+crash.log
+crash.*.log
+
+# Override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# CLI configuration files
+.terraformrc
+terraform.rc

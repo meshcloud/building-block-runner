@@ -1,0 +1,8 @@
+# Override the config for Kubernetes mode without any basic auth.
+blockrunner:
+  uuid: 46b7c17a-61f0-4062-9601-5785e60ce11f
+  # This will enable a 20s wait time when blocks are executed and its state is set randomly (50:50) between
+  # success and fail. It can be handy for easy local development.
+  debugMode: false
+  api:
+    url: http://localhost:8080

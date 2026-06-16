@@ -1,0 +1,11 @@
+# Test profile 2: Basic auth only
+# Expected behavior: basic auth is used to fetch a run from the meshObject API
+blockrunner:
+  version: test-version-basic-auth
+  uuid: test-uuid-basic-auth
+  api:
+    url: http://localhost:8080
+  auth:
+    username: test-user
+    password: test-password
+

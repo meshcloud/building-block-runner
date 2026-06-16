@@ -116,7 +116,7 @@ func (c *MeshCertBasedCrypto) EncryptMeshCertBased(plaintext string) (string, er
 
 func (c *MeshCertBasedCrypto) DecryptMeshCertBased(encrypted string) (string, error) {
 	if c.privateKey == nil {
-		return "", errors.New("private key not loaded; cannot decrypt sensitive input")
+		return "", errors.New("cannot decrypt sensitive input as private key is missing")
 	}
 
 	// apply base64 decode first

@@ -1,8 +1,8 @@
 package io.meshcloud.buildingblocks.runner
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.meshcloud.buildingblocks.runner.security.DecryptionService
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
-import io.github.oshai.kotlinlogging.KotlinLogging
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan
 import org.springframework.context.annotation.ComponentScan
@@ -28,12 +28,12 @@ private val log = KotlinLogging.logger { }
 @ConfigurationPropertiesScan(
   basePackages = [
     "io.meshcloud.buildingblocks.runner",
-  ]
+  ],
 )
 @ComponentScan(
   basePackages = [
     "io.meshcloud.buildingblocks.runner",
-  ]
+  ],
 )
 class TestConfiguration {
 

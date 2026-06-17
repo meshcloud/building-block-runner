@@ -54,7 +54,7 @@ class NoOpBlockRunnerServiceTest {
   @Test
   fun `processBlock registers and updates block run when run is available`() {
     val processableBlockRun = ProcessableBlockRun.test(
-      implementation = MeshManualBuildingBlockImplementation()
+      implementation = MeshManualBuildingBlockImplementation(),
     )
     every { blockRunClientFetcher.fetchBlockRunClient() } returns blockRunClient
     every { blockRunClient.activeBlockRun } returns processableBlockRun
@@ -66,7 +66,7 @@ class NoOpBlockRunnerServiceTest {
     verify(exactly = 1) {
       blockRunClient.registerAsSource(
         stepId = "manual",
-        stepDisplayName = "Manual Block Run"
+        stepDisplayName = "Manual Block Run",
       )
     }
     verify(exactly = 1) {
@@ -75,7 +75,7 @@ class NoOpBlockRunnerServiceTest {
           update.status == MeshBuildingBlockRun.ExecutionStatus.SUCCEEDED &&
             update.steps?.size == 1 &&
             update.steps!![0].id == "manual"
-        }
+        },
       )
     }
     assertThat(result).isNotNull

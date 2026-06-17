@@ -35,7 +35,7 @@ sealed interface BuildingBlockWorkflowInputsBuilder {
    * @param decryptedBlockRun The block run with decrypted inputs (contains links and decrypted tokens)
    */
   class WithUrl(
-    decryptedBlockRun: ProcessableBlockRun
+    decryptedBlockRun: ProcessableBlockRun,
   ) : BuildingBlockWorkflowInputsBuilder {
 
     val buildingBlockRunUrl: String = decryptedBlockRun.links["self"]?.href
@@ -79,7 +79,7 @@ sealed interface BuildingBlockWorkflowInputsBuilder {
    * Legacy mode for workflows that expect the run object directly.
    */
   data class WithRun(
-    val buildingBlockRun: ProcessableBlockRun
+    val buildingBlockRun: ProcessableBlockRun,
   ) : BuildingBlockWorkflowInputsBuilder {
 
     companion object {
@@ -91,7 +91,7 @@ sealed interface BuildingBlockWorkflowInputsBuilder {
         .copy()
         .addMixIn(
           MeshBuildingBlockGithubImplementation::class.java,
-          IgnoreBuildingBlockGithubImplementationMixin::class.java
+          IgnoreBuildingBlockGithubImplementationMixin::class.java,
         )
     }
 
@@ -104,7 +104,7 @@ sealed interface BuildingBlockWorkflowInputsBuilder {
 
     override fun toInputMap(): Map<String, String> {
       return mapOf(
-        "buildingBlockRun" to serializeToBase64Json(buildingBlockRun)
+        "buildingBlockRun" to serializeToBase64Json(buildingBlockRun),
       )
     }
   }

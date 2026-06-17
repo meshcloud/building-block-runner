@@ -1,11 +1,11 @@
 package io.meshcloud.buildingblocks.runner.runclient
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.meshcloud.buildingblocks.runner.BlockRunnerApiConfig
 import io.meshcloud.buildingblocks.runner.meshobject.MeshObjectApiObjectMapper
 import io.meshcloud.buildingblocks.runner.meshobject.ProcessableBlockRun
 import io.meshcloud.meshobjects.MeshHalMediaTypes
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
-import io.github.oshai.kotlinlogging.KotlinLogging
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -30,14 +30,14 @@ class HttpBlockRunClient(
   ) {
     val sourceRegistration = MeshBuildingBlockRun.BlockRunSourceRegistration(
       source = MeshBuildingBlockRun.BlockRunSourceRegistration.SourceRegistration(
-        id = config.uuid
+        id = config.uuid,
       ),
       steps = listOf(
         MeshBuildingBlockRun.BlockRunSourceRegistration.StepRegistration(
           id = stepId,
-          displayName = stepDisplayName
-        )
-      )
+          displayName = stepDisplayName,
+        ),
+      ),
     )
     val body = mapper.writeValueAsString(sourceRegistration)
       .toRequestBody(MeshHalMediaTypes.MESHBUILDINGBLOCKRUN_MEDIA_TYPE_V1.toMediaType())
@@ -65,7 +65,7 @@ class HttpBlockRunClient(
    * but as we never respect it anyway, we just omit it for now.
    */
   override fun updateBlockRun(
-    sourceUpdate: MeshBuildingBlockRun.SourceUpdate
+    sourceUpdate: MeshBuildingBlockRun.SourceUpdate,
   ) {
     val body = mapper
       .writeValueAsString(sourceUpdate)

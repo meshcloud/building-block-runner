@@ -54,7 +54,7 @@ class ApiKeyAuthInterceptorTest {
     // Stub a generic endpoint that the interceptor-equipped client will call
     wireMockServer.stubFor(
       get(urlPathEqualTo("/api/runs"))
-        .willReturn(aResponse().withStatus(200))
+        .willReturn(aResponse().withStatus(200)),
     )
   }
 
@@ -70,14 +70,14 @@ class ApiKeyAuthInterceptorTest {
           aResponse()
             .withStatus(200)
             .withHeader("Content-Type", "application/json")
-            .withBody("""{"access_token":"$token","expires_in":$expiresIn}""")
-        )
+            .withBody("""{"access_token":"$token","expires_in":$expiresIn}"""),
+        ),
     )
   }
 
   private fun makeTestRequest() {
     client.newCall(
-      Request.Builder().url("$baseUrl/api/runs").get().build()
+      Request.Builder().url("$baseUrl/api/runs").get().build(),
     ).execute().close()
   }
 
@@ -91,7 +91,7 @@ class ApiKeyAuthInterceptorTest {
 
     wireMockServer.verify(
       getRequestedFor(urlPathEqualTo("/api/runs"))
-        .withHeader("Authorization", equalTo("Bearer my-access-token"))
+        .withHeader("Authorization", equalTo("Bearer my-access-token")),
     )
   }
 
@@ -105,7 +105,7 @@ class ApiKeyAuthInterceptorTest {
       postRequestedFor(urlPathEqualTo("/api/login"))
         .withRequestBody(matchingJsonPath("$.clientId", equalTo("test-client-id")))
         .withRequestBody(matchingJsonPath("$.clientSecret", equalTo("test-client-secret")))
-        .withHeader("Content-Type", containing("application/json"))
+        .withHeader("Content-Type", containing("application/json")),
     )
   }
 
@@ -125,7 +125,7 @@ class ApiKeyAuthInterceptorTest {
     wireMockServer.verify(
       3,
       getRequestedFor(urlPathEqualTo("/api/runs"))
-        .withHeader("Authorization", equalTo("Bearer cached-token"))
+        .withHeader("Authorization", equalTo("Bearer cached-token")),
     )
   }
 
@@ -142,9 +142,9 @@ class ApiKeyAuthInterceptorTest {
           aResponse()
             .withStatus(200)
             .withHeader("Content-Type", "application/json")
-            .withBody("""{"access_token":"token-v1","expires_in":31}""")
+            .withBody("""{"access_token":"token-v1","expires_in":31}"""),
         )
-        .willSetStateTo("refreshed")
+        .willSetStateTo("refreshed"),
     )
     wireMockServer.stubFor(
       post(urlPathEqualTo("/api/login"))
@@ -154,14 +154,14 @@ class ApiKeyAuthInterceptorTest {
           aResponse()
             .withStatus(200)
             .withHeader("Content-Type", "application/json")
-            .withBody("""{"access_token":"token-v2","expires_in":3600}""")
-        )
+            .withBody("""{"access_token":"token-v2","expires_in":3600}"""),
+        ),
     )
 
     makeTestRequest()
     wireMockServer.verify(
       getRequestedFor(urlPathEqualTo("/api/runs"))
-        .withHeader("Authorization", equalTo("Bearer token-v1"))
+        .withHeader("Authorization", equalTo("Bearer token-v1")),
     )
     wireMockServer.verify(1, postRequestedFor(urlPathEqualTo("/api/login")))
 
@@ -172,7 +172,7 @@ class ApiKeyAuthInterceptorTest {
     wireMockServer.verify(2, postRequestedFor(urlPathEqualTo("/api/login")))
     wireMockServer.verify(
       getRequestedFor(urlPathEqualTo("/api/runs"))
-        .withHeader("Authorization", equalTo("Bearer token-v2"))
+        .withHeader("Authorization", equalTo("Bearer token-v2")),
     )
   }
 
@@ -182,14 +182,14 @@ class ApiKeyAuthInterceptorTest {
   fun `throws IOException with HTTP status code in message when login returns 403`() {
     wireMockServer.stubFor(
       post(urlPathEqualTo("/api/login"))
-        .willReturn(aResponse().withStatus(403).withBody("Forbidden"))
+        .willReturn(aResponse().withStatus(403).withBody("Forbidden")),
     )
 
     val ex = assertThrows(IOException::class.java) { makeTestRequest() }
 
     assertTrue(
       ex.message?.contains("403") == true,
-      "Exception message should contain the HTTP status code 403, but was: ${ex.message}"
+      "Exception message should contain the HTTP status code 403, but was: ${ex.message}",
     )
   }
 
@@ -197,14 +197,14 @@ class ApiKeyAuthInterceptorTest {
   fun `throws IOException when login returns 500`() {
     wireMockServer.stubFor(
       post(urlPathEqualTo("/api/login"))
-        .willReturn(aResponse().withStatus(500).withBody("Internal Server Error"))
+        .willReturn(aResponse().withStatus(500).withBody("Internal Server Error")),
     )
 
     val ex = assertThrows(IOException::class.java) { makeTestRequest() }
 
     assertTrue(
       ex.message?.contains("500") == true,
-      "Exception message should contain the HTTP status code 500, but was: ${ex.message}"
+      "Exception message should contain the HTTP status code 500, but was: ${ex.message}",
     )
   }
 
@@ -212,14 +212,14 @@ class ApiKeyAuthInterceptorTest {
   fun `throws IOException when login returns 401`() {
     wireMockServer.stubFor(
       post(urlPathEqualTo("/api/login"))
-        .willReturn(aResponse().withStatus(401).withBody("Unauthorized - invalid client credentials"))
+        .willReturn(aResponse().withStatus(401).withBody("Unauthorized - invalid client credentials")),
     )
 
     val ex = assertThrows(IOException::class.java) { makeTestRequest() }
 
     assertTrue(
       ex.message?.contains("401") == true,
-      "Exception message should contain the HTTP status code 401, but was: ${ex.message}"
+      "Exception message should contain the HTTP status code 401, but was: ${ex.message}",
     )
   }
 
@@ -235,7 +235,7 @@ class ApiKeyAuthInterceptorTest {
 
     wireMockServer.verify(
       getRequestedFor(urlPathEqualTo("/api/runs"))
-        .withHeader("Authorization", equalTo("Bearer short-lived-token"))
+        .withHeader("Authorization", equalTo("Bearer short-lived-token")),
     )
     // After the first fetch the token is cached; verify login was called exactly once.
     wireMockServer.verify(1, postRequestedFor(urlPathEqualTo("/api/login")))

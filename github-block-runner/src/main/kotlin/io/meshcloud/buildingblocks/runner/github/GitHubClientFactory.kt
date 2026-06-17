@@ -5,7 +5,7 @@ import org.springframework.stereotype.Component
 
 @Component
 class GitHubClientFactory(
-  private val urlSanitizer: UrlSanitizerService
+  private val urlSanitizer: UrlSanitizerService,
 ) {
   fun provideClientFor(githubApiBaseUrl: String): GithubClient {
     val sanitizedUrl = urlSanitizer.sanitize(githubApiBaseUrl)

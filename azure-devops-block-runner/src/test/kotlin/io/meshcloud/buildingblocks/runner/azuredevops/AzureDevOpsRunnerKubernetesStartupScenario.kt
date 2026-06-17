@@ -1,7 +1,7 @@
 package io.meshcloud.buildingblocks.runner.azuredevops
 
-import io.meshcloud.buildingblocks.runner.SingleShotRunner
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.meshcloud.buildingblocks.runner.SingleShotRunner
 import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.context.TestConfiguration

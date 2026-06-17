@@ -15,11 +15,11 @@ class BlockRunnerServiceConfiguration(
   @Bean
   @Profile("!kubernetes")
   fun azureDevOpsBlockRunnerService(
-    azureDevOpsClientFactory: AzureDevOpsClientFactory
+    azureDevOpsClientFactory: AzureDevOpsClientFactory,
   ): BlockRunnerService {
     val service = AzureDevOpsBlockRunnerService(
       blockRunClientFetcher = blockRunClientFetcher,
-      azureDevOpsClientFactory = azureDevOpsClientFactory
+      azureDevOpsClientFactory = azureDevOpsClientFactory,
     )
 
     return ImmediateRetryDecorator(service)
@@ -28,11 +28,11 @@ class BlockRunnerServiceConfiguration(
   @Bean
   @Profile("kubernetes")
   fun kubernetesAzureDevOpsBlockRunnerService(
-    azureDevOpsClientFactory: AzureDevOpsClientFactory
+    azureDevOpsClientFactory: AzureDevOpsClientFactory,
   ): BlockRunnerService {
     return AzureDevOpsBlockRunnerService(
       blockRunClientFetcher = blockRunClientFetcher,
-      azureDevOpsClientFactory = azureDevOpsClientFactory
+      azureDevOpsClientFactory = azureDevOpsClientFactory,
     )
   }
 }

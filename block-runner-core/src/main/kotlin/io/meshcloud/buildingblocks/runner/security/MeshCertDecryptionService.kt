@@ -1,9 +1,9 @@
 package io.meshcloud.buildingblocks.runner.security
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.meshcloud.buildingblocks.runner.meshobject.ProcessableBlockRun
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockIOType
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
-import io.github.oshai.kotlinlogging.KotlinLogging
 import org.springframework.context.annotation.Profile
 import org.springframework.stereotype.Service
 import java.io.BufferedReader
@@ -88,11 +88,11 @@ class MeshCertDecryptionService(
           buildingBlock = MeshBuildingBlockRun.MeshBuildingBlockRunSpec.BuildingBlock(
             uuid = run.meshObject.spec.buildingBlock.uuid,
             spec = run.meshObject.spec.buildingBlock.spec.copy(
-              inputs = readableInputs
-            )
-          )
-        )
-      )
+              inputs = readableInputs,
+            ),
+          ),
+        ),
+      ),
     )
   }
 

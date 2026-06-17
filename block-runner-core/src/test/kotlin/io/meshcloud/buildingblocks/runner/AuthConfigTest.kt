@@ -14,7 +14,7 @@ class AuthConfigTest {
   @Test
   fun `apiKey is null when clientId is blank`() {
     val config = StandaloneBlockRunnerApiConfig.AuthConfig(
-      apiKey = StandaloneBlockRunnerApiConfig.ApiKeyConfig(clientId = "", clientSecret = "secret")
+      apiKey = StandaloneBlockRunnerApiConfig.ApiKeyConfig(clientId = "", clientSecret = "secret"),
     )
     assertNull(config.apiKey)
   }
@@ -22,7 +22,7 @@ class AuthConfigTest {
   @Test
   fun `apiKey is null when clientSecret is blank`() {
     val config = StandaloneBlockRunnerApiConfig.AuthConfig(
-      apiKey = StandaloneBlockRunnerApiConfig.ApiKeyConfig(clientId = "id", clientSecret = "")
+      apiKey = StandaloneBlockRunnerApiConfig.ApiKeyConfig(clientId = "id", clientSecret = ""),
     )
     assertNull(config.apiKey)
   }
@@ -30,7 +30,7 @@ class AuthConfigTest {
   @Test
   fun `apiKey is null when both credentials are blank`() {
     val config = StandaloneBlockRunnerApiConfig.AuthConfig(
-      apiKey = StandaloneBlockRunnerApiConfig.ApiKeyConfig(clientId = "", clientSecret = "")
+      apiKey = StandaloneBlockRunnerApiConfig.ApiKeyConfig(clientId = "", clientSecret = ""),
     )
     assertNull(config.apiKey)
   }

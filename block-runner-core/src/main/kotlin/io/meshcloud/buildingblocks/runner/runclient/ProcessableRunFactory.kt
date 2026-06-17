@@ -22,7 +22,7 @@ class ProcessableRunFactory(
     // Combine them into ProcessableBlockRun
     return ProcessableBlockRun(
       meshObject = run,
-      links = runLinks
+      links = runLinks,
     )
   }
 }

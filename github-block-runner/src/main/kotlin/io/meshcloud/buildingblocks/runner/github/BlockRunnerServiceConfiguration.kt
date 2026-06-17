@@ -17,13 +17,13 @@ class BlockRunnerServiceConfiguration(
   fun blockRunnerService(
     gitHubClientFactory: GitHubClientFactory,
     decryptionService: DecryptionService,
-    appTokenFactory: AppTokenFactory
+    appTokenFactory: AppTokenFactory,
   ): BlockRunnerService {
     val service = GithubBlockRunnerService(
       blockRunClientFetcher = blockRunClientFetcher,
       gitHubClientFactory = gitHubClientFactory,
       decryptionService = decryptionService,
-      appTokenFactory = appTokenFactory
+      appTokenFactory = appTokenFactory,
     )
 
     return ImmediateRetryDecorator(service)
@@ -34,13 +34,13 @@ class BlockRunnerServiceConfiguration(
   fun kubernetesBlockRunnerService(
     gitHubClientFactory: GitHubClientFactory,
     decryptionService: DecryptionService,
-    appTokenFactory: AppTokenFactory
+    appTokenFactory: AppTokenFactory,
   ): BlockRunnerService {
     return GithubBlockRunnerService(
       blockRunClientFetcher = blockRunClientFetcher,
       gitHubClientFactory = gitHubClientFactory,
       decryptionService = decryptionService,
-      appTokenFactory = appTokenFactory
+      appTokenFactory = appTokenFactory,
     )
   }
 }

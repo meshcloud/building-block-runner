@@ -1,11 +1,11 @@
 package io.meshcloud.buildingblocks.runner.github
 
 import com.github.tomakehurst.wiremock.client.WireMock.*
+import io.meshcloud.buildingblocks.runner.MeshException
 import io.meshcloud.buildingblocks.runner.github.GithubClient.WorkflowJobStatus
 import io.meshcloud.buildingblocks.runner.github.GithubClient.WorkflowRunStatus
 import io.meshcloud.buildingblocks.runner.meshobject.HalLink
 import io.meshcloud.buildingblocks.runner.meshobject.ProcessableBlockRun
-import io.meshcloud.buildingblocks.runner.MeshException
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockGithubImplementation
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Assertions
@@ -35,18 +35,19 @@ class GithubClientTest : WiremockTestBase() {
       "inputs": { 
         "buildingBlockRun": "$b64run" 
       }
-    }""".trimIndent()
+    }
+    """.trimIndent()
 
     stubWorkflowDispatchCall(expectedJson)
 
     val run = ProcessableBlockRun.test(
       implementation = MeshBuildingBlockGithubImplementation.test(),
-      links = mapOf("self" to HalLink(href = "https://meshstack.example.com/api/meshobjects/meshbuildingblockruns/test"))
+      links = mapOf("self" to HalLink(href = "https://meshstack.example.com/api/meshobjects/meshbuildingblockruns/test")),
     )
 
     val payload = GithubClient.DispatchWorkflowPayload(
       ref = "ref",
-      inputs = BuildingBlockWorkflowInputsBuilder.WithRun(run).toInputMap()
+      inputs = BuildingBlockWorkflowInputsBuilder.WithRun(run).toInputMap(),
     )
 
     val result = sut.triggerWorkflow(
@@ -54,7 +55,7 @@ class GithubClientTest : WiremockTestBase() {
       owner = "owner",
       repositoryName = "repo",
       workflowName = "workflow.yml",
-      payload = payload
+      payload = payload,
     )
 
     assertThat(result).isEqualTo(GithubClient.TriggerWorkflowResult.Success)
@@ -69,18 +70,19 @@ class GithubClientTest : WiremockTestBase() {
       "inputs": {
         "buildingBlockRunUrl": "https://meshstack.example.com/api/meshobjects/meshbuildingblockruns/test"
       }
-    }""".trimIndent()
+    }
+    """.trimIndent()
 
     stubWorkflowDispatchCall(expectedJson)
 
     val run = ProcessableBlockRun.test(
       implementation = MeshBuildingBlockGithubImplementation.test(),
-      links = mapOf("self" to HalLink(href = "https://meshstack.example.com/api/meshobjects/meshbuildingblockruns/test"))
+      links = mapOf("self" to HalLink(href = "https://meshstack.example.com/api/meshobjects/meshbuildingblockruns/test")),
     )
 
     val payload = GithubClient.DispatchWorkflowPayload(
       ref = "ref",
-      inputs = BuildingBlockWorkflowInputsBuilder.WithUrl(run).toInputMap()
+      inputs = BuildingBlockWorkflowInputsBuilder.WithUrl(run).toInputMap(),
     )
 
     val result = sut.triggerWorkflow(
@@ -88,7 +90,7 @@ class GithubClientTest : WiremockTestBase() {
       owner = "owner",
       repositoryName = "repo",
       workflowName = "workflow.yml",
-      payload = payload
+      payload = payload,
     )
 
     assertThat(result).isEqualTo(GithubClient.TriggerWorkflowResult.Success)
@@ -103,8 +105,8 @@ class GithubClientTest : WiremockTestBase() {
         .withHeader("Authorization", equalTo("Bearer token"))
         .withRequestBody(equalToJson(expectedJson))
         .willReturn(
-          noContent()
-        )
+          noContent(),
+        ),
     )
   }
 
@@ -125,15 +127,15 @@ class GithubClientTest : WiremockTestBase() {
                       "permissions": {"metadata":"read"},
                       "repository_selection":"all"
                     }
-            """.trimIndent()
-          )
-        )
+            """.trimIndent(),
+          ),
+        ),
     )
 
     val exception = Assertions.assertThrows(MeshException::class.java) {
       sut.getInstallationAuthToken(
         appAuthToken = "token",
-        installationId = "123"
+        installationId = "123",
       )
     }
 
@@ -160,16 +162,16 @@ class GithubClientTest : WiremockTestBase() {
                       "updated_at": "2023-01-01T12:05:00Z",
                       "html_url": "https://github.com/owner/repo/actions/runs/123456789"
                     }
-            """.trimIndent()
-          )
-        )
+            """.trimIndent(),
+          ),
+        ),
     )
 
     val run = sut.getWorkflowRun(
       installationAuthToken = "token",
       owner = "owner",
       repositoryName = "repo",
-      runId = 123456789
+      runId = 123456789,
     )
 
     assertThat(run.id).isEqualTo(123456789)
@@ -213,16 +215,16 @@ class GithubClientTest : WiremockTestBase() {
                         }
                       ]
                     }
-            """.trimIndent()
-          )
-        )
+            """.trimIndent(),
+          ),
+        ),
     )
 
     val jobs = sut.listWorkflowJobs(
       installationAuthToken = "token",
       owner = "owner",
       repositoryName = "repo",
-      runId = 123456789
+      runId = 123456789,
     )
 
     assertThat(jobs).hasSize(2)
@@ -273,9 +275,9 @@ class GithubClientTest : WiremockTestBase() {
                         }
                       ]
                     }
-            """.trimIndent()
-          )
-        )
+            """.trimIndent(),
+          ),
+        ),
     )
 
     val runs = sut.listWorkflowRuns(
@@ -283,7 +285,7 @@ class GithubClientTest : WiremockTestBase() {
       owner = "owner",
       repositoryName = "repo",
       workflowName = "workflow.yml",
-      perPage = 5
+      perPage = 5,
     )
 
     assertThat(runs).hasSize(2)
@@ -310,18 +312,18 @@ class GithubClientTest : WiremockTestBase() {
                       "message": "Unexpected inputs provided",
                       "errors": ["buildingBlockRunUrl"]
                     }
-            """.trimIndent()
-          )
-        )
+            """.trimIndent(),
+          ),
+        ),
     )
 
     val run = ProcessableBlockRun.test(
       implementation = MeshBuildingBlockGithubImplementation.test(),
-      links = mapOf("self" to HalLink(href = "https://meshstack.example.com/api/meshobjects/meshbuildingblockruns/test"))
+      links = mapOf("self" to HalLink(href = "https://meshstack.example.com/api/meshobjects/meshbuildingblockruns/test")),
     )
     val payload = GithubClient.DispatchWorkflowPayload(
       ref = "main",
-      inputs = BuildingBlockWorkflowInputsBuilder.WithUrl(run).toInputMap()
+      inputs = BuildingBlockWorkflowInputsBuilder.WithUrl(run).toInputMap(),
     )
 
     val result = sut.triggerWorkflow(
@@ -330,7 +332,7 @@ class GithubClientTest : WiremockTestBase() {
       repositoryName = "repo",
       workflowName = "workflow.yml",
       payload = payload,
-      recognizedUnsupportedInputs = setOf("buildingBlockRunUrl")
+      recognizedUnsupportedInputs = setOf("buildingBlockRunUrl"),
     )
 
     assertThat(result).isInstanceOf(GithubClient.TriggerWorkflowResult.UnsupportedInput::class.java)
@@ -352,17 +354,17 @@ class GithubClientTest : WiremockTestBase() {
                       "message": "Unexpected inputs provided",
                       "errors": ["buildingBlockRun"]
                     }
-            """.trimIndent()
-          )
-        )
+            """.trimIndent(),
+          ),
+        ),
     )
 
     val run = ProcessableBlockRun.test(implementation = MeshBuildingBlockGithubImplementation.test())
     val payload = GithubClient.DispatchWorkflowPayload(
       ref = "main",
       inputs = BuildingBlockWorkflowInputsBuilder.WithRun(
-        buildingBlockRun = run
-      ).toInputMap()
+        buildingBlockRun = run,
+      ).toInputMap(),
     )
 
     val result = sut.triggerWorkflow(
@@ -371,7 +373,7 @@ class GithubClientTest : WiremockTestBase() {
       repositoryName = "repo",
       workflowName = "workflow.yml",
       payload = payload,
-      recognizedUnsupportedInputs = setOf("buildingBlockRun")
+      recognizedUnsupportedInputs = setOf("buildingBlockRun"),
     )
 
     assertThat(result).isInstanceOf(GithubClient.TriggerWorkflowResult.UnsupportedInput::class.java)
@@ -391,18 +393,18 @@ class GithubClientTest : WiremockTestBase() {
                     {
                       "message": "Workflow file not found"
                     }
-            """.trimIndent()
-          )
-        )
+            """.trimIndent(),
+          ),
+        ),
     )
 
     val run = ProcessableBlockRun.test(
       implementation = MeshBuildingBlockGithubImplementation.test(),
-      links = mapOf("self" to HalLink(href = "https://meshstack.example.com/api/meshobjects/meshbuildingblockruns/test"))
+      links = mapOf("self" to HalLink(href = "https://meshstack.example.com/api/meshobjects/meshbuildingblockruns/test")),
     )
     val payload = GithubClient.DispatchWorkflowPayload(
       ref = "main",
-      inputs = BuildingBlockWorkflowInputsBuilder.WithUrl(run).toInputMap()
+      inputs = BuildingBlockWorkflowInputsBuilder.WithUrl(run).toInputMap(),
     )
 
     val result = sut.triggerWorkflow(
@@ -411,7 +413,7 @@ class GithubClientTest : WiremockTestBase() {
       repositoryName = "repo",
       workflowName = "workflow.yml",
       payload = payload,
-      recognizedUnsupportedInputs = emptySet()
+      recognizedUnsupportedInputs = emptySet(),
     )
 
     assertThat(result).isInstanceOf(GithubClient.TriggerWorkflowResult.Error::class.java)
@@ -432,18 +434,18 @@ class GithubClientTest : WiremockTestBase() {
                     {
                       "message": "Internal server error"
                     }
-            """.trimIndent()
-          )
-        )
+            """.trimIndent(),
+          ),
+        ),
     )
 
     val run = ProcessableBlockRun.test(
       implementation = MeshBuildingBlockGithubImplementation.test(),
-      links = mapOf("self" to HalLink(href = "https://meshstack.example.com/api/meshobjects/meshbuildingblockruns/test"))
+      links = mapOf("self" to HalLink(href = "https://meshstack.example.com/api/meshobjects/meshbuildingblockruns/test")),
     )
     val payload = GithubClient.DispatchWorkflowPayload(
       ref = "main",
-      inputs = BuildingBlockWorkflowInputsBuilder.WithUrl(run).toInputMap()
+      inputs = BuildingBlockWorkflowInputsBuilder.WithUrl(run).toInputMap(),
     )
 
     val result = sut.triggerWorkflow(
@@ -451,7 +453,7 @@ class GithubClientTest : WiremockTestBase() {
       owner = "owner",
       repositoryName = "repo",
       workflowName = "workflow.yml",
-      payload = payload
+      payload = payload,
     )
 
     assertThat(result).isInstanceOf(GithubClient.TriggerWorkflowResult.Error::class.java)
@@ -472,18 +474,18 @@ class GithubClientTest : WiremockTestBase() {
                     {
                       "message": "Bad credentials"
                     }
-            """.trimIndent()
-          )
-        )
+            """.trimIndent(),
+          ),
+        ),
     )
 
     val run = ProcessableBlockRun.test(
       implementation = MeshBuildingBlockGithubImplementation.test(),
-      links = mapOf("self" to HalLink(href = "https://meshstack.example.com/api/meshobjects/meshbuildingblockruns/test"))
+      links = mapOf("self" to HalLink(href = "https://meshstack.example.com/api/meshobjects/meshbuildingblockruns/test")),
     )
     val payload = GithubClient.DispatchWorkflowPayload(
       ref = "main",
-      inputs = BuildingBlockWorkflowInputsBuilder.WithUrl(run).toInputMap()
+      inputs = BuildingBlockWorkflowInputsBuilder.WithUrl(run).toInputMap(),
     )
 
     val result = sut.triggerWorkflow(
@@ -491,7 +493,7 @@ class GithubClientTest : WiremockTestBase() {
       owner = "owner",
       repositoryName = "repo",
       workflowName = "workflow.yml",
-      payload = payload
+      payload = payload,
     )
 
     assertThat(result).isInstanceOf(GithubClient.TriggerWorkflowResult.Error::class.java)

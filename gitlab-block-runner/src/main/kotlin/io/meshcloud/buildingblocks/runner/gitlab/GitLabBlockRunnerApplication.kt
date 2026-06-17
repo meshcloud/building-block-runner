@@ -8,12 +8,12 @@ import org.springframework.boot.runApplication
 @ConfigurationPropertiesScan(
   basePackages = [
     "io.meshcloud.buildingblocks.runner",
-  ]
+  ],
 )
 @SpringBootApplication(
   scanBasePackages = [
     "io.meshcloud.buildingblocks.runner",
-  ]
+  ],
 )
 class GitLabBlockRunnerApplication
 

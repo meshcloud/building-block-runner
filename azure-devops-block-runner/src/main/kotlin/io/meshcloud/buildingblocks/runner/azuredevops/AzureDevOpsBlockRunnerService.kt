@@ -1,18 +1,18 @@
 package io.meshcloud.buildingblocks.runner.azuredevops
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.meshcloud.buildingblocks.runner.BlockRunnerService
 import io.meshcloud.buildingblocks.runner.azuredevops.client.AzureDevOpsClientFactory
-import io.meshcloud.buildingblocks.runner.runclient.BlockRunClientFetcher
 import io.meshcloud.buildingblocks.runner.http.MeshHttpException
+import io.meshcloud.buildingblocks.runner.runclient.BlockRunClientFetcher
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockAzureDevOpsImplementation
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
-import io.github.oshai.kotlinlogging.KotlinLogging
 
 private val log = KotlinLogging.logger { }
 
 class AzureDevOpsBlockRunnerService(
   private val blockRunClientFetcher: BlockRunClientFetcher,
-  private val azureDevOpsClientFactory: AzureDevOpsClientFactory
+  private val azureDevOpsClientFactory: AzureDevOpsClientFactory,
 ) : BlockRunnerService {
 
   override fun processBlock(): MeshBuildingBlockRun? {
@@ -29,7 +29,7 @@ class AzureDevOpsBlockRunnerService(
 
     blockRunClient.registerAsSource(
       STEP_ID,
-      "Trigger Azure DevOps Pipeline"
+      "Trigger Azure DevOps Pipeline",
     )
 
     val implementation = try {
@@ -64,7 +64,7 @@ class AzureDevOpsBlockRunnerService(
         azureDevOpsClient = azureDevOpsClient,
         blockRun = blockRun,
         pipelineRun = pipelineRun,
-        statusUpdater = statusUpdater
+        statusUpdater = statusUpdater,
       )
     }
 

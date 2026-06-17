@@ -30,7 +30,7 @@ class GitLabBlockRunnerServiceTest {
     every {
       blockRunClientMock.registerAsSource(
         any(),
-        "Trigger GitLab CI/CD"
+        "Trigger GitLab CI/CD",
       )
     } returns Unit
     every { blockRunClientMock.updateBlockRun(any()) } returns Unit
@@ -46,7 +46,7 @@ class GitLabBlockRunnerServiceTest {
   @Test
   fun `processBlock reports error when deserializing a GitLab response fails`() {
     val runWithLinks = ProcessableBlockRun.test(
-      implementation = MeshBuildingBlockGitlabImplementation.test()
+      implementation = MeshBuildingBlockGitlabImplementation.test(),
     )
 
     every { blockRunClientFetcherMock.fetchBlockRunClient() } returns blockRunClientMock
@@ -88,8 +88,8 @@ class GitLabBlockRunnerServiceTest {
   fun `processBlock triggers works as expected`() {
     val runWithLinks = ProcessableBlockRun.test(
       implementation = MeshBuildingBlockGitlabImplementation.test(
-        pipelineTriggerToken = "encryptedPipelineToken"
-      )
+        pipelineTriggerToken = "encryptedPipelineToken",
+      ),
     )
 
     every { blockRunClientFetcherMock.fetchBlockRunClient() } returns blockRunClientMock
@@ -103,7 +103,7 @@ class GitLabBlockRunnerServiceTest {
     verify(exactly = 1) {
       blockRunClientMock.registerAsSource(
         any(),
-        "Trigger GitLab CI/CD"
+        "Trigger GitLab CI/CD",
       )
     }
     verify(atLeast = 1) { blockRunClientMock.updateBlockRun(any()) }
@@ -157,7 +157,7 @@ class GitLabBlockRunnerServiceTest {
           isEnvironment = true,
         ),
       ),
-      implementation = MeshBuildingBlockGitlabImplementation.test()
+      implementation = MeshBuildingBlockGitlabImplementation.test(),
     )
 
     every { blockRunClientFetcherMock.fetchBlockRunClient() } returns blockRunClientMock
@@ -177,7 +177,7 @@ class GitLabBlockRunnerServiceTest {
           val dispatchedInput = dispatchedRun.meshObject.spec.buildingBlock.spec.inputs
           assertThat(dispatchedInput).hasSize(4)
           assertThat(dispatchedInput.map { it.value }).containsExactlyInAnyOrder("1", "2", "3", 4)
-        }
+        },
       )
     }
 

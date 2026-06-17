@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component
  */
 @Component
 class GitLabClientFactory(
-  private val urlSanitizer: UrlSanitizerService
+  private val urlSanitizer: UrlSanitizerService,
 ) {
   fun provideClientFor(gitlabApiBaseUrl: String): GitLabClient {
     val sanitizedUrl = urlSanitizer.sanitize(gitlabApiBaseUrl)

@@ -1,14 +1,14 @@
 package io.meshcloud.buildingblocks.runner.github
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.meshcloud.buildingblocks.runner.BlockRunnerService
+import io.meshcloud.buildingblocks.runner.http.MeshHttpException
 import io.meshcloud.buildingblocks.runner.meshobject.ProcessableBlockRun
 import io.meshcloud.buildingblocks.runner.runclient.BlockRunClient
 import io.meshcloud.buildingblocks.runner.runclient.BlockRunClientFetcher
 import io.meshcloud.buildingblocks.runner.security.DecryptionService
-import io.meshcloud.buildingblocks.runner.http.MeshHttpException
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockGithubImplementation
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
-import io.github.oshai.kotlinlogging.KotlinLogging
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -21,7 +21,7 @@ class GithubBlockRunnerService(
   private val gitHubClientFactory: GitHubClientFactory,
   private val decryptionService: DecryptionService,
   private val appTokenFactory: AppTokenFactory,
-  private val clock: Clock = Clock.systemUTC()
+  private val clock: Clock = Clock.systemUTC(),
 ) : BlockRunnerService {
 
   override fun processBlock(): MeshBuildingBlockRun? {
@@ -37,7 +37,7 @@ class GithubBlockRunnerService(
 
     blockRunClient.registerAsSource(
       STEP_ID,
-      "Trigger GitHub Action"
+      "Trigger GitHub Action",
     )
 
     val implementation = try {
@@ -60,7 +60,7 @@ class GithubBlockRunnerService(
       val decryptedPem = decryptionService.decrypt(implementation.appPem)
       appTokenFactory.getAppAuthToken(
         appId = implementation.appId,
-        appPem = decryptedPem
+        appPem = decryptedPem,
       )
     } catch (ex: Exception) {
       updateFailedBlockStatusWithException(blockRunClient, ex)
@@ -71,7 +71,7 @@ class GithubBlockRunnerService(
       githubClient.getInstallationId(
         appAuthToken = appAuthToken,
         owner = implementation.owner,
-        repositoryName = implementation.repository
+        repositoryName = implementation.repository,
       )
     } catch (ex: MeshHttpException) {
       updateFailedBlockStatusWithMeshException(blockRunClient, ex)
@@ -84,7 +84,7 @@ class GithubBlockRunnerService(
     val installationAuthToken = try {
       githubClient.getInstallationAuthToken(
         appAuthToken = appAuthToken,
-        installationId = installationId
+        installationId = installationId,
       )
     } catch (ex: MeshHttpException) {
       updateFailedBlockStatusWithMeshException(blockRunClient, ex)
@@ -103,7 +103,7 @@ class GithubBlockRunnerService(
     if (workflowName == null) {
       updateFailedBlockStatusWithMessage(
         blockRunClient,
-        "Workflow file name must not be null"
+        "Workflow file name must not be null",
       )
       return null
     }
@@ -114,7 +114,7 @@ class GithubBlockRunnerService(
         implementation,
         githubClient,
         installationAuthToken,
-        workflowName
+        workflowName,
       )
 
       when (triggerResult) {
@@ -128,7 +128,7 @@ class GithubBlockRunnerService(
             unsupportedInputSystemMessage(
               workflowName = workflowName,
               unsupportedInput = inputName,
-              omitRunObjectInput = implementation.omitRunObjectInput
+              omitRunObjectInput = implementation.omitRunObjectInput,
             )
           }
           updateFailedBlockStatusWithMessage(blockRunClient, systemMessage)
@@ -138,7 +138,7 @@ class GithubBlockRunnerService(
         is GithubClient.TriggerWorkflowResult.Error -> {
           updateFailedBlockStatusWithMessage(
             blockRunClient,
-            "GitHub API returned status ${triggerResult.statusCode} when triggering workflow: ${triggerResult.responseBody}"
+            "GitHub API returned status ${triggerResult.statusCode} when triggering workflow: ${triggerResult.responseBody}",
           )
           return null
         }
@@ -156,7 +156,7 @@ class GithubBlockRunnerService(
         githubClient = githubClient,
         installationAuthToken = installationAuthToken,
         implementation = implementation,
-        workflowName = workflowName
+        workflowName = workflowName,
       )
     }
 
@@ -168,7 +168,7 @@ class GithubBlockRunnerService(
     implementation: MeshBuildingBlockGithubImplementation,
     githubClient: GithubClient,
     installationAuthToken: String,
-    workflowName: String
+    workflowName: String,
   ): GithubClient.TriggerWorkflowResult {
     val decryptedBlockRun = decryptionService.decryptBlockRunInputs(blockRun)
 
@@ -184,7 +184,7 @@ class GithubBlockRunnerService(
     // Build the input map and create the payload
     val payload = GithubClient.DispatchWorkflowPayload(
       ref = implementation.branch,
-      inputs = inputBuilder.toInputMap()
+      inputs = inputBuilder.toInputMap(),
     )
 
     // Determine which inputs we're sending that the workflow might not support
@@ -197,7 +197,7 @@ class GithubBlockRunnerService(
       "buildingBlockRunUrl",
       "buildingBlockRun",
       BuildingBlockWorkflowInputsBuilder.MESHSTACK_API_TOKEN_KEY,
-      BuildingBlockWorkflowInputsBuilder.MESHSTACK_RUN_TOKEN_KEY
+      BuildingBlockWorkflowInputsBuilder.MESHSTACK_RUN_TOKEN_KEY,
     )
 
     val triggerResult = githubClient.triggerWorkflow(
@@ -206,7 +206,7 @@ class GithubBlockRunnerService(
       repositoryName = implementation.repository,
       workflowName = workflowName,
       payload = payload,
-      recognizedUnsupportedInputs = recognizedUnsupportedInputs
+      recognizedUnsupportedInputs = recognizedUnsupportedInputs,
     )
 
     return triggerResult
@@ -218,7 +218,7 @@ class GithubBlockRunnerService(
     githubClient: GithubClient,
     installationAuthToken: String,
     implementation: MeshBuildingBlockGithubImplementation,
-    workflowName: String
+    workflowName: String,
   ) {
     val triggerTime = Instant.now(clock)
 
@@ -237,7 +237,7 @@ class GithubBlockRunnerService(
             owner = implementation.owner,
             repositoryName = implementation.repository,
             workflowName = workflowName,
-            perPage = 5
+            perPage = 5,
           )
 
           // Find the most recent run that was created after we triggered the workflow
@@ -259,7 +259,7 @@ class GithubBlockRunnerService(
       if (workflowRun == null) {
         updateFailedBlockStatusWithMessage(
           blockRunClient,
-          "Could not find the triggered workflow run after $MAX_FIND_WORKFLOW_ATTEMPTS attempts"
+          "Could not find the triggered workflow run after $MAX_FIND_WORKFLOW_ATTEMPTS attempts",
         )
         return
       }
@@ -286,7 +286,7 @@ class GithubBlockRunnerService(
             installationAuthToken = installationAuthToken,
             owner = implementation.owner,
             repositoryName = implementation.repository,
-            runId = currentRun.id
+            runId = currentRun.id,
           )
 
           // Get jobs for this workflow run
@@ -294,7 +294,7 @@ class GithubBlockRunnerService(
             installationAuthToken = installationAuthToken,
             owner = implementation.owner,
             repositoryName = implementation.repository,
-            runId = currentRun.id
+            runId = currentRun.id,
           )
 
           // Update job status for any new or updated jobs
@@ -313,7 +313,7 @@ class GithubBlockRunnerService(
           installationAuthToken = installationAuthToken,
           owner = implementation.owner,
           repositoryName = implementation.repository,
-          runId = currentRun.id
+          runId = currentRun.id,
         )
         updateJobStatuses(blockRunClient, blockRun.metadata.uuid, finalJobs, seenJobIds)
       } catch (ex: Exception) {
@@ -336,7 +336,7 @@ class GithubBlockRunnerService(
     blockRunClient: BlockRunClient,
     blockRunUuid: String,
     jobs: List<GithubClient.WorkflowJob>,
-    seenJobIds: MutableSet<Long>
+    seenJobIds: MutableSet<Long>,
   ) {
     val newOrUpdatedJobs = jobs.filter { job ->
       // Report all jobs that we haven't seen before or that have been updated
@@ -386,7 +386,7 @@ class GithubBlockRunnerService(
           displayName = "GitHub Job: ${job.name}",
           status = status,
           userMessage = userMessage,
-          systemMessage = systemMessage
+          systemMessage = systemMessage,
         )
       }
 
@@ -398,8 +398,8 @@ class GithubBlockRunnerService(
             id = STEP_ID,
             status = MeshBuildingBlockRun.ExecutionStatus.SUCCEEDED,
             userMessage = "GitHub workflow triggered successfully",
-            systemMessage = "Workflow started, monitoring individual jobs"
-          )
+            systemMessage = "Workflow started, monitoring individual jobs",
+          ),
         ) + stepUpdates
       } else {
         // Just update the jobs
@@ -408,7 +408,7 @@ class GithubBlockRunnerService(
 
       val update = MeshBuildingBlockRun.SourceUpdate(
         status = MeshBuildingBlockRun.ExecutionStatus.IN_PROGRESS,
-        steps = allSteps
+        steps = allSteps,
       )
 
       log.debug { "Updating job statuses for run $blockRunUuid: ${newOrUpdatedJobs.map { "${it.name}(${it.status})" }}" }
@@ -419,7 +419,7 @@ class GithubBlockRunnerService(
   private fun updateFinalBlockStatusFromWorkflow(
     blockRunClient: BlockRunClient,
     blockRunUuid: String,
-    workflowRun: GithubClient.WorkflowRun
+    workflowRun: GithubClient.WorkflowRun,
   ) {
     val status = when (workflowRun.conclusion) {
       "success" -> MeshBuildingBlockRun.ExecutionStatus.SUCCEEDED
@@ -444,8 +444,8 @@ class GithubBlockRunnerService(
           id = STEP_ID,
           status = status,
           userMessage = userMessage,
-          systemMessage = "Workflow run ${workflowRun.id} completed with status: ${workflowRun.status}, conclusion: ${workflowRun.conclusion}. View run: ${workflowRun.htmlUrl}"
-        )
+          systemMessage = "Workflow run ${workflowRun.id} completed with status: ${workflowRun.status}, conclusion: ${workflowRun.conclusion}. View run: ${workflowRun.htmlUrl}",
+        ),
       ),
     )
 
@@ -458,7 +458,7 @@ class GithubBlockRunnerService(
 
     updateFailedBlockStatusWithMessage(
       blockRunClient,
-      "Request: ${ex.requestUrl}\nGitHub responded with status: ${ex.statusCode} and body: ${ex.getResponseBody()}"
+      "Request: ${ex.requestUrl}\nGitHub responded with status: ${ex.statusCode} and body: ${ex.getResponseBody()}",
     )
   }
 
@@ -467,7 +467,7 @@ class GithubBlockRunnerService(
 
     updateFailedBlockStatusWithMessage(
       blockRunClient,
-      "There was an internal error while trying to contact GitHub: ${ex.message}"
+      "There was an internal error while trying to contact GitHub: ${ex.message}",
     )
   }
 
@@ -478,7 +478,7 @@ class GithubBlockRunnerService(
 
     updateFailedBlockStatusWithMessage(
       blockRunClient,
-      "There was an internal error while trying to contact GitHub: $message"
+      "There was an internal error while trying to contact GitHub: $message",
     )
   }
 
@@ -493,8 +493,8 @@ class GithubBlockRunnerService(
           id = STEP_ID,
           status = MeshBuildingBlockRun.ExecutionStatus.FAILED,
           userMessage = "Could not trigger the GitHub Action",
-          systemMessage = message
-        )
+          systemMessage = message,
+        ),
       ),
     )
 
@@ -505,7 +505,7 @@ class GithubBlockRunnerService(
   private fun unsupportedInputSystemMessage(
     workflowName: String,
     unsupportedInput: String,
-    omitRunObjectInput: Boolean
+    omitRunObjectInput: Boolean,
   ): String {
     return when {
       unsupportedInput == "buildingBlockRunUrl" && omitRunObjectInput -> {
@@ -558,7 +558,7 @@ class GithubBlockRunnerService(
   private fun updateSuccessfulTriggerStepStatus(
     blockRunClient: BlockRunClient,
     githubWorkflow: String,
-    isAsync: Boolean
+    isAsync: Boolean,
   ) {
     val extraPollingInformation = if (!isAsync) {
       "Polling for completion status..."
@@ -573,8 +573,8 @@ class GithubBlockRunnerService(
           id = STEP_ID,
           status = MeshBuildingBlockRun.ExecutionStatus.SUCCEEDED,
           userMessage = "Triggered GitHub Action '$githubWorkflow'. $extraPollingInformation",
-          systemMessage = "Triggered action '$githubWorkflow'. $extraPollingInformation"
-        )
+          systemMessage = "Triggered action '$githubWorkflow'. $extraPollingInformation",
+        ),
       ),
     )
 

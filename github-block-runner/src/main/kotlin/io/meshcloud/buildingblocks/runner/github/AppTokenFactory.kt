@@ -22,7 +22,7 @@ class AppTokenFactory {
    */
   fun getAppAuthToken(
     appId: String,
-    appPem: String
+    appPem: String,
   ): String {
     val privateKey = getPrivateKeyFromPemPKCS1(appPem)
 

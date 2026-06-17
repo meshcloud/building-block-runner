@@ -1,9 +1,9 @@
 package io.meshcloud.buildingblocks.runner.manual
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.meshcloud.buildingblocks.runner.runclient.BlockRunClient
 import io.meshcloud.buildingblocks.runner.runclient.BlockRunClientFetcher
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
-import io.github.oshai.kotlinlogging.KotlinLogging
 
 private val log = KotlinLogging.logger { }
 
@@ -12,7 +12,7 @@ private val log = KotlinLogging.logger { }
  * some step updates with nonsense.
  */
 class DebugBlockRunnerService(
-  blockRunClientFetcher: BlockRunClientFetcher
+  blockRunClientFetcher: BlockRunClientFetcher,
 ) : NoOpBlockRunnerService(blockRunClientFetcher) {
 
   init {
@@ -64,13 +64,13 @@ class DebugBlockRunnerService(
   private fun makeUpdate(
     blockRun: MeshBuildingBlockRun,
     status: MeshBuildingBlockRun.ExecutionStatus,
-    isLastStep: Boolean
+    isLastStep: Boolean,
   ): MeshBuildingBlockRun.SourceUpdate {
     val outputs = blockRun.spec.buildingBlock.spec.inputs.associate {
       it.key to MeshBuildingBlockRun.SourceUpdate.StepUpdate.BlockRunOutput(
         value = it.value,
         type = it.type,
-        isSensitive = it.isSensitive
+        isSensitive = it.isSensitive,
       )
     }
 
@@ -81,7 +81,7 @@ class DebugBlockRunnerService(
           id = STEP_ID,
           userMessage = "this is a message for the user",
           systemMessage = "this is a message for the system",
-          status = MeshBuildingBlockRun.ExecutionStatus.SUCCEEDED
+          status = MeshBuildingBlockRun.ExecutionStatus.SUCCEEDED,
         ),
         MeshBuildingBlockRun.SourceUpdate.StepUpdate(
           id = "additionalDebugStep",
@@ -96,9 +96,9 @@ class DebugBlockRunnerService(
             outputs
           } else {
             null
-          }
-        )
-      )
+          },
+        ),
+      ),
     )
   }
 }

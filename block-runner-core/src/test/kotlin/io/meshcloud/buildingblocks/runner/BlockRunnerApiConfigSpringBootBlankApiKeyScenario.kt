@@ -22,7 +22,7 @@ class BlockRunnerApiConfigSpringBootBlankApiKeyScenario {
   fun `apiKey is null when credentials are empty strings`() {
     assertNull(
       standaloneConfig.auth.apiKey,
-      "apiKey must be null when clientId and clientSecret are blank — basic auth should be used instead"
+      "apiKey must be null when clientId and clientSecret are blank — basic auth should be used instead",
     )
   }
 

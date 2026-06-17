@@ -1,10 +1,10 @@
 package io.meshcloud.buildingblocks.runner.azuredevops
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.meshcloud.buildingblocks.runner.azuredevops.client.AzureDevOpsClient
 import io.meshcloud.buildingblocks.runner.azuredevops.client.PipelineRun
 import io.meshcloud.buildingblocks.runner.azuredevops.client.PipelineRunState
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
-import io.github.oshai.kotlinlogging.KotlinLogging
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -21,7 +21,7 @@ object AzureDevOpsPipelinePoller {
     statusUpdater: AzureDevOpsStatusUpdater,
     blockRun: MeshBuildingBlockRun,
     pipelineRun: PipelineRun,
-    clock: Clock = Clock.systemUTC()
+    clock: Clock = Clock.systemUTC(),
   ) {
     val triggerTime = Instant.now(clock)
     log.info { "Starting pipeline status polling for run: ${blockRun.metadata.uuid}, pipeline run: ${pipelineRun.id}" }
@@ -35,7 +35,7 @@ object AzureDevOpsPipelinePoller {
       while (!isPipelineRunComplete(currentRun)) {
         if (Instant.now(clock).isAfter(triggerTime.plus(maxPollingDuration))) {
           statusUpdater.updateFailedBlockStatusWithException(
-            Exception("Pipeline polling timeout after $MAX_POLLING_MINUTES_PIPELINES minutes")
+            Exception("Pipeline polling timeout after $MAX_POLLING_MINUTES_PIPELINES minutes"),
           )
           return
         }

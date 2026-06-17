@@ -12,6 +12,6 @@ interface BlockRunClient {
   )
 
   fun updateBlockRun(
-    sourceUpdate: MeshBuildingBlockRun.SourceUpdate
+    sourceUpdate: MeshBuildingBlockRun.SourceUpdate,
   )
 }

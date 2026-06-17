@@ -19,7 +19,7 @@ data class MeshBuildingBlockRun(
   val meaningfulIdentifier = "meshBuildingBlockRun[${metadata.uuid}]"
 
   data class MeshBuildingBlockRunMetadata(
-    val uuid: String
+    val uuid: String,
   )
 
   data class BlockRunSourceRegistration(
@@ -29,7 +29,7 @@ data class MeshBuildingBlockRun(
     data class SourceRegistration(
       val id: String,
       val externalRunId: String? = null,
-      val externalRunUrl: String? = null
+      val externalRunUrl: String? = null,
     )
 
     data class StepRegistration(
@@ -42,7 +42,7 @@ data class MeshBuildingBlockRun(
   enum class RunStatus {
     IN_PROGRESS,
     SUCCEEDED,
-    FAILED
+    FAILED,
   }
 
   enum class ExecutionStatus(val isTerminalState: Boolean) {
@@ -50,7 +50,7 @@ data class MeshBuildingBlockRun(
     IN_PROGRESS(false),
     SUCCEEDED(true),
     FAILED(true),
-    ABORTED(true)
+    ABORTED(true),
   }
 
   data class SourceUpdate(
@@ -83,11 +83,11 @@ data class MeshBuildingBlockRun(
     val buildingBlock: BuildingBlock,
     val buildingBlockDefinition: BuildingBlockDefinition,
     val behavior: Behavior,
-    val runToken: String
+    val runToken: String,
   ) {
     data class BuildingBlock(
       val uuid: String,
-      val spec: MeshBuildingBlockSpecForRun
+      val spec: MeshBuildingBlockSpecForRun,
     ) {
       /**
        * Sadly both specs are not compatible as this one needs different input/variable information.
@@ -98,14 +98,14 @@ data class MeshBuildingBlockRun(
         val projectIdentifier: String?,
         val fullPlatformIdentifier: String?,
         val inputs: List<MeshBuildingBlockInputsForRun>,
-        val parentBuildingBlocks: List<MeshParentBuildingBlock>
+        val parentBuildingBlocks: List<MeshParentBuildingBlock>,
       )
     }
 
     enum class Behavior {
       APPLY,
       DETECT,
-      DESTROY
+      DESTROY,
     }
 
     data class MeshBuildingBlockInputsForRun(
@@ -113,18 +113,18 @@ data class MeshBuildingBlockRun(
       val value: Any,
       val type: MeshBuildingBlockIOType,
       val isSensitive: Boolean,
-      val isEnvironment: Boolean
+      val isEnvironment: Boolean,
     )
 
     data class BuildingBlockDefinition(
       val uuid: String,
-      val spec: MeshBuildingBlockMinimalDefinitionSpec
+      val spec: MeshBuildingBlockMinimalDefinitionSpec,
     ) {
 
       data class MeshBuildingBlockMinimalDefinitionSpec(
         val workspaceIdentifier: String,
         val version: Long,
-        val implementation: BuildingBlockImplementation
+        val implementation: BuildingBlockImplementation,
       )
     }
   }
@@ -172,7 +172,7 @@ data class MeshBuildingBlockTerraformImplementation(
   data class KnownHostEntry(
     val host: String,
     val keyType: String,
-    val keyValue: String
+    val keyValue: String,
   )
 }
 
@@ -194,13 +194,13 @@ data class MeshBuildingBlockGithubImplementation(
    * This helps avoid GitHub's workflow_dispatch input size limits (65,535 characters total).
    * Default is false for backwards compatibility.
    */
-  val omitRunObjectInput: Boolean
+  val omitRunObjectInput: Boolean,
 ) : BuildingBlockImplementation() {
 
   companion object {
     fun test(
       async: Boolean = false,
-      omitRunObjectInput: Boolean = false
+      omitRunObjectInput: Boolean = false,
     ): MeshBuildingBlockGithubImplementation {
       return MeshBuildingBlockGithubImplementation(
         githubBaseUrl = "https://api.github.com",
@@ -212,7 +212,7 @@ data class MeshBuildingBlockGithubImplementation(
         applyWorkflow = "provision.yml",
         destroyWorkflow = "deprovision.yml",
         async = async,
-        omitRunObjectInput = omitRunObjectInput
+        omitRunObjectInput = omitRunObjectInput,
       )
     }
   }
@@ -227,13 +227,13 @@ data class MeshBuildingBlockGitlabImplementation(
 
   companion object {
     fun test(
-      pipelineTriggerToken: String = "test123"
+      pipelineTriggerToken: String = "test123",
     ): MeshBuildingBlockGitlabImplementation {
       return MeshBuildingBlockGitlabImplementation(
         gitlabBaseUrl = "https://gitlab.com",
         projectId = "123456",
         refName = "main",
-        pipelineTriggerToken = pipelineTriggerToken
+        pipelineTriggerToken = pipelineTriggerToken,
       )
     }
   }
@@ -253,7 +253,7 @@ data class MeshBuildingBlockAzureDevOpsImplementation(
     fun test(
       personalAccessToken: String = "test_pat",
       async: Boolean = false,
-      refName: String? = null
+      refName: String? = null,
     ): MeshBuildingBlockAzureDevOpsImplementation {
       return MeshBuildingBlockAzureDevOpsImplementation(
         azureDevOpsBaseUrl = "https://dev.azure.com",
@@ -262,7 +262,7 @@ data class MeshBuildingBlockAzureDevOpsImplementation(
         pipelineId = "123",
         personalAccessToken = personalAccessToken,
         async = async,
-        refName = refName
+        refName = refName,
       )
     }
   }

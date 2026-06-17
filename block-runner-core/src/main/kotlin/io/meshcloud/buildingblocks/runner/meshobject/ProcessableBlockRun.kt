@@ -15,7 +15,7 @@ data class ProcessableBlockRun(
   val meshObject: MeshBuildingBlockRun,
   @JsonUnwrapped
   @JsonProperty("_links")
-  val links: Map<String, HalLink>
+  val links: Map<String, HalLink>,
 ) {
   fun selfLink(): String {
     return extractLinkStr("self")
@@ -38,7 +38,7 @@ data class ProcessableBlockRun(
     fun test(
       implementation: BuildingBlockImplementation,
       inputs: List<MeshBuildingBlockRun.MeshBuildingBlockRunSpec.MeshBuildingBlockInputsForRun> = emptyList(),
-      links: Map<String, HalLink> = mapOf()
+      links: Map<String, HalLink> = mapOf(),
     ): ProcessableBlockRun {
       return ProcessableBlockRun(
         meshObject = MeshBuildingBlockRun(
@@ -57,7 +57,7 @@ data class ProcessableBlockRun(
                 fullPlatformIdentifier = "platform",
                 inputs = inputs,
                 parentBuildingBlocks = emptyList(),
-              )
+              ),
             ),
             buildingBlockDefinition = MeshBuildingBlockRun.MeshBuildingBlockRunSpec.BuildingBlockDefinition(
               uuid = "test",
@@ -65,13 +65,13 @@ data class ProcessableBlockRun(
                 workspaceIdentifier = "test-workspace",
                 version = 1L,
                 implementation = implementation,
-              )
+              ),
             ),
             runToken = "test",
           ),
           status = MeshBuildingBlockRun.RunStatus.IN_PROGRESS,
         ),
-        links = links
+        links = links,
       )
     }
   }

@@ -5,11 +5,11 @@ import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.github.oshai.kotlinlogging.KotlinLogging
+import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Interceptor
 import okhttp3.Response
 import java.io.IOException
 import java.time.Duration
@@ -110,7 +110,7 @@ class ApiKeyAuthInterceptor(
     val loginUrl = "$baseUrl/api/login"
 
     val requestBody = mapper.writeValueAsString(
-      ApiKeyLoginRequest(clientId = clientId, clientSecret = clientSecret)
+      ApiKeyLoginRequest(clientId = clientId, clientSecret = clientSecret),
     ).toRequestBody(MEDIA_TYPE_JSON)
 
     val request = Request.Builder()
@@ -129,7 +129,7 @@ class ApiKeyAuthInterceptor(
       }
 
       val loginResponse: ApiKeyLoginResponse = mapper.readValue(
-        response.body.string()
+        response.body.string(),
       )
 
       val lifetime = Duration.ofSeconds(loginResponse.expiresIn.toLong()) - TOKEN_EXPIRY_BUFFER
@@ -137,7 +137,7 @@ class ApiKeyAuthInterceptor(
 
       cachedToken = CachedToken(
         token = loginResponse.accessToken,
-        expiresAt = Instant.now().plus(effectiveLifetime)
+        expiresAt = Instant.now().plus(effectiveLifetime),
       )
 
       log.debug { "Obtained new API key access token, valid for ${effectiveLifetime.toSeconds()}s" }

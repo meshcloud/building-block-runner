@@ -58,7 +58,7 @@ class RunFileJsonBlockRunClientFetcherTest {
     val sut = RunFileJsonBlockRunClientFetcher(
       blockRunClientFactory = blockRunClientFactory,
       environmentVariableProvider = environmentVariableProvider,
-      processableRunFactory = processableRunFactory
+      processableRunFactory = processableRunFactory,
     )
 
     // When & Then
@@ -75,7 +75,7 @@ class RunFileJsonBlockRunClientFetcherTest {
     val sut = RunFileJsonBlockRunClientFetcher(
       blockRunClientFactory = blockRunClientFactory,
       environmentVariableProvider = environmentVariableProvider,
-      processableRunFactory = processableRunFactory
+      processableRunFactory = processableRunFactory,
     )
 
     // When & Then
@@ -101,7 +101,7 @@ class RunFileJsonBlockRunClientFetcherTest {
     val sut = RunFileJsonBlockRunClientFetcher(
       blockRunClientFactory = blockRunClientFactory,
       environmentVariableProvider = environmentVariableProvider,
-      processableRunFactory = processableRunFactory
+      processableRunFactory = processableRunFactory,
     )
 
     // When
@@ -133,7 +133,7 @@ class RunFileJsonBlockRunClientFetcherTest {
     val sut = RunFileJsonBlockRunClientFetcher(
       blockRunClientFactory = blockRunClientFactory,
       environmentVariableProvider = environmentVariableProvider,
-      processableRunFactory = processableRunFactory
+      processableRunFactory = processableRunFactory,
     )
 
     // When
@@ -159,7 +159,7 @@ class RunFileJsonBlockRunClientFetcherTest {
     val sut = RunFileJsonBlockRunClientFetcher(
       blockRunClientFactory = blockRunClientFactory,
       environmentVariableProvider = environmentVariableProvider,
-      processableRunFactory = processableRunFactory
+      processableRunFactory = processableRunFactory,
     )
 
     // When
@@ -190,7 +190,7 @@ class RunFileJsonBlockRunClientFetcherTest {
     val sut = RunFileJsonBlockRunClientFetcher(
       blockRunClientFactory = blockRunClientFactory,
       environmentVariableProvider = environmentVariableProvider,
-      processableRunFactory = processableRunFactory
+      processableRunFactory = processableRunFactory,
     )
 
     // When

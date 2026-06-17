@@ -9,7 +9,7 @@ import org.springframework.context.annotation.Profile
 @Configuration
 class BlockRunnerServiceConfiguration(
   private val blockRunClientFetcher: BlockRunClientFetcher,
-  private val manualRunnerConfig: ManualRunnerConfig
+  private val manualRunnerConfig: ManualRunnerConfig,
 ) {
 
   @Bean

@@ -18,7 +18,7 @@ class BuildingBlockWorkflowInputsBuilderTest {
   fun `WithUrl includes buildingBlockRunUrl`() {
     val run = ProcessableBlockRun.test(
       implementation = MeshBuildingBlockGithubImplementation.test(),
-      links = mapOf("self" to HalLink(href = TEST_BUILDING_BLOCK_RUN_URL))
+      links = mapOf("self" to HalLink(href = TEST_BUILDING_BLOCK_RUN_URL)),
     )
 
     val inputMap = BuildingBlockWorkflowInputsBuilder.WithUrl(run).toInputMap()
@@ -34,13 +34,13 @@ class BuildingBlockWorkflowInputsBuilderTest {
         value = "test-api-token",
         type = MeshBuildingBlockIOType.STRING,
         isSensitive = true,
-        isEnvironment = true
-      )
+        isEnvironment = true,
+      ),
     )
     val run = ProcessableBlockRun.test(
       implementation = MeshBuildingBlockGithubImplementation.test(),
       inputs = inputs,
-      links = mapOf("self" to HalLink(href = TEST_BUILDING_BLOCK_RUN_URL))
+      links = mapOf("self" to HalLink(href = TEST_BUILDING_BLOCK_RUN_URL)),
     )
 
     val inputMap = BuildingBlockWorkflowInputsBuilder.WithUrl(run).toInputMap()
@@ -57,13 +57,13 @@ class BuildingBlockWorkflowInputsBuilderTest {
         value = "test-run-token",
         type = MeshBuildingBlockIOType.STRING,
         isSensitive = true,
-        isEnvironment = true
-      )
+        isEnvironment = true,
+      ),
     )
     val run = ProcessableBlockRun.test(
       implementation = MeshBuildingBlockGithubImplementation.test(),
       inputs = inputs,
-      links = mapOf("self" to HalLink(href = TEST_BUILDING_BLOCK_RUN_URL))
+      links = mapOf("self" to HalLink(href = TEST_BUILDING_BLOCK_RUN_URL)),
     )
 
     val inputMap = BuildingBlockWorkflowInputsBuilder.WithUrl(run).toInputMap()
@@ -80,13 +80,13 @@ class BuildingBlockWorkflowInputsBuilderTest {
         value = "secret-value",
         type = MeshBuildingBlockIOType.STRING,
         isSensitive = true,
-        isEnvironment = true
-      )
+        isEnvironment = true,
+      ),
     )
     val run = ProcessableBlockRun.test(
       implementation = MeshBuildingBlockGithubImplementation.test(),
       inputs = inputs,
-      links = mapOf("self" to HalLink(href = TEST_BUILDING_BLOCK_RUN_URL))
+      links = mapOf("self" to HalLink(href = TEST_BUILDING_BLOCK_RUN_URL)),
     )
 
     val inputMap = BuildingBlockWorkflowInputsBuilder.WithUrl(run).toInputMap()
@@ -104,20 +104,20 @@ class BuildingBlockWorkflowInputsBuilderTest {
         value = "test-api-token",
         type = MeshBuildingBlockIOType.STRING,
         isSensitive = true,
-        isEnvironment = true
+        isEnvironment = true,
       ),
       MeshBuildingBlockInputsForRun(
         key = BuildingBlockWorkflowInputsBuilder.MESHSTACK_ENDPOINT_KEY,
         value = "https://meshstack.example.com",
         type = MeshBuildingBlockIOType.STRING,
         isSensitive = false,
-        isEnvironment = true
-      )
+        isEnvironment = true,
+      ),
     )
     val run = ProcessableBlockRun.test(
       implementation = MeshBuildingBlockGithubImplementation.test(),
       inputs = inputs,
-      links = mapOf("self" to HalLink(href = TEST_BUILDING_BLOCK_RUN_URL))
+      links = mapOf("self" to HalLink(href = TEST_BUILDING_BLOCK_RUN_URL)),
     )
 
     val inputMap = BuildingBlockWorkflowInputsBuilder.WithUrl(run).toInputMap()
@@ -136,13 +136,13 @@ class BuildingBlockWorkflowInputsBuilderTest {
         value = "https://meshstack.example.com",
         type = MeshBuildingBlockIOType.STRING,
         isSensitive = false,
-        isEnvironment = true
-      )
+        isEnvironment = true,
+      ),
     )
     val run = ProcessableBlockRun.test(
       implementation = MeshBuildingBlockGithubImplementation.test(),
       inputs = inputs,
-      links = mapOf("self" to HalLink(href = TEST_BUILDING_BLOCK_RUN_URL))
+      links = mapOf("self" to HalLink(href = TEST_BUILDING_BLOCK_RUN_URL)),
     )
 
     val inputMap = BuildingBlockWorkflowInputsBuilder.WithUrl(run).toInputMap()
@@ -160,27 +160,27 @@ class BuildingBlockWorkflowInputsBuilderTest {
         value = "test-api-token",
         type = MeshBuildingBlockIOType.STRING,
         isSensitive = true,
-        isEnvironment = true
+        isEnvironment = true,
       ),
       MeshBuildingBlockInputsForRun(
         key = BuildingBlockWorkflowInputsBuilder.MESHSTACK_RUN_TOKEN_KEY,
         value = "test-run-token",
         type = MeshBuildingBlockIOType.STRING,
         isSensitive = true,
-        isEnvironment = true
+        isEnvironment = true,
       ),
       MeshBuildingBlockInputsForRun(
         key = BuildingBlockWorkflowInputsBuilder.MESHSTACK_ENDPOINT_KEY,
         value = "https://meshstack.example.com",
         type = MeshBuildingBlockIOType.STRING,
         isSensitive = false,
-        isEnvironment = true
-      )
+        isEnvironment = true,
+      ),
     )
     val run = ProcessableBlockRun.test(
       implementation = MeshBuildingBlockGithubImplementation.test(),
       inputs = inputs,
-      links = mapOf("self" to HalLink(href = TEST_BUILDING_BLOCK_RUN_URL))
+      links = mapOf("self" to HalLink(href = TEST_BUILDING_BLOCK_RUN_URL)),
     )
 
     val inputMap = BuildingBlockWorkflowInputsBuilder.WithUrl(run).toInputMap()

@@ -3,7 +3,7 @@ package io.meshcloud.buildingblocks.runner.azuredevops.client
 import com.fasterxml.jackson.annotation.JsonValue
 
 data class TimelineResponse(
-  val records: List<TimelineRecord> = emptyList()
+  val records: List<TimelineRecord> = emptyList(),
 )
 
 data class TimelineRecord(
@@ -15,29 +15,35 @@ data class TimelineRecord(
   val startTime: String?,
   val finishTime: String?,
   val parentId: String?,
-  val order: Int
+  val order: Int,
 )
 
-enum class TimelineRecordType(@JsonValue val value: String) {
+enum class TimelineRecordType(
+  @JsonValue val value: String,
+) {
   STAGE("Stage"),
   PHASE("Phase"),
   JOB("Job"),
   TASK("Task"),
   CHECKPOINT("Checkpoint"),
-  UNKNOWN("Unknown")
+  UNKNOWN("Unknown"),
 }
 
-enum class TimelineRecordState(@JsonValue val value: String) {
+enum class TimelineRecordState(
+  @JsonValue val value: String,
+) {
   PENDING("pending"),
   IN_PROGRESS("inProgress"),
-  COMPLETED("completed")
+  COMPLETED("completed"),
 }
 
-enum class TimelineRecordResult(@JsonValue val value: String) {
+enum class TimelineRecordResult(
+  @JsonValue val value: String,
+) {
   SUCCEEDED("succeeded"),
   SUCCEEDED_WITH_ISSUES("succeededWithIssues"),
   FAILED("failed"),
   CANCELED("canceled"),
   SKIPPED("skipped"),
-  ABANDONED("abandoned")
+  ABANDONED("abandoned"),
 }

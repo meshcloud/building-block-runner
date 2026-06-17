@@ -1,16 +1,16 @@
 package io.meshcloud.buildingblocks.runner.manual
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.meshcloud.buildingblocks.runner.BlockRunnerService
 import io.meshcloud.buildingblocks.runner.runclient.BlockRunClient
 import io.meshcloud.buildingblocks.runner.runclient.BlockRunClientFetcher
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockIOType
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
-import io.github.oshai.kotlinlogging.KotlinLogging
 
 private val log = KotlinLogging.logger { }
 
 open class NoOpBlockRunnerService(
-  private val blockRunClientFetcher: BlockRunClientFetcher
+  private val blockRunClientFetcher: BlockRunClientFetcher,
 ) : BlockRunnerService {
 
   override fun processBlock(): MeshBuildingBlockRun? {
@@ -24,7 +24,7 @@ open class NoOpBlockRunnerService(
 
     blockRunClient.registerAsSource(
       stepId = STEP_ID,
-      stepDisplayName = "Manual Block Run"
+      stepDisplayName = "Manual Block Run",
     )
 
     updateBlockStatus(blockRunClient)
@@ -51,10 +51,10 @@ open class NoOpBlockRunnerService(
             MeshBuildingBlockRun.SourceUpdate.StepUpdate.BlockRunOutput(
               value = value.value,
               type = toOutputType(value.type),
-              isSensitive = value.isSensitive
+              isSensitive = value.isSensitive,
             )
-          }
-        )
+          },
+        ),
       ),
     )
 

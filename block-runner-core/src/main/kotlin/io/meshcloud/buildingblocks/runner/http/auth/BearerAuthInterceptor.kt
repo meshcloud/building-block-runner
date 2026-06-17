@@ -8,7 +8,7 @@ import okhttp3.Response
  * is not valid anymore.
  */
 class BearerAuthInterceptor(
-  private val token: String
+  private val token: String,
 ) : Interceptor {
 
   override fun intercept(chain: Interceptor.Chain): Response {

@@ -1,6 +1,6 @@
 blockrunner:
   version: ${VERSION:dev}
-  uuid: ${RUNNER_UUID:05cfa85f-2818-4bdd-b193-620e0187d7de}
+  uuid: ${RUNNER_UUID:a9786b14-ecfe-44dd-b04c-2bcfd326aa23}
   api:
     url: ${RUNNER_API_URL:http://localhost:8080}
   auth:

@@ -69,7 +69,7 @@ class AzureDevOpsBlockRunnerServiceTest {
         azureDevOpsClient = azureDevOpsClient,
         blockRun = blockRun,
         pipelineRun = pipelineRun,
-        statusUpdater = any()
+        statusUpdater = any(),
       )
     } returns Unit
 
@@ -86,7 +86,7 @@ class AzureDevOpsBlockRunnerServiceTest {
         azureDevOpsClient = azureDevOpsClient,
         blockRun = blockRun,
         pipelineRun = pipelineRun,
-        statusUpdater = any()
+        statusUpdater = any(),
       )
     }
   }

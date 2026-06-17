@@ -9,7 +9,7 @@ import java.io.File
 class RunFileJsonBlockRunClientFetcher(
   private val blockRunClientFactory: BlockRunClientFactory,
   private val environmentVariableProvider: EnvironmentVariableProvider,
-  private val processableRunFactory: ProcessableRunFactory
+  private val processableRunFactory: ProcessableRunFactory,
 ) : BlockRunClientFetcher {
 
   override fun fetchBlockRunClient(): BlockRunClient? {

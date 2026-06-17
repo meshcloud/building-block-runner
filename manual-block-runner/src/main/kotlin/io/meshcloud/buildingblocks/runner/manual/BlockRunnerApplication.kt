@@ -7,12 +7,16 @@ import org.springframework.boot.runApplication
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 
-@ConfigurationPropertiesScan(basePackages = [
-  "io.meshcloud.buildingblocks.runner",
-])
-@SpringBootApplication(scanBasePackages = [
-  "io.meshcloud.buildingblocks.runner"
-])
+@ConfigurationPropertiesScan(
+  basePackages = [
+    "io.meshcloud.buildingblocks.runner",
+  ],
+)
+@SpringBootApplication(
+  scanBasePackages = [
+    "io.meshcloud.buildingblocks.runner",
+  ],
+)
 class BlockRunnerApplication
 
 @Configuration

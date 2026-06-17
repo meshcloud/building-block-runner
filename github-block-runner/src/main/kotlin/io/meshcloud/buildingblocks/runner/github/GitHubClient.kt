@@ -10,13 +10,13 @@ import com.fasterxml.jackson.datatype.jdk8.Jdk8Module
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
-import io.meshcloud.buildingblocks.runner.http.EMPTY_REQUEST_BODY
-import io.meshcloud.buildingblocks.runner.http.MeshHttpException
-import io.meshcloud.buildingblocks.runner.http.MediaTypes.MEDIA_TYPE_JSON
-import io.meshcloud.buildingblocks.runner.http.addLogging
-import io.meshcloud.buildingblocks.runner.MeshException
-import io.meshcloud.meshobjects.MeshHalMediaTypes.MESHBUILDINGBLOCKRUN_MEDIA_TYPE_V1
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.meshcloud.buildingblocks.runner.MeshException
+import io.meshcloud.buildingblocks.runner.http.EMPTY_REQUEST_BODY
+import io.meshcloud.buildingblocks.runner.http.MediaTypes.MEDIA_TYPE_JSON
+import io.meshcloud.buildingblocks.runner.http.MeshHttpException
+import io.meshcloud.buildingblocks.runner.http.addLogging
+import io.meshcloud.meshobjects.MeshHalMediaTypes.MESHBUILDINGBLOCKRUN_MEDIA_TYPE_V1
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -41,7 +41,8 @@ class GithubClient(
   enum class WorkflowRunStatus(val value: String) {
     QUEUED("queued"),
     IN_PROGRESS("in_progress"),
-    COMPLETED("completed");
+    COMPLETED("completed"),
+    ;
 
     companion object {
       fun fromString(value: String): WorkflowRunStatus {
@@ -54,7 +55,8 @@ class GithubClient(
   enum class WorkflowJobStatus(val value: String) {
     QUEUED("queued"),
     IN_PROGRESS("in_progress"),
-    COMPLETED("completed");
+    COMPLETED("completed"),
+    ;
 
     companion object {
       fun fromString(value: String): WorkflowJobStatus {
@@ -78,7 +80,7 @@ class GithubClient(
 
   data class DispatchWorkflowPayload(
     val ref: String,
-    val inputs: Map<String, String>
+    val inputs: Map<String, String>,
   )
 
   private data class AppInstallation(
@@ -98,7 +100,7 @@ class GithubClient(
     val expiresAt: String,
     val permissions: Map<String, String>,
     @JsonProperty("repository_selection")
-    val repositorySelection: String
+    val repositorySelection: String,
   )
 
   data class WorkflowRun(
@@ -111,7 +113,7 @@ class GithubClient(
     @JsonProperty("updated_at")
     val updatedAt: String,
     @JsonProperty("html_url")
-    val htmlUrl: String
+    val htmlUrl: String,
   )
 
   data class WorkflowJob(
@@ -125,16 +127,16 @@ class GithubClient(
     @JsonProperty("completed_at")
     val completedAt: String?,
     @JsonProperty("html_url")
-    val htmlUrl: String
+    val htmlUrl: String,
   )
 
   private data class WorkflowRunsResponse(
     @JsonProperty("workflow_runs")
-    val workflowRuns: List<WorkflowRun>
+    val workflowRuns: List<WorkflowRun>,
   )
 
   private data class WorkflowJobsResponse(
-    val jobs: List<WorkflowJob>
+    val jobs: List<WorkflowJob>,
   )
 
   private val client = OkHttpClient.Builder()
@@ -191,7 +193,7 @@ class GithubClient(
     if (permissions["actions"] != "write") {
       throw MeshException(
         "Your installed GitHub App is missing write permissions for actions. " +
-          "Required permissions: actions=write. Actual permissions: $permissions"
+          "Required permissions: actions=write. Actual permissions: $permissions",
       )
     }
   }
@@ -232,7 +234,7 @@ class GithubClient(
     repositoryName: String,
     workflowName: String,
     payload: DispatchWorkflowPayload,
-    recognizedUnsupportedInputs: Set<String> = emptySet()
+    recognizedUnsupportedInputs: Set<String> = emptySet(),
   ): TriggerWorkflowResult {
     val url = "$githubApiBaseUrl/repos/$owner/$repositoryName/actions/workflows/$workflowName/dispatches".toHttpUrl()
     val payloadBody = mapper.writeValueAsString(payload)
@@ -241,7 +243,10 @@ class GithubClient(
     return client.newCall(request).execute().use { response ->
       val body = response.body?.string() ?: ""
       when {
-        response.isSuccessful -> TriggerWorkflowResult.Success
+        response.isSuccessful -> {
+          TriggerWorkflowResult.Success
+        }
+
         response.code == 422 -> {
           val foundUnsupportedInputs = recognizedUnsupportedInputs.filter { inputName ->
             isUnsupportedInputError(body, inputName)
@@ -252,7 +257,10 @@ class GithubClient(
             TriggerWorkflowResult.Error(response.code, body)
           }
         }
-        else -> TriggerWorkflowResult.Error(response.code, body)
+
+        else -> {
+          TriggerWorkflowResult.Error(response.code, body)
+        }
       }
     }
   }
@@ -281,7 +289,7 @@ class GithubClient(
     owner: String,
     repositoryName: String,
     workflowName: String,
-    perPage: Int = 10
+    perPage: Int = 10,
   ): List<WorkflowRun> {
     val url = "$githubApiBaseUrl/repos/$owner/$repositoryName/actions/workflows/$workflowName/runs".toHttpUrl()
       .newBuilder()
@@ -317,7 +325,7 @@ class GithubClient(
     installationAuthToken: String,
     owner: String,
     repositoryName: String,
-    runId: Long
+    runId: Long,
   ): WorkflowRun {
     val url = "$githubApiBaseUrl/repos/$owner/$repositoryName/actions/runs/$runId".toHttpUrl()
 
@@ -350,7 +358,7 @@ class GithubClient(
     installationAuthToken: String,
     owner: String,
     repositoryName: String,
-    runId: Long
+    runId: Long,
   ): List<WorkflowJob> {
     val url = "$githubApiBaseUrl/repos/$owner/$repositoryName/actions/runs/$runId/jobs".toHttpUrl()
 

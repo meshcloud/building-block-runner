@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component
 @Component
 @Profile("!kubernetes")
 class BlockRunRequestScheduler(
-  private val blockRunnerService: BlockRunnerService
+  private val blockRunnerService: BlockRunnerService,
 ) {
 
   @Scheduled(fixedRate = 10000)

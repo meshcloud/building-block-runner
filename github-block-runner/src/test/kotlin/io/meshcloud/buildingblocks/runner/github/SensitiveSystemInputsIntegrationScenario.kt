@@ -40,8 +40,8 @@ import org.springframework.test.context.TestPropertySource
     "blockrunner.uuid=dc8c57a1-823f-4e96-8582-0275fa27dc7b",
     "blockrunner.auth.username=bb-api",
     "blockrunner.auth.password=guest",
-    "blockrunner.api.url=http://localhost:8080"
-  ]
+    "blockrunner.api.url=http://localhost:8080",
+  ],
 )
 @Import(SensitiveSystemInputsIntegrationScenario.TestConfig::class)
 class SensitiveSystemInputsIntegrationScenario : WiremockTestBase() {
@@ -92,34 +92,34 @@ class SensitiveSystemInputsIntegrationScenario : WiremockTestBase() {
         value = "encrypted:test-api-token-value",
         type = MeshBuildingBlockIOType.STRING,
         isSensitive = true,
-        isEnvironment = true
+        isEnvironment = true,
       ),
       MeshBuildingBlockInputsForRun(
         key = BuildingBlockWorkflowInputsBuilder.MESHSTACK_RUN_TOKEN_KEY,
         value = "encrypted:test-run-token-value",
         type = MeshBuildingBlockIOType.STRING,
         isSensitive = true,
-        isEnvironment = true
+        isEnvironment = true,
       ),
       MeshBuildingBlockInputsForRun(
         key = "SOME_OTHER_INPUT",
         value = "other-value",
         type = MeshBuildingBlockIOType.STRING,
         isSensitive = false,
-        isEnvironment = true
-      )
+        isEnvironment = true,
+      ),
     )
 
     val implementation = MeshBuildingBlockGithubImplementation.test(
       async = true,
-      omitRunObjectInput = true // Modern mode: pass URL + sensitive system inputs
+      omitRunObjectInput = true, // Modern mode: pass URL + sensitive system inputs
     )
 
     val runUrl = buildingBlockRunUrl("1a9ad3bd-7457-4243-ab71-8e9701d331e1")
     val blockRun = ProcessableBlockRun.test(
       implementation = implementation,
       inputs = inputs,
-      links = mapOf("self" to HalLink(href = runUrl))
+      links = mapOf("self" to HalLink(href = runUrl)),
     )
 
     testBlockRunClientFetcher.blockRunToReturn = blockRun
@@ -131,7 +131,7 @@ class SensitiveSystemInputsIntegrationScenario : WiremockTestBase() {
     wireMockServer.stubFor(
       post(urlPathEqualTo("/repos/owner/repository/actions/workflows/provision.yml/dispatches"))
         .withHeader("Authorization", equalTo("Bearer test-installation-token"))
-        .willReturn(noContent())
+        .willReturn(noContent()),
     )
 
     // Act
@@ -142,7 +142,7 @@ class SensitiveSystemInputsIntegrationScenario : WiremockTestBase() {
 
     // Verify the workflow was triggered with the correct inputs
     val requests = wireMockServer.findAll(
-      postRequestedFor(urlPathEqualTo("/repos/owner/repository/actions/workflows/provision.yml/dispatches"))
+      postRequestedFor(urlPathEqualTo("/repos/owner/repository/actions/workflows/provision.yml/dispatches")),
     )
     assertThat(requests).hasSize(1)
 
@@ -170,26 +170,26 @@ class SensitiveSystemInputsIntegrationScenario : WiremockTestBase() {
         value = "encrypted:api-token-only",
         type = MeshBuildingBlockIOType.STRING,
         isSensitive = true,
-        isEnvironment = true
-      )
+        isEnvironment = true,
+      ),
     )
 
     val implementation = MeshBuildingBlockGithubImplementation.test(
       async = true,
-      omitRunObjectInput = true
+      omitRunObjectInput = true,
     )
 
     val blockRun = ProcessableBlockRun.test(
       implementation = implementation,
       inputs = inputs,
-      links = mapOf("self" to HalLink(href = buildingBlockRunUrl("8h9ij0k5-eb2e-b9ba-hi48-f5je78ka08l8")))
+      links = mapOf("self" to HalLink(href = buildingBlockRunUrl("8h9ij0k5-eb2e-b9ba-hi48-f5je78ka08l8"))),
     )
 
     testBlockRunClientFetcher.blockRunToReturn = blockRun
     stubGitHubInstallationEndpoints()
     wireMockServer.stubFor(
       post(urlPathEqualTo("/repos/owner/repository/actions/workflows/provision.yml/dispatches"))
-        .willReturn(noContent())
+        .willReturn(noContent()),
     )
 
     // Act
@@ -197,7 +197,7 @@ class SensitiveSystemInputsIntegrationScenario : WiremockTestBase() {
 
     // Assert
     val requests = wireMockServer.findAll(
-      postRequestedFor(urlPathEqualTo("/repos/owner/repository/actions/workflows/provision.yml/dispatches"))
+      postRequestedFor(urlPathEqualTo("/repos/owner/repository/actions/workflows/provision.yml/dispatches")),
     )
     assertThat(requests).hasSize(1)
 
@@ -216,26 +216,26 @@ class SensitiveSystemInputsIntegrationScenario : WiremockTestBase() {
         value = "regular-value",
         type = MeshBuildingBlockIOType.STRING,
         isSensitive = false,
-        isEnvironment = true
-      )
+        isEnvironment = true,
+      ),
     )
 
     val implementation = MeshBuildingBlockGithubImplementation.test(
       async = true,
-      omitRunObjectInput = true
+      omitRunObjectInput = true,
     )
 
     val blockRun = ProcessableBlockRun.test(
       implementation = implementation,
       inputs = inputs,
-      links = mapOf("self" to HalLink(href = buildingBlockRunUrl("9i0jk1l6-fc3f-caCb-ij59-g6kf89lb19m9")))
+      links = mapOf("self" to HalLink(href = buildingBlockRunUrl("9i0jk1l6-fc3f-caCb-ij59-g6kf89lb19m9"))),
     )
 
     testBlockRunClientFetcher.blockRunToReturn = blockRun
     stubGitHubInstallationEndpoints()
     wireMockServer.stubFor(
       post(urlPathEqualTo("/repos/owner/repository/actions/workflows/provision.yml/dispatches"))
-        .willReturn(noContent())
+        .willReturn(noContent()),
     )
 
     // Act
@@ -243,7 +243,7 @@ class SensitiveSystemInputsIntegrationScenario : WiremockTestBase() {
 
     // Assert
     val requests = wireMockServer.findAll(
-      postRequestedFor(urlPathEqualTo("/repos/owner/repository/actions/workflows/provision.yml/dispatches"))
+      postRequestedFor(urlPathEqualTo("/repos/owner/repository/actions/workflows/provision.yml/dispatches")),
     )
     assertThat(requests).hasSize(1)
 
@@ -263,26 +263,26 @@ class SensitiveSystemInputsIntegrationScenario : WiremockTestBase() {
         value = "encrypted:should-not-be-separate-input",
         type = MeshBuildingBlockIOType.STRING,
         isSensitive = true,
-        isEnvironment = true
-      )
+        isEnvironment = true,
+      ),
     )
 
     val implementation = MeshBuildingBlockGithubImplementation.test(
       async = true,
-      omitRunObjectInput = false // Legacy mode: pass full run object
+      omitRunObjectInput = false, // Legacy mode: pass full run object
     )
 
     val blockRun = ProcessableBlockRun.test(
       implementation = implementation,
       inputs = inputs,
-      links = mapOf("self" to HalLink(href = buildingBlockRunUrl("0j1kl2m7-gd4g-dbDc-jk60-h7lg90mc20n0")))
+      links = mapOf("self" to HalLink(href = buildingBlockRunUrl("0j1kl2m7-gd4g-dbDc-jk60-h7lg90mc20n0"))),
     )
 
     testBlockRunClientFetcher.blockRunToReturn = blockRun
     stubGitHubInstallationEndpoints()
     wireMockServer.stubFor(
       post(urlPathEqualTo("/repos/owner/repository/actions/workflows/provision.yml/dispatches"))
-        .willReturn(noContent())
+        .willReturn(noContent()),
     )
 
     // Act
@@ -290,7 +290,7 @@ class SensitiveSystemInputsIntegrationScenario : WiremockTestBase() {
 
     // Assert
     val requests = wireMockServer.findAll(
-      postRequestedFor(urlPathEqualTo("/repos/owner/repository/actions/workflows/provision.yml/dispatches"))
+      postRequestedFor(urlPathEqualTo("/repos/owner/repository/actions/workflows/provision.yml/dispatches")),
     )
     assertThat(requests).hasSize(1)
 
@@ -313,33 +313,33 @@ class SensitiveSystemInputsIntegrationScenario : WiremockTestBase() {
         value = "encrypted:test-api-token",
         type = MeshBuildingBlockIOType.STRING,
         isSensitive = true,
-        isEnvironment = true
+        isEnvironment = true,
       ),
       MeshBuildingBlockInputsForRun(
         key = BuildingBlockWorkflowInputsBuilder.MESHSTACK_ENDPOINT_KEY,
         value = "https://meshstack.example.com",
         type = MeshBuildingBlockIOType.STRING,
         isSensitive = false,
-        isEnvironment = true
-      )
+        isEnvironment = true,
+      ),
     )
 
     val implementation = MeshBuildingBlockGithubImplementation.test(
       async = true,
-      omitRunObjectInput = true
+      omitRunObjectInput = true,
     )
 
     val blockRun = ProcessableBlockRun.test(
       implementation = implementation,
       inputs = inputs,
-      links = mapOf("self" to HalLink(href = buildingBlockRunUrl("1k2lm3n8-he5h-ecEd-kl71-i8mh01nd31o1")))
+      links = mapOf("self" to HalLink(href = buildingBlockRunUrl("1k2lm3n8-he5h-ecEd-kl71-i8mh01nd31o1"))),
     )
 
     testBlockRunClientFetcher.blockRunToReturn = blockRun
     stubGitHubInstallationEndpoints()
     wireMockServer.stubFor(
       post(urlPathEqualTo("/repos/owner/repository/actions/workflows/provision.yml/dispatches"))
-        .willReturn(noContent())
+        .willReturn(noContent()),
     )
 
     // Act
@@ -347,7 +347,7 @@ class SensitiveSystemInputsIntegrationScenario : WiremockTestBase() {
 
     // Assert
     val requests = wireMockServer.findAll(
-      postRequestedFor(urlPathEqualTo("/repos/owner/repository/actions/workflows/provision.yml/dispatches"))
+      postRequestedFor(urlPathEqualTo("/repos/owner/repository/actions/workflows/provision.yml/dispatches")),
     )
     assertThat(requests).hasSize(1)
 
@@ -367,26 +367,26 @@ class SensitiveSystemInputsIntegrationScenario : WiremockTestBase() {
         value = "https://meshstack.example.com",
         type = MeshBuildingBlockIOType.STRING,
         isSensitive = false,
-        isEnvironment = true
-      )
+        isEnvironment = true,
+      ),
     )
 
     val implementation = MeshBuildingBlockGithubImplementation.test(
       async = true,
-      omitRunObjectInput = true
+      omitRunObjectInput = true,
     )
 
     val blockRun = ProcessableBlockRun.test(
       implementation = implementation,
       inputs = inputs,
-      links = mapOf("self" to HalLink(href = buildingBlockRunUrl("2l3mn4o9-if6i-fdFe-lm82-j9ni12oe42p2")))
+      links = mapOf("self" to HalLink(href = buildingBlockRunUrl("2l3mn4o9-if6i-fdFe-lm82-j9ni12oe42p2"))),
     )
 
     testBlockRunClientFetcher.blockRunToReturn = blockRun
     stubGitHubInstallationEndpoints()
     wireMockServer.stubFor(
       post(urlPathEqualTo("/repos/owner/repository/actions/workflows/provision.yml/dispatches"))
-        .willReturn(noContent())
+        .willReturn(noContent()),
     )
 
     // Act
@@ -394,7 +394,7 @@ class SensitiveSystemInputsIntegrationScenario : WiremockTestBase() {
 
     // Assert
     val requests = wireMockServer.findAll(
-      postRequestedFor(urlPathEqualTo("/repos/owner/repository/actions/workflows/provision.yml/dispatches"))
+      postRequestedFor(urlPathEqualTo("/repos/owner/repository/actions/workflows/provision.yml/dispatches")),
     )
     assertThat(requests).hasSize(1)
 
@@ -417,9 +417,9 @@ class SensitiveSystemInputsIntegrationScenario : WiremockTestBase() {
                       "client_id": "client-id",
                       "target_type": "Repository"
                     }
-            """.trimIndent()
-          )
-        )
+            """.trimIndent(),
+          ),
+        ),
     )
 
     // Stub get installation auth token
@@ -434,9 +434,9 @@ class SensitiveSystemInputsIntegrationScenario : WiremockTestBase() {
                       "permissions": {"actions": "write", "metadata": "read"},
                       "repository_selection": "all"
                     }
-            """.trimIndent()
-          )
-        )
+            """.trimIndent(),
+          ),
+        ),
     )
   }
 

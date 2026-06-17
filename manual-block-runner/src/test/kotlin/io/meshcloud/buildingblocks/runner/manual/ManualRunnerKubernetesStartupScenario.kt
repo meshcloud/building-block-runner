@@ -1,5 +1,6 @@
 package io.meshcloud.buildingblocks.runner.manual
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.meshcloud.buildingblocks.runner.SingleShotRunner
 import io.meshcloud.buildingblocks.runner.meshobject.ProcessableBlockRun
 import io.meshcloud.buildingblocks.runner.runclient.BlockRunClient
@@ -7,7 +8,6 @@ import io.meshcloud.buildingblocks.runner.runclient.BlockRunClientFactory
 import io.meshcloud.buildingblocks.runner.runclient.EnvironmentVariableProvider
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockIOType
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
-import io.github.oshai.kotlinlogging.KotlinLogging
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -73,11 +73,11 @@ class ManualRunnerKubernetesStartupScenario {
 
       data class SourceRegistration(
         val stepId: String,
-        val stepDisplayName: String
+        val stepDisplayName: String,
       )
 
       data class SourceUpdateCapture(
-        val update: MeshBuildingBlockRun.SourceUpdate
+        val update: MeshBuildingBlockRun.SourceUpdate,
       )
     }
 

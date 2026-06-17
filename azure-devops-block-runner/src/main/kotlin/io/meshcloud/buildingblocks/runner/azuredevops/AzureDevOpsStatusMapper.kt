@@ -28,15 +28,18 @@ object AzureDevOpsStatusMapper {
 
   fun mapStageToStatus(state: TimelineRecordState?, result: TimelineRecordResult?): MeshBuildingBlockRun.ExecutionStatus = when (state) {
     TimelineRecordState.PENDING,
-    TimelineRecordState.IN_PROGRESS -> MeshBuildingBlockRun.ExecutionStatus.IN_PROGRESS
+    TimelineRecordState.IN_PROGRESS,
+    -> MeshBuildingBlockRun.ExecutionStatus.IN_PROGRESS
 
     TimelineRecordState.COMPLETED -> when (result) {
       TimelineRecordResult.SUCCEEDED,
-      TimelineRecordResult.SKIPPED -> MeshBuildingBlockRun.ExecutionStatus.SUCCEEDED
+      TimelineRecordResult.SKIPPED,
+      -> MeshBuildingBlockRun.ExecutionStatus.SUCCEEDED
 
       TimelineRecordResult.FAILED,
       TimelineRecordResult.CANCELED,
-      TimelineRecordResult.ABANDONED -> MeshBuildingBlockRun.ExecutionStatus.FAILED
+      TimelineRecordResult.ABANDONED,
+      -> MeshBuildingBlockRun.ExecutionStatus.FAILED
 
       else -> MeshBuildingBlockRun.ExecutionStatus.IN_PROGRESS
     }

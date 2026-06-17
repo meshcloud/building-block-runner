@@ -1,7 +1,7 @@
 package io.meshcloud.buildingblocks.runner
 
-import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
 
 private val log = KotlinLogging.logger { }
 
@@ -11,7 +11,7 @@ private val log = KotlinLogging.logger { }
  * again.
  */
 class ImmediateRetryDecorator(
-  private val wrappedService: BlockRunnerService
+  private val wrappedService: BlockRunnerService,
 ) : BlockRunnerService {
   override fun processBlock(): MeshBuildingBlockRun? {
     do {

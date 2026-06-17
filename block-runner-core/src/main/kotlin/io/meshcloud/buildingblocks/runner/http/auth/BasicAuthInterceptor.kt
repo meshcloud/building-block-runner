@@ -4,7 +4,7 @@ import okhttp3.*
 
 class BasicAuthInterceptor(
   username: String,
-  password: String
+  password: String,
 ) : Interceptor {
 
   private val credentials = Credentials.basic(username, password)

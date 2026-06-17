@@ -11,7 +11,7 @@ class AzureDevOpsClientFactory(
 ) {
 
   fun provideClientFor(
-    run: ProcessableBlockRun
+    run: ProcessableBlockRun,
   ): AzureDevOpsClient {
     val implementation = run.meshObject.getImplementation<MeshBuildingBlockAzureDevOpsImplementation>()
     return AzureDevOpsClient(
@@ -21,7 +21,7 @@ class AzureDevOpsClientFactory(
       project = implementation.project,
       pipelineId = implementation.pipelineId,
       run = decryptionService.decryptBlockRunInputs(run),
-      refName = implementation.refName
+      refName = implementation.refName,
     )
   }
 }

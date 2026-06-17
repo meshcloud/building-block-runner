@@ -97,12 +97,12 @@ MRzugUiwGacCjQ3qjkw+nzrITjYPJrM=
         value = "value1",
         type = MeshBuildingBlockIOType.STRING,
         isSensitive = false,
-        isEnvironment = false
-      )
+        isEnvironment = false,
+      ),
     )
     val run = ProcessableBlockRun.test(
       implementation = MeshManualBuildingBlockImplementation(),
-      inputs = inputs
+      inputs = inputs,
     )
 
     // When
@@ -125,12 +125,12 @@ MRzugUiwGacCjQ3qjkw+nzrITjYPJrM=
         value = encryptedValue,
         type = MeshBuildingBlockIOType.STRING,
         isSensitive = true,
-        isEnvironment = false
-      )
+        isEnvironment = false,
+      ),
     )
     val run = ProcessableBlockRun.test(
       implementation = MeshManualBuildingBlockImplementation(),
-      inputs = inputs
+      inputs = inputs,
     )
 
     every { sut.decrypt(encryptedValue) } returns decryptedValue
@@ -156,12 +156,12 @@ MRzugUiwGacCjQ3qjkw+nzrITjYPJrM=
         value = encryptedValue,
         type = MeshBuildingBlockIOType.FILE,
         isSensitive = true,
-        isEnvironment = false
-      )
+        isEnvironment = false,
+      ),
     )
     val run = ProcessableBlockRun.test(
       implementation = MeshManualBuildingBlockImplementation(),
-      inputs = inputs
+      inputs = inputs,
     )
 
     every { sut.decrypt(encryptedValue) } returns decryptedValue
@@ -187,12 +187,12 @@ MRzugUiwGacCjQ3qjkw+nzrITjYPJrM=
         value = encryptedValue,
         type = MeshBuildingBlockIOType.CODE,
         isSensitive = true,
-        isEnvironment = false
-      )
+        isEnvironment = false,
+      ),
     )
     val run = ProcessableBlockRun.test(
       implementation = MeshManualBuildingBlockImplementation(),
-      inputs = inputs
+      inputs = inputs,
     )
 
     every { sut.decrypt(encryptedValue) } returns decryptedValue
@@ -215,12 +215,12 @@ MRzugUiwGacCjQ3qjkw+nzrITjYPJrM=
         value = true,
         type = MeshBuildingBlockIOType.BOOLEAN,
         isSensitive = true,
-        isEnvironment = false
-      )
+        isEnvironment = false,
+      ),
     )
     val run = ProcessableBlockRun.test(
       implementation = MeshManualBuildingBlockImplementation(),
-      inputs = inputs
+      inputs = inputs,
     )
 
     // When
@@ -243,19 +243,19 @@ MRzugUiwGacCjQ3qjkw+nzrITjYPJrM=
         value = "admin",
         type = MeshBuildingBlockIOType.STRING,
         isSensitive = false,
-        isEnvironment = false
+        isEnvironment = false,
       ),
       MeshBuildingBlockRun.MeshBuildingBlockRunSpec.MeshBuildingBlockInputsForRun(
         key = "password",
         value = encryptedValue,
         type = MeshBuildingBlockIOType.STRING,
         isSensitive = true,
-        isEnvironment = false
-      )
+        isEnvironment = false,
+      ),
     )
     val run = ProcessableBlockRun.test(
       implementation = MeshManualBuildingBlockImplementation(),
-      inputs = inputs
+      inputs = inputs,
     )
 
     every { sut.decrypt(encryptedValue) } returns decryptedValue
@@ -279,12 +279,12 @@ MRzugUiwGacCjQ3qjkw+nzrITjYPJrM=
         value = "value1",
         type = MeshBuildingBlockIOType.STRING,
         isSensitive = false,
-        isEnvironment = false
-      )
+        isEnvironment = false,
+      ),
     )
     val run = ProcessableBlockRun.test(
       implementation = MeshManualBuildingBlockImplementation(),
-      inputs = inputs
+      inputs = inputs,
     )
 
     // When

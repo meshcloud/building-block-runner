@@ -5,10 +5,10 @@ import com.fasterxml.jackson.datatype.jdk8.Jdk8Module
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
+import io.github.oshai.kotlinlogging.KotlinLogging
+import io.meshcloud.buildingblocks.runner.http.MeshHttpException
 import io.meshcloud.buildingblocks.runner.http.addLogging
 import io.meshcloud.buildingblocks.runner.meshobject.ProcessableBlockRun
-import io.meshcloud.buildingblocks.runner.http.MeshHttpException
-import io.github.oshai.kotlinlogging.KotlinLogging
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -17,14 +17,14 @@ import okhttp3.Request
 private val log = KotlinLogging.logger { }
 
 class GitLabClient(
-  private val gitlabBaseUrl: String
+  private val gitlabBaseUrl: String,
 ) {
 
   private class GitLabErrorBody(
-    val message: GitLabBase
+    val message: GitLabBase,
   ) {
     data class GitLabBase(
-      val base: List<String>
+      val base: List<String>,
     )
 
     fun isIdentityVerificationRequired(): Boolean {
@@ -54,7 +54,7 @@ class GitLabClient(
     val body = buildPayload(
       pipelineToken = pipelineToken,
       refName = refName,
-      run = run
+      run = run,
     )
 
     val request = Request.Builder()

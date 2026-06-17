@@ -26,7 +26,7 @@ private val log = KotlinLogging.logger { }
 @Profile("!kubernetes")
 class AuthHttpClientFactory(
   config: StandaloneBlockRunnerApiConfig,
-  blockRunnerConfig: BlockRunnerApiConfig
+  blockRunnerConfig: BlockRunnerApiConfig,
 ) {
 
   private val client: OkHttpClient

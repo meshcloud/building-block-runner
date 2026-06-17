@@ -1,23 +1,23 @@
 package io.meshcloud.buildingblocks.runner.azuredevops
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.meshcloud.buildingblocks.runner.azuredevops.client.PipelineRun
 import io.meshcloud.buildingblocks.runner.azuredevops.client.TimelineRecord
 import io.meshcloud.buildingblocks.runner.azuredevops.client.TimelineRecordState
 import io.meshcloud.buildingblocks.runner.azuredevops.client.TimelineRecordType
-import io.meshcloud.buildingblocks.runner.runclient.BlockRunClient
 import io.meshcloud.buildingblocks.runner.http.MeshHttpException
+import io.meshcloud.buildingblocks.runner.runclient.BlockRunClient
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
-import io.github.oshai.kotlinlogging.KotlinLogging
 
 private val log = KotlinLogging.logger { }
 
 class AzureDevOpsStatusUpdater(
   private val blockRunClient: BlockRunClient,
-  private val blockRunUuid: String
+  private val blockRunUuid: String,
 ) {
 
   fun updateFinalBlockStatusFromPipeline(
-    pipelineRun: PipelineRun
+    pipelineRun: PipelineRun,
   ) {
     val status = AzureDevOpsStatusMapper.mapPipelineResultToStatus(pipelineRun.result)
     val userMessage = AzureDevOpsStatusMapper.mapPipelineResultToUserMessage(pipelineRun.result)
@@ -31,8 +31,8 @@ class AzureDevOpsStatusUpdater(
           id = AzureDevOpsBlockRunnerService.STEP_ID,
           status = status,
           userMessage = userMessage,
-          systemMessage = systemMessage
-        )
+          systemMessage = systemMessage,
+        ),
       ),
     )
     log.info { "Azure DevOps pipeline ${pipelineRun.id} completed with result '${pipelineRun.result}' for run: $blockRunUuid" }
@@ -42,14 +42,14 @@ class AzureDevOpsStatusUpdater(
   fun updateFailedBlockStatusWithMeshException(ex: MeshHttpException) {
     log.error(ex) { "Error contacting Azure DevOps" }
     updateFailedBlockStatusWithMessage(
-      "Request: ${ex.requestUrl}\nAzure DevOps responded with status: ${ex.statusCode} and body: ${ex.getResponseBody()}"
+      "Request: ${ex.requestUrl}\nAzure DevOps responded with status: ${ex.statusCode} and body: ${ex.getResponseBody()}",
     )
   }
 
   fun updateFailedBlockStatusWithException(ex: Throwable) {
     log.error(ex) { "Internal error when contacting Azure DevOps" }
     updateFailedBlockStatusWithMessage(
-      "There was an internal error while trying to contact Azure DevOps: ${ex.message}"
+      "There was an internal error while trying to contact Azure DevOps: ${ex.message}",
     )
   }
 
@@ -62,8 +62,8 @@ class AzureDevOpsStatusUpdater(
           id = AzureDevOpsBlockRunnerService.STEP_ID,
           status = MeshBuildingBlockRun.ExecutionStatus.FAILED,
           userMessage = "Could not trigger the Azure DevOps Pipeline",
-          systemMessage = message
-        )
+          systemMessage = message,
+        ),
       ),
     )
     blockRunClient.updateBlockRun(update)
@@ -71,7 +71,7 @@ class AzureDevOpsStatusUpdater(
 
   fun updateSuccessfulTriggerStepStatus(
     pipelineRun: PipelineRun,
-    isAsync: Boolean
+    isAsync: Boolean,
   ) {
     val extraPollingInformation = if (!isAsync) {
       "Polling for completion status..."
@@ -86,8 +86,8 @@ class AzureDevOpsStatusUpdater(
           id = AzureDevOpsBlockRunnerService.STEP_ID,
           status = MeshBuildingBlockRun.ExecutionStatus.SUCCEEDED,
           userMessage = "Triggered Azure DevOps Pipeline. $extraPollingInformation",
-          systemMessage = "Triggered pipeline run ${pipelineRun.id}. View run: $webUrl. $extraPollingInformation"
-        )
+          systemMessage = "Triggered pipeline run ${pipelineRun.id}. View run: $webUrl. $extraPollingInformation",
+        ),
       ),
     )
     log.info {
@@ -107,8 +107,8 @@ class AzureDevOpsStatusUpdater(
           id = AzureDevOpsBlockRunnerService.STEP_ID,
           status = MeshBuildingBlockRun.ExecutionStatus.IN_PROGRESS,
           userMessage = userMessage,
-          systemMessage = systemMessage
-        )
+          systemMessage = systemMessage,
+        ),
       ),
     )
     log.debug { "Azure DevOps pipeline ${pipelineRun.id} state changed to '${pipelineRun.state.value}' for run: $blockRunUuid" }
@@ -118,7 +118,7 @@ class AzureDevOpsStatusUpdater(
   fun updatePipelineAndStageStatuses(
     pipelineRun: PipelineRun,
     timelineRecords: List<TimelineRecord>,
-    reportedStages: MutableSet<String>
+    reportedStages: MutableSet<String>,
   ) {
     val stages = timelineRecords.filter { record ->
       record.type == TimelineRecordType.STAGE && record.parentId == null
@@ -134,8 +134,8 @@ class AzureDevOpsStatusUpdater(
         id = AzureDevOpsBlockRunnerService.STEP_ID,
         status = MeshBuildingBlockRun.ExecutionStatus.SUCCEEDED,
         userMessage = "Triggered Azure DevOps Pipeline",
-        systemMessage = "Pipeline run ${pipelineRun.id}. View run: $webUrl"
-      )
+        systemMessage = "Pipeline run ${pipelineRun.id}. View run: $webUrl",
+      ),
     )
     for (stage in stages) {
       val stageId = stage.id
@@ -148,7 +148,7 @@ class AzureDevOpsStatusUpdater(
           stage.state,
           stage.result,
           stage.startTime,
-          stage.finishTime
+          stage.finishTime,
         )
         stepsToUpdate.add(
           MeshBuildingBlockRun.SourceUpdate.StepUpdate(
@@ -156,15 +156,15 @@ class AzureDevOpsStatusUpdater(
             displayName = "Stage: $stageName",
             status = status,
             userMessage = userMessage,
-            systemMessage = systemMessage
-          )
+            systemMessage = systemMessage,
+          ),
         )
         reportedStages.add(stageId)
       }
     }
     val update = MeshBuildingBlockRun.SourceUpdate(
       status = MeshBuildingBlockRun.ExecutionStatus.IN_PROGRESS,
-      steps = stepsToUpdate
+      steps = stepsToUpdate,
     )
     log.debug { "Updating stages for run $blockRunUuid: ${stages.map { it.name }}" }
     blockRunClient.updateBlockRun(update)

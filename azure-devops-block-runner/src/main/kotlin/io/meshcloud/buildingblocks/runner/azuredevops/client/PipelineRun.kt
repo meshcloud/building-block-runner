@@ -12,20 +12,24 @@ data class PipelineRun(
   val finishedDate: String?,
   val url: String?,
   @JsonProperty("_links")
-  val links: Map<String, Map<String, String>>?
+  val links: Map<String, Map<String, String>>?,
 )
 
-enum class PipelineRunResult(@JsonValue val value: String) {
+enum class PipelineRunResult(
+  @JsonValue val value: String,
+) {
   UNKNOWN("unknown"),
   SUCCEEDED("succeeded"),
   FAILED("failed"),
-  CANCELED("canceled")
+  CANCELED("canceled"),
 }
 
-enum class PipelineRunState(@JsonValue val value: String) {
+enum class PipelineRunState(
+  @JsonValue val value: String,
+) {
   UNKNOWN("unknown"),
   IN_PROGRESS("inProgress"),
   CANCELING("canceling"),
-  COMPLETED("completed")
+  COMPLETED("completed"),
 }
 

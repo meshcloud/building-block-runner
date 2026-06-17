@@ -1,13 +1,13 @@
 package io.meshcloud.buildingblocks.runner.gitlab
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.meshcloud.buildingblocks.runner.BlockRunnerService
+import io.meshcloud.buildingblocks.runner.http.MeshHttpException
 import io.meshcloud.buildingblocks.runner.runclient.BlockRunClient
 import io.meshcloud.buildingblocks.runner.runclient.BlockRunClientFetcher
 import io.meshcloud.buildingblocks.runner.security.DecryptionService
-import io.meshcloud.buildingblocks.runner.http.MeshHttpException
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockGitlabImplementation
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
-import io.github.oshai.kotlinlogging.KotlinLogging
 
 private val log = KotlinLogging.logger { }
 
@@ -29,7 +29,7 @@ class GitLabBlockRunnerService(
     val blockRun = blockRunClient.activeBlockRun.meshObject
     blockRunClient.registerAsSource(
       STEP_ID,
-      "Trigger GitLab CI/CD"
+      "Trigger GitLab CI/CD",
     )
 
     val implementation = try {
@@ -53,7 +53,7 @@ class GitLabBlockRunnerService(
         pipelineToken = decryptionService.decrypt(implementation.pipelineTriggerToken),
         refName = implementation.refName,
         projectId = implementation.projectId,
-        run = decryptionService.decryptBlockRunInputs(blockRunClient.activeBlockRun)
+        run = decryptionService.decryptBlockRunInputs(blockRunClient.activeBlockRun),
       )
     } catch (ex: MeshHttpException) {
       updateFailedBlockStatusWithMeshException(blockRunClient, ex)
@@ -80,8 +80,8 @@ class GitLabBlockRunnerService(
           id = STEP_ID,
           status = MeshBuildingBlockRun.ExecutionStatus.FAILED,
           userMessage = "Could not trigger the GitLab pipeline",
-          systemMessage = "GitLab responded with status: ${ex.statusCode} and body: ${ex.getResponseBody()}"
-        )
+          systemMessage = "GitLab responded with status: ${ex.statusCode} and body: ${ex.getResponseBody()}",
+        ),
       ),
     )
 
@@ -98,8 +98,8 @@ class GitLabBlockRunnerService(
           id = STEP_ID,
           status = MeshBuildingBlockRun.ExecutionStatus.FAILED,
           userMessage = "Could not trigger the GitLab pipeline",
-          systemMessage = "There was an internal error while trying to contact GitLab: ${ex.message}"
-        )
+          systemMessage = "There was an internal error while trying to contact GitLab: ${ex.message}",
+        ),
       ),
     )
 
@@ -114,8 +114,8 @@ class GitLabBlockRunnerService(
           id = STEP_ID,
           status = MeshBuildingBlockRun.ExecutionStatus.SUCCEEDED,
           userMessage = "Triggered the configured GitLab pipeline",
-          systemMessage = "Triggered pipeline in project '$projectId'"
-        )
+          systemMessage = "Triggered pipeline in project '$projectId'",
+        ),
       ),
     )
 

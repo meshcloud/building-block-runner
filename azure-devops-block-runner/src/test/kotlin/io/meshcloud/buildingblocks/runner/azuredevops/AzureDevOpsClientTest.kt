@@ -23,7 +23,7 @@ class AzureDevOpsClientTest : WiremockTestBase() {
       organization = "org",
       project = "proj",
       pipelineId = "1",
-      run = dummyRun
+      run = dummyRun,
     )
   }
 
@@ -46,14 +46,16 @@ class AzureDevOpsClientTest : WiremockTestBase() {
         "links": {}
       }
     """.trimIndent()
-    wireMockServer.stubFor(post(urlPathEqualTo("/org/proj/_apis/pipelines/1/runs"))
-      .willReturn(aResponse().withStatus(200).withBody(jsonResponse)))
+    wireMockServer.stubFor(
+      post(urlPathEqualTo("/org/proj/_apis/pipelines/1/runs"))
+        .willReturn(aResponse().withStatus(200).withBody(jsonResponse)),
+    )
 
     val result = client.triggerPipeline()
     assertThat(result.id).isEqualTo(123L)
     wireMockServer.verify(
       postRequestedFor(urlPathEqualTo("/org/proj/_apis/pipelines/1/runs"))
-        .withRequestBody(notContaining("\"resources\""))
+        .withRequestBody(notContaining("\"resources\"")),
     )
   }
 
@@ -71,8 +73,10 @@ class AzureDevOpsClientTest : WiremockTestBase() {
         "links": {}
       }
     """.trimIndent()
-    wireMockServer.stubFor(post(urlPathEqualTo("/org/proj/_apis/pipelines/1/runs"))
-      .willReturn(aResponse().withStatus(200).withBody(jsonResponse)))
+    wireMockServer.stubFor(
+      post(urlPathEqualTo("/org/proj/_apis/pipelines/1/runs"))
+        .willReturn(aResponse().withStatus(200).withBody(jsonResponse)),
+    )
 
     val wireMockBaseUrl = "http://localhost:${wireMockServer.port()}"
     val clientWithRef = AzureDevOpsClient(
@@ -82,14 +86,14 @@ class AzureDevOpsClientTest : WiremockTestBase() {
       project = "proj",
       pipelineId = "1",
       run = dummyRun,
-      refName = "refs/heads/feature/my-branch"
+      refName = "refs/heads/feature/my-branch",
     )
 
     val result = clientWithRef.triggerPipeline()
     assertThat(result.id).isEqualTo(456L)
     wireMockServer.verify(
       postRequestedFor(urlPathEqualTo("/org/proj/_apis/pipelines/1/runs"))
-        .withRequestBody(matchingJsonPath("$.resources.repositories.self.refName", equalTo("refs/heads/feature/my-branch")))
+        .withRequestBody(matchingJsonPath("$.resources.repositories.self.refName", equalTo("refs/heads/feature/my-branch"))),
     )
   }
 
@@ -107,8 +111,10 @@ class AzureDevOpsClientTest : WiremockTestBase() {
         "links": {}
       }
     """.trimIndent()
-    wireMockServer.stubFor(get(urlPathEqualTo("/org/proj/_apis/pipelines/1/runs/123"))
-      .willReturn(aResponse().withStatus(200).withBody(jsonResponse)))
+    wireMockServer.stubFor(
+      get(urlPathEqualTo("/org/proj/_apis/pipelines/1/runs/123"))
+        .willReturn(aResponse().withStatus(200).withBody(jsonResponse)),
+    )
 
     val result = client.getPipelineRun(123L)
     assertThat(result.id).isEqualTo(123L)
@@ -134,8 +140,10 @@ class AzureDevOpsClientTest : WiremockTestBase() {
         ]
       }
     """.trimIndent()
-    wireMockServer.stubFor(get(urlPathEqualTo("/org/proj/_apis/build/builds/123/timeline"))
-      .willReturn(aResponse().withStatus(200).withBody(jsonResponse)))
+    wireMockServer.stubFor(
+      get(urlPathEqualTo("/org/proj/_apis/build/builds/123/timeline"))
+        .willReturn(aResponse().withStatus(200).withBody(jsonResponse)),
+    )
 
     val result = client.getPipelineTimeline(123L)
     assertThat(result).hasSize(1)

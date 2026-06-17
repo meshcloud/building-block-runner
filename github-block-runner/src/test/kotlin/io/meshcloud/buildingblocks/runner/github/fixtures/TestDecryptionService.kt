@@ -31,11 +31,11 @@ class TestDecryptionService : DecryptionService {
         spec = run.meshObject.spec.copy(
           buildingBlock = run.meshObject.spec.buildingBlock.copy(
             spec = run.meshObject.spec.buildingBlock.spec.copy(
-              inputs = decryptedInputs
-            )
-          )
-        )
-      )
+              inputs = decryptedInputs,
+            ),
+          ),
+        ),
+      ),
     )
   }
 }

@@ -21,7 +21,7 @@ class BlockRunnerServiceConfiguration(
     val service = GitLabBlockRunnerService(
       blockRunClientFetcher = blockRunClientFetcher,
       gitlabClientFactory = gitlabClientFactory,
-      decryptionService = decryptionService
+      decryptionService = decryptionService,
     )
 
     return ImmediateRetryDecorator(service)
@@ -36,7 +36,7 @@ class BlockRunnerServiceConfiguration(
     return GitLabBlockRunnerService(
       blockRunClientFetcher = blockRunClientFetcher,
       gitlabClientFactory = gitlabClientFactory,
-      decryptionService = decryptionService
+      decryptionService = decryptionService,
     )
   }
 }

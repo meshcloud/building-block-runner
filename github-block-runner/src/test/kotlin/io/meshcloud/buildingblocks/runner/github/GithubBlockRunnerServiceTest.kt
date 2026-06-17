@@ -35,7 +35,7 @@ class GithubBlockRunnerServiceTest {
     every { githubClientFactoryMock.provideClientFor(any()) } returns githubClient
     every { blockRunClientFetcherMockk.fetchBlockRunClient() } returns blockRunClientMockk
     every { blockRunClientMockk.activeBlockRun } returns ProcessableBlockRun.test(
-      implementation = MeshBuildingBlockGithubImplementation.test()
+      implementation = MeshBuildingBlockGithubImplementation.test(),
     )
     every { blockRunClientMockk.registerAsSource(any(), any()) } returns Unit
     every { blockRunClientMockk.updateBlockRun(any()) } returns Unit
@@ -52,7 +52,7 @@ class GithubBlockRunnerServiceTest {
       gitHubClientFactory = githubClientFactoryMock,
       decryptionService = decryptionServiceMockk,
       appTokenFactory = appTokenFactory,
-      clock = clock
+      clock = clock,
     )
   }
 
@@ -66,7 +66,7 @@ class GithubBlockRunnerServiceTest {
         any(),
         any(),
         any(),
-        any()
+        any(),
       )
     } returns GithubClient.TriggerWorkflowResult.Success
   }
@@ -74,18 +74,18 @@ class GithubBlockRunnerServiceTest {
   private fun createAsyncRun(
     id: String = "test",
     implementation: MeshBuildingBlockGithubImplementation = MeshBuildingBlockGithubImplementation.test(async = true),
-    inputs: List<MeshBuildingBlockRun.MeshBuildingBlockRunSpec.MeshBuildingBlockInputsForRun> = emptyList()
+    inputs: List<MeshBuildingBlockRun.MeshBuildingBlockRunSpec.MeshBuildingBlockInputsForRun> = emptyList(),
   ): ProcessableBlockRun = ProcessableBlockRun.test(
     implementation = implementation,
     inputs = inputs,
-    links = mapOf("self" to HalLink(href = "https://meshstack.example.com/api/meshobjects/meshbuildingblockruns/$id"))
+    links = mapOf("self" to HalLink(href = "https://meshstack.example.com/api/meshobjects/meshbuildingblockruns/$id")),
   )
 
   private fun createSyncRun(
-    id: String = "test"
+    id: String = "test",
   ): ProcessableBlockRun = createAsyncRun(
     id = id,
-    implementation = MeshBuildingBlockGithubImplementation.test(async = false)
+    implementation = MeshBuildingBlockGithubImplementation.test(async = false),
   )
 
   private fun verifyGitHubWorkflowTrigger(
@@ -97,7 +97,7 @@ class GithubBlockRunnerServiceTest {
       "buildingBlockRun",
       "buildingBlockRunUrl",
       BuildingBlockWorkflowInputsBuilder.MESHSTACK_API_TOKEN_KEY,
-      BuildingBlockWorkflowInputsBuilder.MESHSTACK_RUN_TOKEN_KEY
+      BuildingBlockWorkflowInputsBuilder.MESHSTACK_RUN_TOKEN_KEY,
     ),
   ): GithubClient.DispatchWorkflowPayload {
     val slot = slot<GithubClient.DispatchWorkflowPayload>()
@@ -108,7 +108,7 @@ class GithubBlockRunnerServiceTest {
         repositoryName = eq(repositoryName),
         workflowName = workflowName,
         payload = capture(slot),
-        recognizedUnsupportedInputs = recognizedUnsupportedInputs
+        recognizedUnsupportedInputs = recognizedUnsupportedInputs,
       )
     }
 
@@ -118,7 +118,7 @@ class GithubBlockRunnerServiceTest {
   @Test
   fun `processBlock reports error when deserializing a GitHub response fails`() {
     val runWithLinks = ProcessableBlockRun.test(
-      implementation = MeshBuildingBlockGitlabImplementation.test()
+      implementation = MeshBuildingBlockGitlabImplementation.test(),
     )
 
     every { blockRunClientFetcherMockk.fetchBlockRunClient() } returns blockRunClientMockk
@@ -166,7 +166,7 @@ class GithubBlockRunnerServiceTest {
     verify(exactly = 1) {
       blockRunClientMockk.registerAsSource(
         any(),
-        "Trigger GitHub Action"
+        "Trigger GitHub Action",
       )
     }
     verify(atLeast = 1) { blockRunClientMockk.updateBlockRun(any()) }
@@ -237,7 +237,7 @@ class GithubBlockRunnerServiceTest {
 
   private fun verifyExpectedRunObjectSent(
     expectedRunObject: String,
-    sentPayload: GithubClient.DispatchWorkflowPayload
+    sentPayload: GithubClient.DispatchWorkflowPayload,
   ) {
     val expectedRunObjectCompactJson = expectedRunObject.replace("\\s".toRegex(), "") // remove all whitespace
     val encodedRun = sentPayload.inputs["buildingBlockRun"]
@@ -392,7 +392,7 @@ class GithubBlockRunnerServiceTest {
       conclusion = "success",
       createdAt = "2023-01-01T12:00:01Z",
       updatedAt = "2023-01-01T12:05:00Z",
-      htmlUrl = "https://github.com/owner/repo/actions/runs/123"
+      htmlUrl = "https://github.com/owner/repo/actions/runs/123",
     )
     val runWithLinks = createSyncRun()
 
@@ -415,7 +415,7 @@ class GithubBlockRunnerServiceTest {
   @Test
   fun `processBlock handles UnsupportedInput result for buildingBlockRunUrl`() {
     val runWithLinks = createAsyncRun(
-      implementation = MeshBuildingBlockGithubImplementation.test(async = true, omitRunObjectInput = true)
+      implementation = MeshBuildingBlockGithubImplementation.test(async = true, omitRunObjectInput = true),
     )
 
     every { blockRunClientFetcherMockk.fetchBlockRunClient() } returns blockRunClientMockk
@@ -428,11 +428,11 @@ class GithubBlockRunnerServiceTest {
         any(),
         any(),
         any(),
-        any()
+        any(),
       )
     } returns GithubClient.TriggerWorkflowResult.UnsupportedInput(
       unsupportedInputNames = setOf("buildingBlockRunUrl"),
-      responseBody = "Unexpected inputs provided: buildingBlockRunUrl"
+      responseBody = "Unexpected inputs provided: buildingBlockRunUrl",
     )
 
     val result = sut.processBlock()
@@ -442,7 +442,7 @@ class GithubBlockRunnerServiceTest {
     val updateSlot = slot<MeshBuildingBlockRun.SourceUpdate>()
     verify(atLeast = 1) {
       blockRunClientMockk.updateBlockRun(
-        capture(updateSlot)
+        capture(updateSlot),
       )
     }
 
@@ -455,7 +455,7 @@ class GithubBlockRunnerServiceTest {
   @Test
   fun `processBlock handles UnsupportedInput result for buildingBlockRun`() {
     val runWithLinks = createAsyncRun(
-      implementation = MeshBuildingBlockGithubImplementation.test(async = true, omitRunObjectInput = false)
+      implementation = MeshBuildingBlockGithubImplementation.test(async = true, omitRunObjectInput = false),
     )
 
     every { blockRunClientFetcherMockk.fetchBlockRunClient() } returns blockRunClientMockk
@@ -468,11 +468,11 @@ class GithubBlockRunnerServiceTest {
         any(),
         any(),
         any(),
-        any()
+        any(),
       )
     } returns GithubClient.TriggerWorkflowResult.UnsupportedInput(
       unsupportedInputNames = setOf("buildingBlockRun"),
-      responseBody = "Unexpected inputs provided: buildingBlockRun"
+      responseBody = "Unexpected inputs provided: buildingBlockRun",
     )
 
     val result = sut.processBlock()
@@ -482,7 +482,7 @@ class GithubBlockRunnerServiceTest {
     val updateSlot = slot<MeshBuildingBlockRun.SourceUpdate>()
     verify(atLeast = 1) {
       blockRunClientMockk.updateBlockRun(
-        capture(updateSlot)
+        capture(updateSlot),
       )
     }
 
@@ -505,11 +505,11 @@ class GithubBlockRunnerServiceTest {
         any(),
         any(),
         any(),
-        any()
+        any(),
       )
     } returns GithubClient.TriggerWorkflowResult.Error(
       statusCode = 404,
-      responseBody = """{"message":"Not Found"}"""
+      responseBody = """{"message":"Not Found"}""",
     )
 
     val result = sut.processBlock()
@@ -519,7 +519,7 @@ class GithubBlockRunnerServiceTest {
     val updateSlot = slot<MeshBuildingBlockRun.SourceUpdate>()
     verify(atLeast = 1) {
       blockRunClientMockk.updateBlockRun(
-        capture(updateSlot)
+        capture(updateSlot),
       )
     }
 

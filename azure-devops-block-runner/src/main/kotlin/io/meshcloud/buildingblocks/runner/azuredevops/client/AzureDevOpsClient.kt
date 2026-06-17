@@ -6,11 +6,11 @@ import com.fasterxml.jackson.datatype.jdk8.Jdk8Module
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
-import io.meshcloud.buildingblocks.runner.meshobject.ProcessableBlockRun
-import io.meshcloud.buildingblocks.runner.http.MediaTypes.MEDIA_TYPE_JSON
-import io.meshcloud.buildingblocks.runner.http.addLogging
-import io.meshcloud.buildingblocks.runner.http.MeshHttpException
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.meshcloud.buildingblocks.runner.http.MediaTypes.MEDIA_TYPE_JSON
+import io.meshcloud.buildingblocks.runner.http.MeshHttpException
+import io.meshcloud.buildingblocks.runner.http.addLogging
+import io.meshcloud.buildingblocks.runner.meshobject.ProcessableBlockRun
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -67,7 +67,7 @@ class AzureDevOpsClient(
 
     val payload = TriggerPipelinePayload(
       templateParameters = inputsAsParameters,
-      resources = refName?.let { PipelineResources(RepositoriesResources(RepositoryRef(it))) }
+      resources = refName?.let { PipelineResources(RepositoriesResources(RepositoryRef(it))) },
     )
     val payloadBody = mapper.writeValueAsString(payload)
 
@@ -86,6 +86,7 @@ class AzureDevOpsClient(
       mapper.readValue(body, PipelineRun::class.java)
     }
   }
+
   fun getPipelineRun(runId: Long): PipelineRun {
     val url = "$azureDevOpsBaseUrl/$organization/$project/_apis/pipelines/$pipelineId/runs/$runId?api-version=7.1".toHttpUrl()
 

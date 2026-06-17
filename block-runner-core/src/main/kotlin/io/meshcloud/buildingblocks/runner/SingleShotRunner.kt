@@ -16,7 +16,7 @@ private val log = KotlinLogging.logger { }
 @Profile("kubernetes")
 class SingleShotRunner(
   private val blockRunnerService: BlockRunnerService,
-  private val terminator: RunTerminator
+  private val terminator: RunTerminator,
 ) : CommandLineRunner {
 
   /**

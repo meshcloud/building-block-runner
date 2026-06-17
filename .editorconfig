@@ -11,8 +11,15 @@ ij_kotlin_continuation_indent_size = 2
 ij_kotlin_name_count_to_use_star_import = 5
 ij_kotlin_name_count_to_use_star_import_for_members = 3
 
+# These rules use the ij_ prefix (IntelliJ), but they're used both by IntelliJ and by ktlint.
+# Note that, despite being called _allow_, they actually *enforce* trailing commas with ktlint.
+ij_kotlin_allow_trailing_comma_on_call_site = true
+ij_kotlin_allow_trailing_comma = true
+
 ktlint_standard_if-else-bracing = enabled
 ktlint_standard_if-else-wrapping = enabled
+
+ktlint_standard_multiline-expression-wrapping = disabled
 
 # Disabled ktlint rules: To ease the migration to ktlint, we're disabling a whole bunch of rules.
 #  This does not mean we don't consider these rules useful.
@@ -28,19 +35,14 @@ ktlint_standard_function-naming = disabled
 ktlint_standard_comment-spacing = disabled
 ktlint_standard_no-consecutive-comments = disabled
 ktlint_standard_string-template-indent = disabled
-ktlint_standard_multiline-expression-wrapping = disabled
-ktlint_standard_trailing-comma-on-call-site = disabled
 ktlint_standard_function-signature = disabled
 ktlint_standard_no-empty-first-line-in-class-body = disabled
-ktlint_standard_trailing-comma-on-declaration-site = disabled
 ktlint_standard_function-expression-body = disabled
 ktlint_standard_no-consecutive-blank-lines = disabled
 ktlint_standard_no-empty-file = disabled
 ktlint_standard_chain-method-continuation = disabled
-ktlint_standard_wrapping = disabled
 ktlint_standard_class-signature = disabled
 ktlint_standard_argument-list-wrapping = disabled
-ktlint_standard_parameter-list-wrapping = disabled
 ktlint_standard_no-multi-spaces = disabled
 ktlint_standard_value-parameter-comment = disabled
 ktlint_standard_kdoc = disabled

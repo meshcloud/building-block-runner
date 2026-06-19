@@ -151,6 +151,8 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 					RestartPolicy:      corev1.RestartPolicyNever,
 					ServiceAccountName: serviceAccountName,
 					ImagePullSecrets:   k.buildImagePullSecrets(),
+					Tolerations:        buildTolerations(AppConfig.Tolerations),
+					NodeSelector:       AppConfig.NodeSelector,
 					Volumes:            k.createVolumes(namespace, jobSpec, runJsonSecretName),
 					// Disable service-link env injection (MARIADB_*, KUBERNETES_* etc.) to keep
 					// the container environment clean and avoid leaking service discovery info.
@@ -206,6 +208,23 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 
 func int32Ptr(i int32) *int32 {
 	return &i
+}
+
+func buildTolerations(configs []TolerationConfig) []corev1.Toleration {
+	if len(configs) == 0 {
+		return nil
+	}
+	tolerations := make([]corev1.Toleration, len(configs))
+	for i, c := range configs {
+		tolerations[i] = corev1.Toleration{
+			Key:               c.Key,
+			Operator:          corev1.TolerationOperator(c.Operator),
+			Value:             c.Value,
+			Effect:            corev1.TaintEffect(c.Effect),
+			TolerationSeconds: c.TolerationSeconds,
+		}
+	}
+	return tolerations
 }
 
 // MaxKubernetesSecretSize is the maximum size of data in a Kubernetes secret (1MiB)

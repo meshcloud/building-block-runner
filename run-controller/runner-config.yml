@@ -113,6 +113,16 @@ crypto:
 
 pollingIntervalSeconds: 10
 
+# Optional: constrain all runner jobs to specific nodes using tolerations and nodeSelector.
+# Useful for targeting dedicated or spot/preemptible node pools.
+# tolerations:
+#   - key: "spot"
+#     operator: "Equal"
+#     value: "true"
+#     effect: "NoSchedule"
+# nodeSelector:
+#   spot: "true"
+
 # Job spec templates keyed by implementation type.
 # When a run is fetched, its implementation type is used to look up which image and configuration
 # to use for the Kubernetes job. Valid keys: TERRAFORM, GITHUB_WORKFLOW, GITLAB_PIPELINE,

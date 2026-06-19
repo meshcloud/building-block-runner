@@ -24,6 +24,8 @@ type ControllerConfig struct {
 	OwnedByWorkspace       string                     `yaml:"ownedByWorkspace"`       // The workspace that owns this runner (required for registration)
 	DisplayName            string                     `yaml:"displayName"`            // Human-readable display name for this controller (required for registration)
 	Crypto                 CryptoConfig               `yaml:"crypto"`                 // Cryptographic keys for secure communication
+	Tolerations            []TolerationConfig         `yaml:"tolerations"`            // Pod tolerations applied to all runner jobs (e.g. for spot instances)
+	NodeSelector           map[string]string          `yaml:"nodeSelector"`           // Node selector applied to all runner jobs
 	Implementations        map[string]JobSpecTemplate `yaml:"implementations"`        // Kubernetes job templates keyed by implementation type (e.g. TERRAFORM, GITHUB_WORKFLOW)
 }
 
@@ -67,6 +69,17 @@ type JobSpecTemplate struct {
 	Resources         ResourcesConfig    `yaml:"resources"`         // Container resource requests and limits
 	ExtraVolumes      []ExtraVolume      `yaml:"extraVolumes"`      // Additional volumes to mount (e.g., for trusted certs)
 	ExtraVolumeMounts []ExtraVolumeMount `yaml:"extraVolumeMounts"` // Additional volume mounts
+}
+
+// TolerationConfig defines a pod toleration for scheduling runner jobs on tainted nodes.
+// Operator defaults to "Equal" when Value is set, and "Exists" when only Key is set.
+// Effect can be "NoSchedule", "PreferNoSchedule", or "NoExecute".
+type TolerationConfig struct {
+	Key               string  `yaml:"key"`
+	Operator          string  `yaml:"operator"`
+	Value             string  `yaml:"value"`
+	Effect            string  `yaml:"effect"`
+	TolerationSeconds *int64  `yaml:"tolerationSeconds"` // Only meaningful for "NoExecute" effect
 }
 
 // ExtraVolume defines an additional volume with support for ConfigMap, Secret, or EmptyDir sources

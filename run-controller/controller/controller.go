@@ -12,14 +12,40 @@ import (
 	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
 )
 
+// JobManager abstracts the Kubernetes operations the controller depends on, so the control
+// flow (drain loop, capacity guard) can be unit-tested with a fake. *KubernetesClient is the
+// production implementation.
+type JobManager interface {
+	CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase64 string, implType string, jobSpec *JobSpecTemplate, metrics *MetricsCollector) error
+	CountActiveJobs() (int, error)
+}
+
 type Controller struct {
 	logger         *log.Logger
 	shutdownCalled bool
 	runApi         RunApi
-	k8sClient      *KubernetesClient
+	k8sClient      JobManager
 	crypto         *meshcrypto.MeshCertBasedCrypto
 	metrics        *MetricsCollector
 }
+
+// processResult describes the outcome of attempting to process a single run, so the drain
+// loop knows whether to keep going (a job was created) or stop until the next polling cycle.
+type processResult int
+
+const (
+	// runProcessed means a run was fetched and its job was created successfully.
+	runProcessed processResult = iota
+	// noRunAvailable means there was no run to process (404 or a fetch error); nothing was claimed.
+	noRunAvailable
+	// processFailed means a run was claimed but could not be turned into a job; it was reported as FAILED.
+	processFailed
+)
+
+// maxDrainPerCycleUnlimited bounds how many runs are drained in a single polling cycle when
+// concurrency is configured as unlimited. It is a safety backstop against an infinite loop if
+// the API were to keep returning runs indefinitely; draining stops naturally on the first 404.
+const maxDrainPerCycleUnlimited = 10
 
 func NewController() *Controller {
 	k8sClient, err := newKubernetesClient(AppConfig.Namespace,
@@ -82,17 +108,63 @@ func (c *Controller) run() {
 	for !c.shutdownCalled {
 		<-ticker.C
 		c.metrics.controllerLoopIterations.Inc()
-		c.processRuns()
+		c.drainRuns()
 	}
 
 	c.logger.Println("Controller stopped")
 }
 
-func (c *Controller) processRuns() {
-	c.processNextRun()
+// drainRuns processes as many queued runs as the controller has capacity for in a single
+// polling cycle, back-to-back. It determines the available capacity once up front, then keeps
+// creating jobs until there are no more runs, a run fails to process, capacity is exhausted, or
+// a shutdown is requested. Draining back-to-back (instead of one run per polling interval) lets
+// a backlog drain quickly without waiting a full interval between each run.
+func (c *Controller) drainRuns() {
+	capacity := c.availableCapacity()
+	if capacity <= 0 {
+		c.logger.Printf("At job capacity (max %d concurrent jobs); skipping run fetch this cycle", AppConfig.MaxConcurrentJobs)
+		c.metrics.jobsAtCapacitySkips.WithLabelValues(AppConfig.Uuid).Inc()
+		return
+	}
+
+	for created := 0; created < capacity && !c.shutdownCalled; {
+		// Only fetch (and thereby claim) a run while we still have capacity budget remaining,
+		// so we don't claim runs we'd be unable to place and have to mark as FAILED.
+		switch c.processNextRun() {
+		case runProcessed:
+			created++
+		default:
+			// noRunAvailable: backlog drained, wait for the next polling cycle.
+			// processFailed: stop draining this cycle; the run was already reported as FAILED.
+			return
+		}
+	}
 }
 
-func (c *Controller) processNextRun() {
+// availableCapacity returns how many additional runner jobs the controller may create right now.
+// A negative MaxConcurrentJobs means unlimited. If the active job count cannot be determined we
+// return 0 (skip this cycle) rather than risk claiming runs we cannot place: the same API that
+// failed the count would likely fail job creation, which would force runs to be reported FAILED.
+func (c *Controller) availableCapacity() int {
+	maxJobs := AppConfig.MaxConcurrentJobs
+	if maxJobs < 0 {
+		return maxDrainPerCycleUnlimited
+	}
+
+	active, err := c.k8sClient.CountActiveJobs()
+	if err != nil {
+		c.logger.Printf("Failed to determine active job count; skipping run fetch this cycle: %v", err)
+		return 0
+	}
+
+	available := maxJobs - active
+	if available < 0 {
+		return 0
+	}
+	return available
+}
+
+func (c *Controller) processNextRun() processResult {
 	// Fetch the next available run for this universal controller
 	runJsonBase64, runDetails, err := c.runApi.FetchRunDetails(AppConfig.Uuid)
 
@@ -101,7 +173,7 @@ func (c *Controller) processNextRun() {
 			c.logger.Printf("Error fetching run: %v", err)
 		}
 		// 404 means no runs available - this is normal, don't log
-		return
+		return noRunAvailable
 	}
 
 	// Decrypt the run JSON using the controller's crypto instance
@@ -109,7 +181,7 @@ func (c *Controller) processNextRun() {
 	if err != nil {
 		c.logger.Printf("Failed to decrypt run details for run %s: %v", runDetails.Metadata.Uuid, err)
 		c.metrics.decryptionErrors.WithLabelValues(AppConfig.Uuid).Inc()
-		return
+		return processFailed
 	}
 
 	// Determine the implementation type from the fetched run
@@ -117,7 +189,7 @@ func (c *Controller) processNextRun() {
 	if err != nil {
 		c.logger.Printf("Failed to determine implementation type for run %s: %v", runDetails.Metadata.Uuid, err)
 		c.reportRunFailure(runDetails.Metadata.Uuid, "Failed to determine implementation type: "+err.Error())
-		return
+		return processFailed
 	}
 
 	// Map the implementation type to the corresponding runner type key used in the config
@@ -129,7 +201,7 @@ func (c *Controller) processNextRun() {
 		msg := fmt.Sprintf("no implementation handler configured for type '%s'", runnerType)
 		c.logger.Printf("Cannot process run %s: %s", runDetails.Metadata.Uuid, msg)
 		c.reportRunFailure(runDetails.Metadata.Uuid, msg)
-		return
+		return processFailed
 	}
 
 	c.logger.Printf("Processing run %s (type: %s)", runDetails.Metadata.Uuid, runnerType)
@@ -149,7 +221,10 @@ func (c *Controller) processNextRun() {
 			errorMessage = "Failed to create job for run: " + err.Error()
 		}
 		c.reportRunFailure(runDetails.Metadata.Uuid, errorMessage)
+		return processFailed
 	}
+
+	return runProcessed
 }
 
 // reportRunFailure registers the controller as a status source and marks the run as FAILED.

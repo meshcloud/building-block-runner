@@ -113,6 +113,13 @@ crypto:
 
 pollingIntervalSeconds: 10
 
+# Maximum number of unfinished runner jobs this controller keeps in flight at once.
+# The controller drains queued runs back-to-back each polling cycle, but only claims a run
+# while it is fairly sure it can place the job: claiming more runs than can be scheduled would
+# force those runs to be reported as FAILED. Set to a value that fits your namespace quota.
+# Default: 20. Use a negative value (e.g. -1) to disable the limit (unlimited).
+maxConcurrentJobs: 20
+
 # Optional: constrain all runner jobs to specific nodes using tolerations and nodeSelector.
 # Useful for targeting dedicated or spot/preemptible node pools.
 # tolerations:

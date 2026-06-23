@@ -19,6 +19,7 @@ type ControllerConfig struct {
 	Namespace              string                     `yaml:"namespace"`              // Kubernetes namespace where jobs are created
 	ImagePullSecrets       []string                   `yaml:"imagePullSecrets"`       // Image pull secrets for runner jobs (optional)
 	PollingIntervalSeconds int                        `yaml:"pollingIntervalSeconds"` // Polling interval in seconds (default: 10)
+	MaxConcurrentJobs      int                        `yaml:"maxConcurrentJobs"`      // Max number of unfinished runner jobs this controller keeps in flight (default: 20; negative = unlimited)
 	Api                    ApiConfig                  `yaml:"api"`                    // Global API config used by controller to fetch runs and register runners
 	Uuid                   string                     `yaml:"uuid"`                   // Unique identifier for this universal run controller
 	OwnedByWorkspace       string                     `yaml:"ownedByWorkspace"`       // The workspace that owns this runner (required for registration)
@@ -134,6 +135,11 @@ const (
 	// override the api.clientId / api.clientSecret values from runner-config.yml.
 	envApiClientId     = "RUNNER_API_CLIENT_ID"
 	envApiClientSecret = "RUNNER_API_CLIENT_SECRET"
+
+	// DefaultMaxConcurrentJobs is the number of unfinished runner jobs the controller keeps
+	// in flight when maxConcurrentJobs is not configured. This caps how many runs the
+	// controller claims so it does not fetch (and thereby fail) runs it cannot place.
+	DefaultMaxConcurrentJobs = 20
 )
 
 func ReadConfig(logger *log.Logger) *ControllerConfig {
@@ -146,6 +152,12 @@ func ReadConfig(logger *log.Logger) *ControllerConfig {
 	config, err := ReadInYmlConfig(configPath)
 	if err != nil {
 		logger.Fatalf("Failed to read config file %s: %v\n", configPath, err)
+	}
+
+	// Apply defaults for optional fields before validation/logging.
+	// A zero value means "not configured"; a negative value is an explicit opt-out (unlimited).
+	if config.MaxConcurrentJobs == 0 {
+		config.MaxConcurrentJobs = DefaultMaxConcurrentJobs
 	}
 
 	// Environment overrides take precedence over the config file.
@@ -277,6 +289,11 @@ func logConfig(logger *log.Logger, config *ControllerConfig) {
 	}
 
 	logger.Printf("Controller UUID: %s\n", config.Uuid)
+	if config.MaxConcurrentJobs < 0 {
+		logger.Printf("Max concurrent jobs: unlimited\n")
+	} else {
+		logger.Printf("Max concurrent jobs: %d\n", config.MaxConcurrentJobs)
+	}
 	logger.Printf("Configured implementations: %d\n", len(config.Implementations))
 	for implType, spec := range config.Implementations {
 		logger.Printf("  %s: image=%s", implType, spec.Image)

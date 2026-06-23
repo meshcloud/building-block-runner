@@ -6,12 +6,13 @@ workingDir: /tmp/runner/wd
 tfInstallDir: /tmp/runner/tfbin
 api:
   url: http://localhost:8080
-  # Option 1: Basic auth credentials
-  user: bb-api
-  password: guest
-  # Option 2: API key auth (takes precedence over user/password when both clientId and clientSecret are set)
+  # API key auth. Provide credentials via the RUNNER_API_CLIENT_ID / RUNNER_API_CLIENT_SECRET
+  # environment variables, or uncomment and set them here.
   # clientId: your-client-id
   # clientSecret: your-client-secret
+  #
+  # Basic auth (user/password) is also still supported via RUNNER_API_USERNAME /
+  # RUNNER_API_PASSWORD but is deprecated; prefer API key auth.
 insecureHostKeys: false
 privateKey: |
   -----BEGIN PRIVATE KEY-----

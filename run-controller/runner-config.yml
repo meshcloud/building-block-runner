@@ -11,12 +11,11 @@ namespace: default
 # 127.0.0.1 host.minikube.internal
 api:
   url: http://host.minikube.internal:8080
-  # Option 1: Basic auth credentials
-  username: bb-api
-  password: guest
-  # Option 2: API key auth (takes precedence over username/password when both clientId and clientSecret are set)
+  # API key auth. Uncomment and set the credentials for this controller.
   # clientId: your-client-id
   # clientSecret: your-client-secret
+  #
+  # Basic auth (username/password) is also still supported but is deprecated; prefer API key auth.
 
 # Unique identifier for this universal run controller.
 # This UUID is used to fetch runs of all implementation types from meshfed-api.

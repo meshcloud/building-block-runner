@@ -206,6 +206,40 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 	return nil
 }
 
+// CountActiveJobs returns the number of runner jobs created by this controller that have not
+// yet finished. Finished jobs (Complete or Failed) are excluded so that jobs still lingering
+// during their TTLSecondsAfterFinished window do not count against the concurrency budget.
+// This is used as a best-effort capacity signal: the controller avoids claiming runs it would
+// not be able to place, since a failed job creation forces the run to be reported as FAILED.
+func (k *KubernetesClient) CountActiveJobs() (int, error) {
+	selector := fmt.Sprintf("meshcloud.io/runner-id=%s", AppConfig.Uuid)
+	jobList, err := k.clientset.BatchV1().Jobs(AppConfig.Namespace).List(context.TODO(), metav1.ListOptions{
+		LabelSelector: selector,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("failed to list jobs for capacity check: %w", err)
+	}
+
+	active := 0
+	for i := range jobList.Items {
+		if !isJobFinished(&jobList.Items[i]) {
+			active++
+		}
+	}
+	return active, nil
+}
+
+// isJobFinished reports whether a job has reached a terminal state (completed or failed).
+func isJobFinished(job *batchv1.Job) bool {
+	for _, condition := range job.Status.Conditions {
+		if (condition.Type == batchv1.JobComplete || condition.Type == batchv1.JobFailed) &&
+			condition.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
+}
+
 func int32Ptr(i int32) *int32 {
 	return &i
 }

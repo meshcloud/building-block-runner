@@ -41,6 +41,9 @@ type MetricsCollector struct {
 	jobCreationErrors   *prometheus.CounterVec
 	jobCreationDuration *prometheus.HistogramVec
 
+	// Capacity metrics
+	jobsAtCapacitySkips *prometheus.CounterVec
+
 	// Service account metrics
 	serviceAccountsCreatedTotal  *prometheus.CounterVec
 	serviceAccountCreationErrors *prometheus.CounterVec
@@ -96,6 +99,13 @@ func NewMetricsCollector() *MetricsCollector {
 					Name:    "run_controller_job_creation_duration_seconds",
 					Help:    "Duration of Kubernetes job creation operations in seconds",
 					Buckets: prometheus.DefBuckets,
+				},
+				[]string{"controller_uuid"},
+			),
+			jobsAtCapacitySkips: promauto.NewCounterVec(
+				prometheus.CounterOpts{
+					Name: "run_controller_jobs_at_capacity_skips_total",
+					Help: "Total number of polling cycles skipped because the controller was at its max concurrent jobs limit",
 				},
 				[]string{"controller_uuid"},
 			),

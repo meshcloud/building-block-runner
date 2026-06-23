@@ -94,6 +94,13 @@ func ReadConfig(logger *log.Logger) error {
 		return err
 	}
 
+	// API key auth wins when both methods are configured (e.g. an env-supplied client id/secret on
+	// top of a basic-auth default baked into runner-config.yml). Surface that so it's not surprising.
+	if AppConfig.RunApiBackend.ClientId != "" && AppConfig.RunApiBackend.ClientSecret != "" &&
+		(AppConfig.RunApiBackend.User != "" || AppConfig.RunApiBackend.Password != "") {
+		logger.Printf("Both API key and Basic auth are configured; using API key auth and ignoring Basic auth (user/password)\n")
+	}
+
 	// validate RunnerUuid is set
 	if err := validateRunnerUuid(AppConfig); err != nil {
 		return err
@@ -176,13 +183,13 @@ func applyPrivateKeyFile(path string, cfg *TfRunnerConfig, logger *log.Logger) {
 // In Kubernetes mode (single-run with RUN_JSON_FILE_PATH), auth credentials are not required
 // as the run is provided via file mounted from a K8S secret and contains a runToken.
 // In polling mode, either basic auth (user+password) or API key auth (clientId+clientSecret) is required.
+//
+// When both methods are fully configured, API key auth takes precedence (see
+// RunApiConfig.NewAuthProvider) — that is a valid configuration, not an error. This lets API key
+// credentials supplied via the environment override a basic-auth default baked into runner-config.yml.
 func validateAuthConfig(config TfRunnerConfig) error {
 	hasCompleteBasicAuth := config.RunApiBackend.User != "" && config.RunApiBackend.Password != ""
 	hasCompleteApiKeyAuth := config.RunApiBackend.ClientId != "" && config.RunApiBackend.ClientSecret != ""
-
-	if hasCompleteBasicAuth && hasCompleteApiKeyAuth {
-		return fmt.Errorf("ambiguous authentication configuration: both Basic auth (user/password) and API key auth (clientId/clientSecret) are set; configure only one method")
-	}
 
 	// Check if we're in single-run mode
 	executionMode := os.Getenv(envExecutionMode)

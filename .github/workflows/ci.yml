@@ -48,67 +48,12 @@ jobs:
       - name: Run module check
         run: ./gradlew ${{ matrix.gradle-task }}
 
-  jvm-runners-image-pr:
-    name: ${{ matrix.image }} - image (PR)
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    needs: jvm-runners-ci
-    permissions:
-      contents: read
-      packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - image: manual-block-runner
-            module: manual-block-runner
-          - image: github-block-runner
-            module: github-block-runner
-          - image: gitlab-block-runner
-            module: gitlab-block-runner
-          - image: azure-devops-block-runner
-            module: azure-devops-block-runner
-
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
-
-      - name: Login to GHCR
-        if: github.repository_owner == 'meshcloud' && github.event.pull_request.head.repo.full_name == github.repository
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Login to Docker Hub
-        if: github.repository_owner == 'meshcloud' && github.event.pull_request.head.repo.full_name == github.repository
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
-        with:
-          registry: ${{ env.DOCKERHUB_REGISTRY }}
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push JVM runner image
-        if: github.repository_owner == 'meshcloud'
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
-        with:
-          context: .
-          file: containers/jvm.Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:pr-${{ github.event.pull_request.number }}
-            ${{ env.DOCKERHUB_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:pr-${{ github.event.pull_request.number }}
-          build-args: |
-            RUNNER_MODULE=${{ matrix.module }}
-            VERSION=dev:pr-${{ github.event.pull_request.number }}
-
+  # One job for PRs and main so the matrix always expands (no skipped jobs with unresolved
+  # ${{ matrix.* }} names). PRs only build (never push) to validate the Dockerfile; main pushes the
+  # floating :main tag. The git-describe version is baked into every build via the VERSION build-arg;
+  # the release workflow owns the immutable :<version> + :latest tags.
   jvm-runners-image:
     name: ${{ matrix.image }} - image
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     needs: jvm-runners-ci
     permissions:
@@ -129,15 +74,45 @@ jobs:
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0      # full history + tags so `git describe` can derive the version
 
-      - name: Parse commit
-        id: commit
-        run: echo "commit=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+      - name: Resolve version and image tags
+        id: meta
+        shell: bash
+        env:
+          IMAGE: ${{ matrix.image }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # git describe -> e.g. v1.0.0 on a release commit, v1.0.0-10-g6ccdaf8 on commits after it.
+          VERSION="$(git describe --tags --always)"
+          echo "resolved version: ${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+          img="${REGISTRY}/${IMAGE_NAMESPACE}/${IMAGE}"
+          hub="${DOCKERHUB_REGISTRY}/${IMAGE_NAMESPACE}/${IMAGE}"
+          {
+            echo "tags<<EOF"
+            if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+              # main pushes the floating :main tag plus the immutable :<sha> tag — meshcloud dev pins
+              # run-controller (and others) to a specific image SHA. The git-describe version is still
+              # baked into the binary via the VERSION build-arg below.
+              echo "${img}:main"
+              echo "${img}:${GITHUB_SHA}"
+              echo "${hub}:main"
+              echo "${hub}:${GITHUB_SHA}"
+            else
+              # PRs build but never push (see `push:` below); a local buildx tag name only.
+              echo "${img}:pr-${PR_NUMBER}"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
       - name: Login to GHCR
+        if: github.repository_owner == 'meshcloud' && github.ref == 'refs/heads/main'
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ${{ env.REGISTRY }}
@@ -145,12 +120,13 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Login to Docker Hub
-        if: github.repository_owner == 'meshcloud'
+        if: github.repository_owner == 'meshcloud' && github.ref == 'refs/heads/main'
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ${{ env.DOCKERHUB_REGISTRY }}
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Build and push JVM runner image
         if: github.repository_owner == 'meshcloud'
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
@@ -158,15 +134,11 @@ jobs:
           context: .
           file: containers/jvm.Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:main
-            ${{ env.DOCKERHUB_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:${{ github.sha }}
-            ${{ env.DOCKERHUB_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:main
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.meta.outputs.tags }}
           build-args: |
             RUNNER_MODULE=${{ matrix.module }}
-            VERSION=dev:${{ steps.commit.outputs.commit }}
+            VERSION=${{ steps.meta.outputs.version }}
 
   go-runners-ci:
     name: ${{ matrix.app }} - test
@@ -201,62 +173,11 @@ jobs:
       - name: Test
         run: go test ./...
 
-  go-runners-image-pr:
-    name: ${{ matrix.app }} - image (PR)
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    needs: go-runners-ci
-    permissions:
-      contents: read
-      packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - app: run-controller
-            dockerfile: run-controller/Dockerfile
-          - app: tf-block-runner
-            dockerfile: tf-block-runner/Dockerfile
-
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
-
-      - name: Login to GHCR
-        if: github.repository_owner == 'meshcloud' && github.event.pull_request.head.repo.full_name == github.repository
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Login to Docker Hub
-        if: github.repository_owner == 'meshcloud' && github.event.pull_request.head.repo.full_name == github.repository
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
-        with:
-          registry: ${{ env.DOCKERHUB_REGISTRY }}
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push Docker image
-        if: github.repository_owner == 'meshcloud'
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
-        with:
-          context: .
-          file: ${{ matrix.dockerfile }}
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:pr-${{ github.event.pull_request.number }}
-            ${{ env.DOCKERHUB_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:pr-${{ github.event.pull_request.number }}
-          build-args: |
-            VERSION=dev:pr-${{ github.event.pull_request.number }}
-
+  # One job for PRs and main (see jvm-runners-image for the rationale): the matrix always expands, so
+  # there are no skipped jobs with unresolved ${{ matrix.* }} names. PRs only build (never push);
+  # main pushes the floating :main tag; the git-describe version is baked via -ldflags build.Version.
   go-runners-image:
     name: ${{ matrix.app }} - image
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     needs: go-runners-ci
     permissions:
@@ -273,15 +194,45 @@ jobs:
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0      # full history + tags so `git describe` can derive the version
 
-      - name: Parse commit
-        id: commit
-        run: echo "commit=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+      - name: Resolve version and image tags
+        id: meta
+        shell: bash
+        env:
+          IMAGE: ${{ matrix.app }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # git describe -> e.g. v1.0.0 on a release commit, v1.0.0-10-g6ccdaf8 on commits after it.
+          VERSION="$(git describe --tags --always)"
+          echo "resolved version: ${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+          img="${REGISTRY}/${IMAGE_NAMESPACE}/${IMAGE}"
+          hub="${DOCKERHUB_REGISTRY}/${IMAGE_NAMESPACE}/${IMAGE}"
+          {
+            echo "tags<<EOF"
+            if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+              # main pushes the floating :main tag plus the immutable :<sha> tag — meshcloud dev pins
+              # run-controller (and others) to a specific image SHA. The git-describe version is still
+              # baked into the binary via the VERSION build-arg below.
+              echo "${img}:main"
+              echo "${img}:${GITHUB_SHA}"
+              echo "${hub}:main"
+              echo "${hub}:${GITHUB_SHA}"
+            else
+              # PRs build but never push (see `push:` below); a local buildx tag name only.
+              echo "${img}:pr-${PR_NUMBER}"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
       - name: Login to GHCR
+        if: github.repository_owner == 'meshcloud' && github.ref == 'refs/heads/main'
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ${{ env.REGISTRY }}
@@ -289,12 +240,13 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Login to Docker Hub
-        if: github.repository_owner == 'meshcloud'
+        if: github.repository_owner == 'meshcloud' && github.ref == 'refs/heads/main'
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ${{ env.DOCKERHUB_REGISTRY }}
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Build and push Docker image
         if: github.repository_owner == 'meshcloud'
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
@@ -302,11 +254,7 @@ jobs:
           context: .
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:main
-            ${{ env.DOCKERHUB_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:${{ github.sha }}
-            ${{ env.DOCKERHUB_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:main
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.meta.outputs.tags }}
           build-args: |
-            VERSION=dev:${{ steps.commit.outputs.commit }}
+            VERSION=${{ steps.meta.outputs.version }}

@@ -75,11 +75,11 @@ type JobSpecTemplate struct {
 // Operator defaults to "Equal" when Value is set, and "Exists" when only Key is set.
 // Effect can be "NoSchedule", "PreferNoSchedule", or "NoExecute".
 type TolerationConfig struct {
-	Key               string  `yaml:"key"`
-	Operator          string  `yaml:"operator"`
-	Value             string  `yaml:"value"`
-	Effect            string  `yaml:"effect"`
-	TolerationSeconds *int64  `yaml:"tolerationSeconds"` // Only meaningful for "NoExecute" effect
+	Key               string `yaml:"key"`
+	Operator          string `yaml:"operator"`
+	Value             string `yaml:"value"`
+	Effect            string `yaml:"effect"`
+	TolerationSeconds *int64 `yaml:"tolerationSeconds"` // Only meaningful for "NoExecute" effect
 }
 
 // ExtraVolume defines an additional volume with support for ConfigMap, Secret, or EmptyDir sources
@@ -155,36 +155,35 @@ func ReadConfig(logger *log.Logger) *ControllerConfig {
 	return config
 }
 
-// validateConfig ensures the configuration is valid and complete
-// validateApiAuth checks that exactly one authentication method is configured for an ApiConfig.
-// context is a human-readable prefix for error messages (e.g. "api" or "runner[0].api").
+// validateApiAuth checks that at least one complete authentication method is configured for an
+// ApiConfig. context is a human-readable prefix for error messages (e.g. "api" or "runner[0].api").
+//
+// When both methods are fully configured, API key auth takes precedence (see
+// ApiConfig.NewAuthProvider) — that is a valid configuration, not an error. This lets API key
+// credentials supplied via configuration override a basic-auth default baked into the image.
 func validateApiAuth(c ApiConfig, context string) error {
-	hasBasicAuth := c.Username != "" || c.Password != ""
-	hasApiKeyAuth := c.ClientId != "" || c.ClientSecret != ""
+	hasCompleteApiKeyAuth := c.ClientId != "" && c.ClientSecret != ""
+	hasCompleteBasicAuth := c.Username != "" && c.Password != ""
 
-	if hasBasicAuth && hasApiKeyAuth {
-		return fmt.Errorf("%s: ambiguous authentication configuration: both Basic auth (username/password) and API key auth (clientId/clientSecret) are set; configure only one method", context)
+	// One complete method is enough; API key wins if both are present.
+	if hasCompleteApiKeyAuth || hasCompleteBasicAuth {
+		return nil
 	}
-	if hasBasicAuth {
-		if c.Username == "" {
-			return fmt.Errorf("%s.username is required when using Basic auth", context)
-		}
-		if c.Password == "" {
-			return fmt.Errorf("%s.password is required when using Basic auth", context)
-		}
-	}
-	if hasApiKeyAuth {
+
+	// Neither method is complete — report the most specific error for whatever was partially set.
+	if c.ClientId != "" || c.ClientSecret != "" {
 		if c.ClientId == "" {
 			return fmt.Errorf("%s.clientId is required when using API key auth", context)
 		}
-		if c.ClientSecret == "" {
-			return fmt.Errorf("%s.clientSecret is required when using API key auth", context)
+		return fmt.Errorf("%s.clientSecret is required when using API key auth", context)
+	}
+	if c.Username != "" || c.Password != "" {
+		if c.Username == "" {
+			return fmt.Errorf("%s.username is required when using Basic auth", context)
 		}
+		return fmt.Errorf("%s.password is required when using Basic auth", context)
 	}
-	if !hasBasicAuth && !hasApiKeyAuth {
-		return fmt.Errorf("%s: no authentication configured; set either username/password (Basic auth) or clientId/clientSecret (API key auth)", context)
-	}
-	return nil
+	return fmt.Errorf("%s: no authentication configured; set either username/password (Basic auth) or clientId/clientSecret (API key auth)", context)
 }
 
 func validateConfig(config *ControllerConfig) error {

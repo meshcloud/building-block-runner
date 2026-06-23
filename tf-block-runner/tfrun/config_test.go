@@ -92,7 +92,10 @@ func TestValidateAuthConfig(t *testing.T) {
 			errContains: "authentication required in polling mode",
 		},
 		{
-			name: "both basic auth and api key auth configured",
+			// API key auth takes precedence over basic auth (see RunApiConfig.NewAuthProvider), so
+			// having both fully configured is valid — e.g. env-supplied API key credentials layered
+			// over the basic-auth default baked into runner-config.yml.
+			name: "both basic auth and api key auth configured (api key wins)",
 			config: TfRunnerConfig{
 				RunApiBackend: RunApiConfig{
 					User:         "test-user",
@@ -101,8 +104,7 @@ func TestValidateAuthConfig(t *testing.T) {
 					ClientSecret: "my-client-secret",
 				},
 			},
-			wantErr:     true,
-			errContains: "ambiguous authentication configuration",
+			wantErr: false,
 		},
 	}
 

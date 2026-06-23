@@ -183,16 +183,16 @@ func TestValidateConfig_ApiKeyAuth(t *testing.T) {
 		}
 	})
 
-	t.Run("both auth methods set on global api", func(t *testing.T) {
+	t.Run("both auth methods set on global api (api key wins)", func(t *testing.T) {
+		// API key auth takes precedence over basic auth (see ApiConfig.NewAuthProvider), so having
+		// both fully configured is valid rather than ambiguous — e.g. API key credentials layered
+		// over a basic-auth default baked into the image.
 		config := createValidConfig()
 		config.Api.ClientId = "my-client-id"
 		config.Api.ClientSecret = "my-client-secret"
 
-		err := validateConfig(config)
-		if err == nil {
-			t.Error("expected error when both auth methods are set on api")
-		} else if !strings.Contains(err.Error(), "ambiguous authentication configuration") {
-			t.Errorf("expected ambiguous auth error, got: %v", err)
+		if err := validateConfig(config); err != nil {
+			t.Errorf("expected no error when both auth methods are set (api key wins), got: %v", err)
 		}
 	})
 

@@ -1,9 +1,15 @@
 package controller
 
 import (
+	"io"
+	"log"
 	"strings"
 	"testing"
+
+	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
 )
+
+var nopLogger = log.New(io.Discard, "", 0)
 
 func createValidImplementations() map[string]JobSpecTemplate {
 	return map[string]JobSpecTemplate{
@@ -13,7 +19,9 @@ func createValidImplementations() map[string]JobSpecTemplate {
 	}
 }
 
-func createValidConfig() *ControllerConfig {
+// createValidBasicAuthConfig returns a config that passes validation using Basic auth
+// (username + password). Tests exercising API key auth override these fields explicitly.
+func createValidBasicAuthConfig() *ControllerConfig {
 	return &ControllerConfig{
 		Namespace: "test-namespace",
 		Api: ApiConfig{
@@ -33,14 +41,14 @@ func createValidConfig() *ControllerConfig {
 }
 
 func TestValidateConfig_ValidConfig(t *testing.T) {
-	config := createValidConfig()
+	config := createValidBasicAuthConfig()
 	if err := validateConfig(config); err != nil {
 		t.Errorf("expected no error for valid config, got: %v", err)
 	}
 }
 
 func TestValidateConfig_MultipleImplementations(t *testing.T) {
-	config := createValidConfig()
+	config := createValidBasicAuthConfig()
 	config.Implementations = map[string]JobSpecTemplate{
 		"TERRAFORM":             {Image: "tf-runner:latest"},
 		"GITHUB_WORKFLOW":       {Image: "gh-runner:latest"},
@@ -131,7 +139,7 @@ func TestValidateConfig_InvalidConfigs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config := createValidConfig()
+			config := createValidBasicAuthConfig()
 			tt.mutate(config)
 
 			err := validateConfig(config)
@@ -157,7 +165,7 @@ func TestValidateConfig_ValidImplementationTypeKeys(t *testing.T) {
 
 	for _, implType := range validTypes {
 		t.Run(implType, func(t *testing.T) {
-			config := createValidConfig()
+			config := createValidBasicAuthConfig()
 			config.Implementations = map[string]JobSpecTemplate{
 				implType: {Image: "test-image:latest"},
 			}
@@ -172,7 +180,7 @@ func TestValidateConfig_ValidImplementationTypeKeys(t *testing.T) {
 
 func TestValidateConfig_ApiKeyAuth(t *testing.T) {
 	t.Run("valid api key auth on global api", func(t *testing.T) {
-		config := createValidConfig()
+		config := createValidBasicAuthConfig()
 		config.Api.Username = ""
 		config.Api.Password = ""
 		config.Api.ClientId = "my-client-id"
@@ -187,7 +195,7 @@ func TestValidateConfig_ApiKeyAuth(t *testing.T) {
 		// API key auth takes precedence over basic auth (see ApiConfig.NewAuthProvider), so having
 		// both fully configured is valid rather than ambiguous — e.g. API key credentials layered
 		// over a basic-auth default baked into the image.
-		config := createValidConfig()
+		config := createValidBasicAuthConfig()
 		config.Api.ClientId = "my-client-id"
 		config.Api.ClientSecret = "my-client-secret"
 
@@ -197,7 +205,7 @@ func TestValidateConfig_ApiKeyAuth(t *testing.T) {
 	})
 
 	t.Run("missing api url", func(t *testing.T) {
-		config := createValidConfig()
+		config := createValidBasicAuthConfig()
 		config.Api.Url = ""
 
 		err := validateConfig(config)
@@ -207,7 +215,7 @@ func TestValidateConfig_ApiKeyAuth(t *testing.T) {
 	})
 
 	t.Run("no auth configured", func(t *testing.T) {
-		config := createValidConfig()
+		config := createValidBasicAuthConfig()
 		config.Api.Username = ""
 		config.Api.Password = ""
 
@@ -216,6 +224,75 @@ func TestValidateConfig_ApiKeyAuth(t *testing.T) {
 			t.Error("expected error when no auth method is configured")
 		} else if !strings.Contains(err.Error(), "no authentication configured") {
 			t.Errorf("expected no-auth error, got: %v", err)
+		}
+	})
+}
+
+func TestApplyApiKeyEnvOverrides(t *testing.T) {
+	t.Run("sets clientId/clientSecret from environment when unset in file", func(t *testing.T) {
+		t.Setenv(envApiClientId, "env-client-id")
+		t.Setenv(envApiClientSecret, "env-client-secret")
+
+		config := createValidBasicAuthConfig()
+		applyApiKeyEnvOverrides(config, nopLogger)
+
+		if config.Api.ClientId != "env-client-id" {
+			t.Errorf("expected clientId from env, got: %q", config.Api.ClientId)
+		}
+		if config.Api.ClientSecret != "env-client-secret" {
+			t.Errorf("expected clientSecret from env, got: %q", config.Api.ClientSecret)
+		}
+	})
+
+	t.Run("env takes precedence over config file values", func(t *testing.T) {
+		t.Setenv(envApiClientId, "env-client-id")
+		t.Setenv(envApiClientSecret, "env-client-secret")
+
+		config := createValidBasicAuthConfig()
+		config.Api.ClientId = "file-client-id"
+		config.Api.ClientSecret = "file-client-secret"
+		applyApiKeyEnvOverrides(config, nopLogger)
+
+		if config.Api.ClientId != "env-client-id" || config.Api.ClientSecret != "env-client-secret" {
+			t.Errorf("expected env to override file, got: %q / %q", config.Api.ClientId, config.Api.ClientSecret)
+		}
+	})
+
+	t.Run("empty env preserves config file values", func(t *testing.T) {
+		t.Setenv(envApiClientId, "")
+		t.Setenv(envApiClientSecret, "")
+
+		config := createValidBasicAuthConfig()
+		config.Api.ClientId = "file-client-id"
+		config.Api.ClientSecret = "file-client-secret"
+		applyApiKeyEnvOverrides(config, nopLogger)
+
+		if config.Api.ClientId != "file-client-id" || config.Api.ClientSecret != "file-client-secret" {
+			t.Errorf("expected file values preserved, got: %q / %q", config.Api.ClientId, config.Api.ClientSecret)
+		}
+	})
+
+	t.Run("env api key takes precedence over a basic-auth-only config file", func(t *testing.T) {
+		t.Setenv(envApiClientId, "env-client-id")
+		t.Setenv(envApiClientSecret, "env-client-secret")
+
+		// createValidBasicAuthConfig carries only username/password; the env-supplied API key should win.
+		config := createValidBasicAuthConfig()
+		applyApiKeyEnvOverrides(config, nopLogger)
+
+		if err := validateConfig(config); err != nil {
+			t.Fatalf("expected valid config with env API key over file basic auth, got: %v", err)
+		}
+
+		// The env values must have landed on the config...
+		if config.Api.ClientId != "env-client-id" || config.Api.ClientSecret != "env-client-secret" {
+			t.Fatalf("expected env API key on config, got: %q / %q", config.Api.ClientId, config.Api.ClientSecret)
+		}
+		// ...and the resolved auth provider must actually be API key auth, not the file's basic auth.
+		if provider := config.Api.NewAuthProvider(""); provider == nil {
+			t.Error("expected an auth provider, got nil")
+		} else if _, ok := provider.(*meshapi.ApiKeyAuth); !ok {
+			t.Errorf("expected API key auth to be selected over basic auth, got %T", provider)
 		}
 	})
 }

@@ -129,6 +129,11 @@ const (
 	defaultConfigFile = "runner-config.yml"
 
 	envConfigFile = "RUNCONTROLLER_CONFIG_FILE"
+
+	// Standard runner API-key env vars (shared with the standalone block runners). When set, they
+	// override the api.clientId / api.clientSecret values from runner-config.yml.
+	envApiClientId     = "RUNNER_API_CLIENT_ID"
+	envApiClientSecret = "RUNNER_API_CLIENT_SECRET"
 )
 
 func ReadConfig(logger *log.Logger) *ControllerConfig {
@@ -143,6 +148,9 @@ func ReadConfig(logger *log.Logger) *ControllerConfig {
 		logger.Fatalf("Failed to read config file %s: %v\n", configPath, err)
 	}
 
+	// Environment overrides take precedence over the config file.
+	applyApiKeyEnvOverrides(config, logger)
+
 	// Validate configuration
 	if err := validateConfig(config); err != nil {
 		logger.Fatalf("Invalid configuration: %v\n", err)
@@ -153,6 +161,34 @@ func ReadConfig(logger *log.Logger) *ControllerConfig {
 
 	AppConfig = config
 	return config
+}
+
+// applyApiKeyEnvOverrides applies the standard RUNNER_API_CLIENT_ID / RUNNER_API_CLIENT_SECRET
+// environment variables on top of the loaded config. They take precedence over api.clientId /
+// api.clientSecret from runner-config.yml, allowing API-key credentials to be injected via the
+// environment (e.g. from a Kubernetes secret) without baking them into the config file. Empty env
+// vars are ignored so they never clear a value set in the file.
+//
+// API key auth takes precedence over basic auth (see ApiConfig.NewAuthProvider), so supplying these
+// is sufficient to authenticate even when the config file still carries username/password.
+func applyApiKeyEnvOverrides(config *ControllerConfig, logger *log.Logger) {
+	clientId := os.Getenv(envApiClientId)
+	clientSecret := os.Getenv(envApiClientSecret)
+
+	// API key auth needs both halves; supplying only one via the environment is almost always a
+	// mistake (e.g. a typo'd secret name in the deployment), so warn loudly.
+	if (clientId != "") != (clientSecret != "") {
+		logger.Printf("Warning: only one of %s / %s is set in the environment; API key auth requires both. This is most likely a mistake.\n", envApiClientId, envApiClientSecret)
+	}
+
+	if clientId != "" {
+		logger.Printf("Using %s from environment\n", envApiClientId)
+		config.Api.ClientId = clientId
+	}
+	if clientSecret != "" {
+		logger.Printf("Using %s from environment\n", envApiClientSecret)
+		config.Api.ClientSecret = clientSecret
+	}
 }
 
 // validateApiAuth checks that at least one complete authentication method is configured for an

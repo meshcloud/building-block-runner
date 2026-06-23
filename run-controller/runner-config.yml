@@ -11,7 +11,8 @@ namespace: default
 # 127.0.0.1 host.minikube.internal
 api:
   url: http://host.minikube.internal:8080
-  # API key auth. Uncomment and set the credentials for this controller.
+  # API key auth. Uncomment and set the credentials for this controller, or provide them via the
+  # RUNNER_API_CLIENT_ID / RUNNER_API_CLIENT_SECRET environment variables (which take precedence).
   # clientId: your-client-id
   # clientSecret: your-client-secret
   #

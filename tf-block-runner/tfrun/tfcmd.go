@@ -38,6 +38,8 @@ type TfCmdParams struct {
 	source             *GitSource
 	preRunScript       *string
 	runMode            string
+	// planArtifactUrl is copied from Run.PlanArtifactUrl; empty means plain apply.
+	planArtifactUrl string
 }
 
 // GenericTfCmd implements generic functionality all TF commands re-use

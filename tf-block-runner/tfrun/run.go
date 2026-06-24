@@ -29,6 +29,9 @@ type Run struct {
 	PreRunScript           *string
 	RunToken               string
 	MeshstackBaseUrl       string
+	// PlanArtifactUrl is set (from the runner-facing _links.planArtifact.href) only when this
+	// APPLY run must apply a predecessor DETECT run's saved terraform plan. Empty => plain apply.
+	PlanArtifactUrl string
 }
 
 type Variable struct {

@@ -32,7 +32,7 @@ type WorkerTestSuite struct {
 }
 
 type MockRunApiCalls struct {
-	fetch, register, update func(*http.Request) *http.Response
+	fetch, register, update, download func(*http.Request) *http.Response
 }
 
 func noopCall(req *http.Request) *http.Response {
@@ -43,6 +43,10 @@ func noopCall(req *http.Request) *http.Response {
 
 func (suite *WorkerTestSuite) scenarioClientBehavior(req *http.Request) *http.Response {
 	switch {
+	// this is the predecessor plan-artifact download call
+	case req.Method == http.MethodGet && strings.Contains(req.URL.Path, "/plan-artifact"):
+		return suite.calls.download(req)
+
 	// this is the "status update" call
 	case req.Method == http.MethodPatch && strings.Contains(req.URL.Path, "/status/source"):
 		return suite.calls.update(req)
@@ -105,6 +109,7 @@ func (suite *WorkerTestSuite) SetupTest() {
 		fetch:    noopCall,
 		register: noopCall,
 		update:   noopCall,
+		download: noopCall,
 	}
 
 	suite.tfMock.initMockFuncs() // reset to default mock behavior
@@ -591,6 +596,58 @@ func mockValidRunDetailsFetchCall(behavior, repo, path string) func(_ *http.Requ
 							Implementation: implJSON,
 						},
 					},
+				},
+			},
+		)
+		header := make(http.Header)
+		header.Add("Content-Type", meshapi.BlockRunMediaTypeV1)
+
+		return &http.Response{
+			StatusCode: 200,
+			Body:       io.NopCloser(bytes.NewBuffer(body)),
+			Header:     header,
+		}
+	}
+}
+
+// mockApplyRunWithPlanArtifactFetchCall builds an APPLY run-details response whose _links contain
+// a planArtifact href, signalling the runner to apply a predecessor's saved plan instead of
+// re-planning.
+func mockApplyRunWithPlanArtifactFetchCall(repo, repoPath, planArtifactHref string) func(_ *http.Request) *http.Response {
+	return func(_ *http.Request) *http.Response {
+		implDTO := meshapi.TerraformImplementation{
+			TerraformVersion: DEFAULT_TF_VER,
+			RepositoryUrl:    repo,
+			RepositoryPath:   p(repoPath),
+			Async:            false,
+		}
+		implJSON, _ := json.Marshal(implDTO)
+		body, _ := json.Marshal(
+			&meshapi.RunDetailsDTO{
+				ApiVersion: "v1",
+				Kind:       "MeshBuildingBlockRun",
+				Metadata:   meshapi.RunMetaDTO{Uuid: "run-uuid"},
+				Spec: meshapi.RunSpecDTO{
+					RunNumber: 1,
+					Behavior:  APPLY.str(),
+					RunToken:  "test-mock-run-token-12345",
+					BuildingBlock: meshapi.BuildingBlockSpecDTO{
+						Uuid: "block-uuid",
+						Spec: meshapi.BuildingBlockDetailsSpecDTO{
+							DisplayName: "Test-BuildingBlock",
+							Inputs:      make([]meshapi.BuildingBlockInputSpecDTO, 0),
+						},
+					},
+					Definition: meshapi.DefinitionSpecDTO{
+						Uuid: "definition-uuid",
+						Spec: meshapi.DefinitionDetailsSpecDTO{
+							Version:        1,
+							Implementation: implJSON,
+						},
+					},
+				},
+				Links: meshapi.LinksDTO{
+					PlanArtifact: meshapi.LinkDTO{Href: planArtifactHref},
 				},
 			},
 		)

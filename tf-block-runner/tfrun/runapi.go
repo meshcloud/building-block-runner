@@ -3,6 +3,7 @@ package tfrun
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 
@@ -47,6 +48,9 @@ type RunApi interface {
 	Register(status *RunStatus) error
 	SetRunToken(token string) // Set the runToken from the fetched run
 	ClearRunToken()           // Clear the runToken to force basic auth for next fetch
+	// DownloadPredecessorArtifact streams the bytes referenced by the given absolute URL
+	// (the runner-facing _links.planArtifact.href) into w using the current run authentication.
+	DownloadPredecessorArtifact(url string, w io.Writer) error
 }
 
 func NewRunApi() RunApi {
@@ -73,6 +77,10 @@ func (api *RunApiClient) SetRunToken(token string) {
 // ClearRunToken clears the runToken to force basic auth for the next fetch.
 func (api *RunApiClient) ClearRunToken() {
 	api.auth.runToken = nil
+}
+
+func (api *RunApiClient) DownloadPredecessorArtifact(url string, w io.Writer) error {
+	return api.client.DownloadArtifact(url, w)
 }
 
 func (api *RunApiClient) FetchRunDetails(nodePostfix string) (*Run, error) {

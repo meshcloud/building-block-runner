@@ -2,22 +2,31 @@ package tfrun
 
 import (
 	"context"
+	"fmt"
+	"os"
+
+	"github.com/hashicorp/terraform-exec/tfexec"
 )
 
 type TfApplyCommand struct {
 	GenericTfCmd
+	// runApi is the authenticated run API client (same one used for status updates). APPLY is the
+	// only command that needs it: it downloads the predecessor plan artifact when
+	// params.planArtifactUrl is set.
+	runApi RunApi
 }
 
-func ApplyCmd(ctx context.Context, params *TfCmdParams, tfbin *TfBinaries) *TfApplyCommand {
+func ApplyCmd(ctx context.Context, params *TfCmdParams, tfbin *TfBinaries, runApi RunApi) *TfApplyCommand {
 	runContextInfo := ctx.Value(runInfoContextKey).(*RunContextInfo)
 
 	return &TfApplyCommand{
-		GenericTfCmd{
+		GenericTfCmd: GenericTfCmd{
 			ctx:            ctx,
 			runContextInfo: runContextInfo,
 			bin:            tfbin,
 			params:         params,
 		},
+		runApi: runApi,
 	}
 }
 
@@ -157,10 +166,26 @@ func (tfcmd *TfApplyCommand) execute() {
 
 	tfcmd.advanceStep(preRunUserMsg)
 
-	// Variables are now in meshstack.auto.tfvars file, no command-line args needed
-	if err = tf.Apply(tfcmd.ctx); err != nil {
-		tfcmd.fail(err)
-		return
+	if tfcmd.params.planArtifactUrl != "" {
+		// This APPLY is linked to a predecessor DETECT run: instead of re-planning we apply the
+		// EXACT terraform plan that was previewed during that dry-run. The bytes are downloaded
+		// from the runner-facing planArtifact link with the run's bearer auth.
+		//
+		// terraform note: applying a saved plan rejects variable INPUT supplied via the -var /
+		// -var-file command-line flags, but auto-loaded *.auto.tfvars files present in the working
+		// directory are simply ignored (the saved plan embeds the variable values). Since this
+		// runner supplies variables exclusively via *.auto.tfvars files (see vars()), the existing
+		// vars()/saveInputFiles() steps stay in place and do not conflict with the saved plan.
+		if err = tfcmd.applyPredecessorPlan(tf); err != nil {
+			tfcmd.fail(err)
+			return
+		}
+	} else {
+		// Variables are now in meshstack.auto.tfvars file, no command-line args needed
+		if err = tf.Apply(tfcmd.ctx); err != nil {
+			tfcmd.fail(err)
+			return
+		}
 	}
 
 	tfcmd.advanceStep(nil)
@@ -174,4 +199,52 @@ func (tfcmd *TfApplyCommand) execute() {
 	tfcmd.runContextInfo.filename_state = defaultStateFilename
 
 	tfcmd.completeRun(nil)
+}
+
+// applyPredecessorPlan downloads the predecessor DETECT run's saved terraform plan and applies it
+// verbatim via `terraform apply <plan>`. It must be called only after createFreshCommandWd() (which
+// wipes the working directory) and after init, so the downloaded plan file and the initialized
+// .terraform directory coexist. The plan bytes are written to the same <wd>/plan.tfplan path that
+// the DETECT path produces.
+//
+// Known limitation — provider version drift: APPLY runs in a fresh working directory and re-runs
+// `terraform init` (with -upgrade, see GenericTfCmd.init), so it re-selects provider versions
+// independently of the DETECT run that produced this plan. If a provider publishes a new release
+// between the dry-run and the approval, terraform will reject the saved plan because its embedded
+// provider versions no longer match the freshly installed ones. This is inherent to applying a
+// saved plan across separate runs without persisting the predecessor's .terraform.lock.hcl. We do
+// not attempt to re-plan transparently; instead the apply below fails with an actionable message
+// telling the user to re-run the dry-run. Committing .terraform.lock.hcl in the building block does
+// not by itself avoid this, since init still runs with -upgrade.
+func (tfcmd *TfApplyCommand) applyPredecessorPlan(tf TfFacade) error {
+	tfcmd.Println("Applying predecessor plan artifact instead of re-planning.")
+
+	planFile := tfcmd.runContextInfo.artifactFilePath
+	f, err := os.OpenFile(planFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return fmt.Errorf("failed to create predecessor plan artifact file %s: %w", planFile, err)
+	}
+	// Stream the download straight to disk so a large terraform plan is never fully buffered in RAM.
+	if err := tfcmd.runApi.DownloadPredecessorArtifact(tfcmd.params.planArtifactUrl, f); err != nil {
+		f.Close()
+		// A planArtifact link was handed out only when the predecessor plan is genuinely available,
+		// so a download failure here means the previewed plan can no longer be retrieved. Fail the
+		// run rather than silently falling back to a fresh apply.
+		return fmt.Errorf("failed to download the previewed terraform plan for this approval: %w. "+
+			"The dry-run that produced this plan must be re-run before the change can be applied", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("failed to write predecessor plan artifact to %s: %w", planFile, err)
+	}
+	tfcmd.Printfln("Wrote predecessor plan artifact to %s", planFile)
+
+	if err := tf.Apply(tfcmd.ctx, tfexec.DirOrPlan(planFile)); err != nil {
+		// terraform rejects a saved plan whose state/config drifted since the dry-run
+		// (e.g. "Saved plan is stale" / provider or state changes). Do not silently re-plan.
+		return fmt.Errorf("applying the previewed terraform plan failed: %w. "+
+			"The previewed plan is no longer valid — the underlying state, configuration, or providers "+
+			"changed since the dry-run. Please re-run the dry-run to produce and approve a fresh plan", err)
+	}
+
+	return nil
 }

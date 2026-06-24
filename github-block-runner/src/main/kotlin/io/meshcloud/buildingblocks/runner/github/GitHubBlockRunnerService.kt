@@ -579,8 +579,10 @@ class GithubBlockRunnerService(
     )
 
     val runUuid = blockRunClient.activeBlockRun.meshObject.metadata.uuid
-    log.info {
-      "Successfully triggered GitHub action '$githubWorkflow' for run: $runUuid, starting status polling"
+    if (isAsync) {
+      log.info { "Successfully triggered GitHub action '$githubWorkflow' for run: $runUuid, async mode — runner will exit and await API callback from workflow" }
+    } else {
+      log.info { "Successfully triggered GitHub action '$githubWorkflow' for run: $runUuid, starting status polling" }
     }
 
     blockRunClient.updateBlockRun(update)

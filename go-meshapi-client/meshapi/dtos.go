@@ -21,6 +21,10 @@ type LinksDTO struct {
 	RegisterSource   LinkDTO `json:"registerSource"`
 	UpdateSource     LinkDTO `json:"updateSource"`
 	MeshstackBaseUrl LinkDTO `json:"meshstackBaseUrl"`
+	// PlanArtifact carries a link ONLY when this APPLY run must apply a predecessor DETECT run's
+	// saved terraform plan. Because it is a value (not pointer) struct, an absent JSON field
+	// unmarshals to a zero LinkDTO: an empty Href is the runner's signal to perform a plain apply.
+	PlanArtifact LinkDTO `json:"planArtifact,omitempty"`
 }
 
 type LinkDTO struct {

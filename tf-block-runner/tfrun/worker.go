@@ -149,6 +149,7 @@ func (w *Worker) workRoutine(ctx context.Context, run *Run, wg *sync.WaitGroup, 
 		source:             run.Source,
 		preRunScript:       run.PreRunScript,
 		runMode:            run.Behavior.str(),
+		planArtifactUrl:    run.PlanArtifactUrl,
 	}
 
 	var tfCommand TfCmd
@@ -156,7 +157,7 @@ func (w *Worker) workRoutine(ctx context.Context, run *Run, wg *sync.WaitGroup, 
 	switch run.Behavior {
 
 	case APPLY:
-		tfCommand = ApplyCmd(ctx, params, w.tfBinaries)
+		tfCommand = ApplyCmd(ctx, params, w.tfBinaries, w.runApi)
 
 	case DETECT:
 		tfCommand = PlanCmd(ctx, params, w.tfBinaries)

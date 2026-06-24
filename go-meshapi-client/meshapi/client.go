@@ -14,6 +14,13 @@ const (
 	EPRunSourceUpdate       = "%s/api/meshobjects/meshbuildingblockruns/%s/status/source/%s"
 
 	BlockRunMediaTypeV1 = "application/vnd.meshcloud.api.meshbuildingblockrun.v1.hal+json"
+
+	// maxArtifactBytes caps a streamed artifact download (e.g. a saved terraform plan) so a
+	// misbehaving or compromised server cannot exhaust the runner's disk.
+	maxArtifactBytes = 128 << 20 // 128 MiB
+	// maxErrorBodyBytes caps how much of a non-2xx response body is read into memory for the
+	// error message, so a huge error response cannot exhaust the runner's RAM.
+	maxErrorBodyBytes = 16 << 20 // 16 MiB
 )
 
 var (
@@ -112,6 +119,50 @@ func (c *Client) FetchRun(runnerUUID string) (*RunDetailsDTO, []byte, error) {
 	}
 
 	return dto, data, nil
+}
+
+// DownloadArtifact performs an authenticated GET to the given absolute URL and streams the
+// response body into w. It is used to download a binary artifact (e.g. a predecessor run's saved
+// terraform plan) referenced by a HAL link. Unlike the JSON endpoints it requests
+// application/octet-stream. Streaming via io.Copy avoids buffering the whole artifact in memory,
+// which matters for large terraform plans. Any non-2xx response is returned as an error so a
+// missing/expired artifact surfaces to the caller (and fails the run) rather than being silently
+// treated as empty.
+func (c *Client) DownloadArtifact(url string, w io.Writer) error {
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return fmt.Errorf("download artifact %s: failed to create request: %w", url, err)
+	}
+	// Reuse the standard auth/runner headers, then request raw bytes instead of HAL+JSON.
+	c.setHeaders(req)
+	req.Header.Set("Accept", "application/octet-stream")
+	req.Header.Del("Content-Type") // no request body
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("download artifact %s: request failed: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
+		if readErr != nil {
+			return fmt.Errorf("download artifact %s returned HTTP %d (failed to read error body: %v)", url, resp.StatusCode, readErr)
+		}
+		return fmt.Errorf("download artifact %s returned HTTP %d: %s", url, resp.StatusCode, string(respBody))
+	}
+
+	// Bound the streamed copy so an unexpectedly huge response cannot fill the disk. We read one
+	// byte past the limit so an oversized artifact is rejected rather than silently truncated.
+	n, err := io.Copy(w, io.LimitReader(resp.Body, maxArtifactBytes+1))
+	if err != nil {
+		return fmt.Errorf("download artifact %s: failed to read body: %w", url, err)
+	}
+	if n > maxArtifactBytes {
+		return fmt.Errorf("download artifact %s: artifact exceeds the maximum allowed size of %d bytes", url, maxArtifactBytes)
+	}
+
+	return nil
 }
 
 // RegisterSource registers the caller as a status source for the given run via POST.

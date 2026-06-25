@@ -123,14 +123,26 @@ See the individual module READMEs for module-specific instructions:
 
 ## Release
 
-Releases are created from `main` by tagging the current commit and pushing the tag:
+Releases are cut from GitHub — no local checkout or manual tagging needed:
 
-```bash
-git checkout main
-git pull
-git tag v1.2.3
-git push origin v1.2.3
-```
+1. Go to **Actions → Release → Run workflow** (on the `main` branch).
+2. Pick the **bump**:
+   - `auto` (default) — derives the next version from the conventional commits
+     since the last release (`feat:` → minor, `fix:`/`chore:`/… → patch,
+     `feat!:`/`BREAKING CHANGE` → major).
+   - `patch` / `minor` / `major` — force a specific bump.
+   - Or set **version** to an explicit value (e.g. `v1.2.3`) to override the bump.
+3. Run it. The workflow computes the next version, creates the git tag, publishes
+   a **GitHub Release** with notes generated from the conventional commits, and
+   then builds and pushes the Docker images.
+
+Release notes quality depends on [Conventional Commits](https://www.conventionalcommits.org/)
+— keep using `feat:`, `fix:`, `chore:`, etc. The grouping is configured in
+[cliff.toml](cliff.toml).
+
+> Pushing a `v*` tag manually still works as a fallback (it triggers
+> [build-images.yml](.github/workflows/build-images.yml) directly), but it will
+> **not** create a GitHub Release with notes — prefer the workflow above.
 
 ## Contributing
 

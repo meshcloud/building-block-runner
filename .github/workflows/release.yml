@@ -1,80 +1,138 @@
 name: Release
 
-env:
-  REGISTRY: ghcr.io
-  DOCKERHUB_REGISTRY: docker.io
-  IMAGE_NAMESPACE: ${{ github.repository_owner }}
-
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump (auto = derive from conventional commits)"
+        type: choice
+        options:
+          - auto
+          - patch
+          - minor
+          - major
+        default: auto
+      version:
+        description: "Explicit version override, e.g. v1.2.3 (skips bump calc)"
+        type: string
+        required: false
 
 jobs:
-  release:
+  prepare:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0 # full history + tags needed for changelog and version calc
+
+      - name: Determine next version
+        id: version
+        run: |
+          INPUT_VERSION="${{ inputs.version }}"
+          BUMP="${{ inputs.bump }}"
+
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="$INPUT_VERSION"
+          else
+            LATEST_TAG=$(git describe --tags --match "v*" --abbrev=0 2>/dev/null || echo "v0.0.0")
+            RANGE="${LATEST_TAG:+${LATEST_TAG}..}HEAD"
+
+            # for "auto", derive the bump from conventional commits since the last tag
+            if [ "$BUMP" = "auto" ]; then
+              LOG=$(git log "$RANGE" --pretty=format:'%s%n%b')
+              if echo "$LOG" | grep -qE '^[a-z]+(\([^)]*\))?!:|BREAKING CHANGE'; then
+                BUMP=major
+              elif echo "$LOG" | grep -qE '^feat(\([^)]*\))?:'; then
+                BUMP=minor
+              else
+                # fix / chore / ci / docs / etc. -> patch
+                BUMP=patch
+              fi
+              echo "Auto-detected bump: ${BUMP}"
+            fi
+
+            CURRENT=${LATEST_TAG#v}
+            MAJOR=$(echo "$CURRENT" | cut -d. -f1)
+            MINOR=$(echo "$CURRENT" | cut -d. -f2)
+            PATCH=$(echo "$CURRENT" | cut -d. -f3)
+
+            case "$BUMP" in
+              major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+              minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+              patch) PATCH=$((PATCH + 1)) ;;
+            esac
+
+            VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+          fi
+
+          # normalise to a leading "v"
+          case "$VERSION" in
+            v*) ;;
+            *) VERSION="v${VERSION}" ;;
+          esac
+
+          echo "Resolved release version: ${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      # Install git-cliff from its official GitHub release, pinned to an exact
+      # version and verified against a SHA-512 hard-coded here (and reviewed in
+      # this repo). We deliberately do NOT use a third-party Action wrapper:
+      # the only code that runs is this step plus the verified git-cliff binary,
+      # and a tampered upstream artifact fails the checksum and aborts the build.
+      - name: Install git-cliff (pinned + checksum-verified)
+        env:
+          GIT_CLIFF_VERSION: "2.13.1"
+          # sha512 of git-cliff-${GIT_CLIFF_VERSION}-x86_64-unknown-linux-gnu.tar.gz
+          GIT_CLIFF_SHA512: "e716cce3a07dda41b1e370d6afbd7a59eb3d4739509fb7856aeec8da2be28c0396584e29e106141c1a1c535c1827dbc1f60417524f5cfb1da9e11f700bd00f30"
+        run: |
+          set -euo pipefail
+          target="x86_64-unknown-linux-gnu"
+          tarball="git-cliff-${GIT_CLIFF_VERSION}-${target}.tar.gz"
+          url="https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/${tarball}"
+
+          # release runs are infrequent; retry to tolerate transient network errors
+          for attempt in 1 2 3; do
+            curl -fsSL -o "$tarball" "$url" && break
+            echo "git-cliff download attempt ${attempt} failed; retrying in 5s..." >&2
+            sleep 5
+          done
+
+          echo "${GIT_CLIFF_SHA512}  ${tarball}" | sha512sum -c -
+
+          tar -xzf "$tarball"
+          install -Dm755 "git-cliff-${GIT_CLIFF_VERSION}/git-cliff" "$HOME/.local/bin/git-cliff"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/git-cliff" --version
+
+      - name: Generate release notes
+        run: |
+          git-cliff --config cliff.toml \
+            --unreleased --tag "${{ steps.version.outputs.version }}" \
+            --strip header -o RELEASE_NOTES.md
+
+      - name: Create tag and GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$VERSION"
+          git push origin "$VERSION"
+          gh release create "$VERSION" \
+            --title "$VERSION" \
+            --notes-file RELEASE_NOTES.md
+
+  build:
+    needs: prepare
     permissions:
       contents: read
       packages: write
-    strategy:
-      matrix:
-        include:
-          - app: run-controller
-            dockerfile: run-controller/Dockerfile
-          - app: tf-block-runner
-            dockerfile: tf-block-runner/Dockerfile
-          - app: manual-block-runner
-            dockerfile: containers/jvm.Dockerfile
-            runner-module: manual-block-runner
-          - app: github-block-runner
-            dockerfile: containers/jvm.Dockerfile
-            runner-module: github-block-runner
-          - app: gitlab-block-runner
-            dockerfile: containers/jvm.Dockerfile
-            runner-module: gitlab-block-runner
-          - app: azure-devops-block-runner
-            dockerfile: containers/jvm.Dockerfile
-            runner-module: azure-devops-block-runner
-
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Parse version
-        id: version
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/}
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
-
-      - name: Login to GHCR
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Login to Docker Hub
-        if: github.repository_owner == 'meshcloud'
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
-        with:
-          registry: ${{ env.DOCKERHUB_REGISTRY }}
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Build and push ${{ matrix.app }}
-        if: github.repository_owner == 'meshcloud'
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
-        with:
-          context: .
-          file: ${{ matrix.dockerfile }}
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:${{ steps.version.outputs.version }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:latest
-            ${{ env.DOCKERHUB_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:${{ steps.version.outputs.version }}
-            ${{ env.DOCKERHUB_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:latest
-          build-args: |
-            VERSION=${{ steps.version.outputs.version }}
-            RUNNER_MODULE=${{ matrix.runner-module }}
+    uses: ./.github/workflows/build-images.yml
+    with:
+      version: ${{ needs.prepare.outputs.version }}
+    secrets: inherit

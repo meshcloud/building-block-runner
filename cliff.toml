@@ -1,0 +1,46 @@
+# git-cliff configuration — generates GitHub Release notes from conventional commits.
+# Notes are published to the GitHub Release body only; no CHANGELOG.md is committed.
+# See https://git-cliff.org/docs/configuration
+
+[changelog]
+# Rendered once at the top; stripped via `--strip header` in the workflow.
+header = ""
+
+# Body template for the release notes. Groups commits by type.
+# No version heading — the GitHub Release title already shows the version.
+# The compare link is rendered as a "Full Changelog" footer line instead.
+body = """
+{%- for group, commits in commits | group_by(attribute="group") %}
+### {{ group | upper_first }}
+{% for commit in commits %}
+- {{ commit.message | upper_first | trim }}\
+{% if commit.id %} ([{{ commit.id | truncate(length=7, end="") }}]({{ self::repo_url() }}/commit/{{ commit.id }})){% endif %}\
+{%- endfor %}
+{% endfor %}
+{%- if version and previous and previous.version %}
+**Full Changelog**: {{ self::repo_url() }}/compare/{{ previous.version }}...{{ version }}
+{% endif -%}
+{% macro repo_url() %}https://github.com/meshcloud/building-block-runner{% endmacro %}
+"""
+trim = true
+footer = ""
+
+[git]
+# Parse commits according to the Conventional Commits spec.
+conventional_commits = true
+filter_unconventional = true
+split_commits = false
+
+# Only user-facing changes appear in release notes: features and bug fixes.
+# Everything else (refactor, perf, docs, chore, ci, build, style, test, and any
+# non-conventional commit) is intentionally skipped.
+commit_parsers = [
+  { message = "^feat", group = "Features" },
+  { message = "^fix", group = "Bug Fixes" },
+  { message = ".*", skip = true },
+]
+
+# Process commits newest-first within each group.
+filter_commits = false
+tag_pattern = "v[0-9]*"
+sort_commits = "newest"

@@ -2,7 +2,7 @@ blockrunner:
   version: ${VERSION:dev}
   uuid: ${RUNNER_UUID:606f54c8-ed3b-4a79-ad80-971dfb4eff21}
   api:
-    url: ${RUNNER_API_URL:http://localhost:8080}
+    url: ${RUNNER_API_URL:http://localhost:8302}
   auth:
     username: ${RUNNER_API_USERNAME:bb-api}
     password: ${RUNNER_API_PASSWORD:guest}

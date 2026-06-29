@@ -5,7 +5,7 @@ blockrunner:
   # success and fail. It can be handy for easy local development.
   debugMode: false
   api:
-    url: ${RUNNER_API_URL:http://localhost:8080}
+    url: ${RUNNER_API_URL:http://localhost:8301}
   auth:
     username: ${RUNNER_API_USERNAME:bb-api}
     password: ${RUNNER_API_PASSWORD:guest}

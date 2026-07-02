@@ -127,9 +127,9 @@ func (suite *WorkerTestSuite) SetupTest() {
 		workerOut:    make(chan workerToken, 2),
 		runApi: &RunApiClient{
 			rid:        "scenario-runner",
-			baseURL:    "",
+			baseURL:    "http://localhost",
 			auth:       scenarioAuth,
-			client:     meshapi.NewClientWithHTTP("", "scenario-runner", scenarioAuth, mockHC),
+			client:     meshapi.NewClientWithHTTP("http://localhost", "scenario-runner", scenarioAuth, mockHC),
 			httpClient: mockHC,
 		},
 		log:                  log.New(io.Discard, "", log.LstdFlags),
@@ -610,9 +610,6 @@ func mockValidRunDetailsFetchCall(behavior, repo, path string) func(_ *http.Requ
 	}
 }
 
-// mockApplyRunWithPlanArtifactFetchCall builds an APPLY run-details response whose _links contain
-// a planArtifact href, signalling the runner to apply a predecessor's saved plan instead of
-// re-planning.
 func mockApplyRunWithPlanArtifactFetchCall(repo, repoPath, planArtifactHref string) func(_ *http.Request) *http.Response {
 	return func(_ *http.Request) *http.Response {
 		implDTO := meshapi.TerraformImplementation{

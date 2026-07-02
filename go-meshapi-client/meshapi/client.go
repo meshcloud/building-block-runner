@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 )
 
 const (
@@ -121,17 +123,21 @@ func (c *Client) FetchRun(runnerUUID string) (*RunDetailsDTO, []byte, error) {
 	return dto, data, nil
 }
 
-// DownloadArtifact performs an authenticated GET to the given absolute URL and streams the
-// response body into w. It is used to download a binary artifact (e.g. a predecessor run's saved
-// terraform plan) referenced by a HAL link. Unlike the JSON endpoints it requests
-// application/octet-stream. Streaming via io.Copy avoids buffering the whole artifact in memory,
-// which matters for large terraform plans. Any non-2xx response is returned as an error so a
-// missing/expired artifact surfaces to the caller (and fails the run) rather than being silently
-// treated as empty.
-func (c *Client) DownloadArtifact(url string, w io.Writer) error {
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+// DownloadArtifact performs an authenticated GET and streams the response body into w rather than
+// buffering it, since artifacts like terraform plans can be large. A non-2xx response is returned
+// as an error rather than treated as empty, so a missing/expired artifact fails the run visibly.
+func (c *Client) DownloadArtifact(artifactURL string, w io.Writer) error {
+	// Enforce same-origin (scheme + host) as the configured baseURL before attaching auth. The
+	// artifact URL is an absolute href taken from an API response; if a malicious or buggy API ever
+	// returned an href pointing at a different host, setHeaders would leak the run bearer token to
+	// that host (and enable SSRF-style requests through the runner). Reject any cross-origin URL.
+	if err := c.assertSameOrigin(artifactURL); err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, artifactURL, nil)
 	if err != nil {
-		return fmt.Errorf("download artifact %s: failed to create request: %w", url, err)
+		return fmt.Errorf("download artifact %s: failed to create request: %w", artifactURL, err)
 	}
 	// Reuse the standard auth/runner headers, then request raw bytes instead of HAL+JSON.
 	c.setHeaders(req)
@@ -140,28 +146,46 @@ func (c *Client) DownloadArtifact(url string, w io.Writer) error {
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("download artifact %s: request failed: %w", url, err)
+		return fmt.Errorf("download artifact %s: request failed: %w", artifactURL, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
 		if readErr != nil {
-			return fmt.Errorf("download artifact %s returned HTTP %d (failed to read error body: %v)", url, resp.StatusCode, readErr)
+			return fmt.Errorf("download artifact %s returned HTTP %d (failed to read error body: %v)", artifactURL, resp.StatusCode, readErr)
 		}
-		return fmt.Errorf("download artifact %s returned HTTP %d: %s", url, resp.StatusCode, string(respBody))
+		return fmt.Errorf("download artifact %s returned HTTP %d: %s", artifactURL, resp.StatusCode, string(respBody))
 	}
 
 	// Bound the streamed copy so an unexpectedly huge response cannot fill the disk. We read one
 	// byte past the limit so an oversized artifact is rejected rather than silently truncated.
 	n, err := io.Copy(w, io.LimitReader(resp.Body, maxArtifactBytes+1))
 	if err != nil {
-		return fmt.Errorf("download artifact %s: failed to read body: %w", url, err)
+		return fmt.Errorf("download artifact %s: failed to read body: %w", artifactURL, err)
 	}
 	if n > maxArtifactBytes {
-		return fmt.Errorf("download artifact %s: artifact exceeds the maximum allowed size of %d bytes", url, maxArtifactBytes)
+		return fmt.Errorf("download artifact %s: artifact exceeds the maximum allowed size of %d bytes", artifactURL, maxArtifactBytes)
 	}
 
+	return nil
+}
+
+// This guards DownloadArtifact against leaking the run bearer
+// token — attached by setHeaders — to any host other than the meshfed API the client was created for.
+func (c *Client) assertSameOrigin(artifactURL string) error {
+	base, err := url.Parse(c.baseURL)
+	if err != nil {
+		return fmt.Errorf("download artifact %s: invalid client baseURL %q: %w", artifactURL, c.baseURL, err)
+	}
+	target, err := url.Parse(artifactURL)
+	if err != nil {
+		return fmt.Errorf("download artifact %s: invalid artifact URL: %w", artifactURL, err)
+	}
+	if !strings.EqualFold(target.Scheme, base.Scheme) || !strings.EqualFold(target.Host, base.Host) {
+		return fmt.Errorf("download artifact %s: refusing to send authenticated request to a host other than %s://%s",
+			artifactURL, base.Scheme, base.Host)
+	}
 	return nil
 }
 

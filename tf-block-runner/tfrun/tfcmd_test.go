@@ -496,6 +496,46 @@ func Test_setEnvWith_DoesNotOverwriteExistingMeshStackRunVarsFile(t *testing.T) 
 	assert.Equal(t, string(customMeshStackRunVarsTf), string(content), "Existing file should not be overwritten")
 }
 
+// Test_buildTfEnv_WithMeshBackendFallbackAndRunToken_SetsTfHttpBasicAuthEnv verifies that when the
+// meshStack HTTP backend is in play, buildTfEnv supplies the run token via TF_HTTP_USERNAME/PASSWORD
+// (Basic auth) rather than baking it into the backend config, so OpenTofu re-reads a live token at
+// every plan/apply instead of embedding a since-revoked one into a saved plan.
+func Test_buildTfEnv_WithMeshBackendFallbackAndRunToken_SetsTfHttpBasicAuthEnv(t *testing.T) {
+	uut := makeTestGenericTfCmd(t)
+	uut.runContextInfo.useMeshBackendFallback = true
+	uut.runContextInfo.runToken = "ephemeral-run-token"
+
+	capturedEnv, err := uut.buildTfEnv()
+	require.NoError(t, err)
+
+	assert.Equal(t, MeshStackRunTokenBasicUser, capturedEnv["TF_HTTP_USERNAME"])
+	assert.Equal(t, "ephemeral-run-token", capturedEnv["TF_HTTP_PASSWORD"])
+}
+
+// Test_buildTfEnv_WithoutMeshBackendFallback_DoesNotSetTfHttpBasicAuthEnv verifies that
+// buildTfEnv leaves TF_HTTP_* unset when the meshStack backend is not in play (e.g. a building
+// block brings its own backend), and also when no runToken is available.
+func Test_buildTfEnv_WithoutMeshBackendFallback_DoesNotSetTfHttpBasicAuthEnv(t *testing.T) {
+	uut := makeTestGenericTfCmd(t)
+	uut.runContextInfo.useMeshBackendFallback = false
+	uut.runContextInfo.runToken = "ephemeral-run-token"
+
+	capturedEnv, err := uut.buildTfEnv()
+	require.NoError(t, err)
+
+	assert.NotContains(t, capturedEnv, "TF_HTTP_USERNAME")
+	assert.NotContains(t, capturedEnv, "TF_HTTP_PASSWORD")
+
+	uut.runContextInfo.useMeshBackendFallback = true
+	uut.runContextInfo.runToken = ""
+
+	capturedEnv, err = uut.buildTfEnv()
+	require.NoError(t, err)
+
+	assert.NotContains(t, capturedEnv, "TF_HTTP_USERNAME")
+	assert.NotContains(t, capturedEnv, "TF_HTTP_PASSWORD")
+}
+
 func Test_createMeshStackHttpBackendFile_MissingRunToken_ReturnsError(t *testing.T) {
 	originalConfig := AppConfig
 	AppConfig = TfRunnerConfig{
@@ -527,9 +567,10 @@ func Test_createMeshStackHttpBackendFile_MissingRunToken_ReturnsError(t *testing
 	assert.Empty(t, filesWritten, "no backend file should be written when runToken is missing")
 }
 
-// Test_createMeshStackHttpBackendFile_WithRunToken verifies that when a runToken is available
-// (Kubernetes / single-run mode), the generated backend config uses a Bearer authorization
-// header instead of static username/password credentials.
+// Test_createMeshStackHttpBackendFile_WithRunToken verifies that the generated backend config
+// contains only the state endpoint address and no auth (no headers/Authorization/Bearer) — the
+// runToken is supplied to Terraform via TF_HTTP_USERNAME/TF_HTTP_PASSWORD env vars instead (see
+// buildTfEnv), so nothing secret is baked into a saved plan.
 // It also verifies that meshstackBaseUrl from the run links is used as the backend base URL.
 func Test_createMeshStackHttpBackendFile_WithRunToken(t *testing.T) {
 	originalConfig := AppConfig
@@ -560,6 +601,10 @@ func Test_createMeshStackHttpBackendFile_WithRunToken(t *testing.T) {
 			}
 			asserted = true
 			g.Assert(t, "backend", content)
+			assert.Contains(t, string(content), "address")
+			assert.NotContains(t, string(content), "headers")
+			assert.NotContains(t, string(content), "Authorization")
+			assert.NotContains(t, string(content), "Bearer")
 		}
 		return nil
 	}))

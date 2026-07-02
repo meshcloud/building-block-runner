@@ -166,21 +166,18 @@ func (tfcmd *TfApplyCommand) execute() {
 
 	tfcmd.advanceStep(preRunUserMsg)
 
-	if tfcmd.params.planArtifactUrl != "" {
-		// This APPLY is linked to a predecessor DETECT run: instead of re-planning we apply the
-		// EXACT terraform plan that was previewed during that dry-run. The bytes are downloaded
-		// from the runner-facing planArtifact link with the run's bearer auth.
-		//
-		// terraform note: applying a saved plan rejects variable INPUT supplied via the -var /
-		// -var-file command-line flags, but auto-loaded *.auto.tfvars files present in the working
-		// directory are simply ignored (the saved plan embeds the variable values). Since this
-		// runner supplies variables exclusively via *.auto.tfvars files (see vars()), the existing
-		// vars()/saveInputFiles() steps stay in place and do not conflict with the saved plan.
+	if applyingPredecessorPlan := tfcmd.params.planArtifactUrl != ""; applyingPredecessorPlan {
+		// This APPLY is linked to a predecessor DETECT run, so we replay the exact plan previewed
+		// during that dry-run instead of computing a fresh one — the change is applied precisely as
+		// it was reviewed and approved.
 		if err = tfcmd.applyPredecessorPlan(tf); err != nil {
 			tfcmd.fail(err)
 			return
 		}
 	} else {
+		// No predecessor plan artifact was linked to this APPLY run, so we run a fresh
+		// terraform apply. Surfaced to the user so the two apply paths are distinguishable.
+		tfcmd.PrintlnUser("No plan artifact linked to this run; running a fresh terraform apply.")
 		// Variables are now in meshstack.auto.tfvars file, no command-line args needed
 		if err = tf.Apply(tfcmd.ctx); err != nil {
 			tfcmd.fail(err)
@@ -217,7 +214,7 @@ func (tfcmd *TfApplyCommand) execute() {
 // telling the user to re-run the dry-run. Committing .terraform.lock.hcl in the building block does
 // not by itself avoid this, since init still runs with -upgrade.
 func (tfcmd *TfApplyCommand) applyPredecessorPlan(tf TfFacade) error {
-	tfcmd.Println("Applying predecessor plan artifact instead of re-planning.")
+	tfcmd.PrintlnUser("Using the provided plan artifact from the dry-run; applying it verbatim instead of re-planning.")
 
 	planFile := tfcmd.runContextInfo.artifactFilePath
 	f, err := os.OpenFile(planFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)

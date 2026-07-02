@@ -38,6 +38,27 @@ func TestDownloadArtifact_StreamsBodyIntoWriter(t *testing.T) {
 	assert.Equal(t, "Bearer run-token", gotAuth, "run auth should still be applied")
 }
 
+func TestDownloadArtifact_RejectsCrossOriginURL(t *testing.T) {
+	// The artifact host must match the client's configured baseURL, otherwise the run bearer token
+	// attached by setHeaders would leak to a foreign host. The request must never be issued.
+	var reached bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	client := NewClientWithHTTP("https://api.example.com", "test-node", BearerTokenAuth{Token: "run-token"}, srv.Client())
+
+	var buf bytes.Buffer
+	err := client.DownloadArtifact(srv.URL+"/artifact", &buf)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "refusing to send authenticated request")
+	assert.False(t, reached, "the cross-origin request must not be issued")
+	assert.Empty(t, buf.Bytes())
+}
+
 func TestDownloadArtifact_Non2xxReturnsErrorWithBody(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "artifact expired", http.StatusNotFound)

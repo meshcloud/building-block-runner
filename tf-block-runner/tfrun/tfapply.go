@@ -203,9 +203,9 @@ func (tfcmd *TfApplyCommand) execute() {
 
 // applyPredecessorPlan downloads the predecessor DETECT run's saved terraform plan and applies it
 // verbatim via `terraform apply <plan>`. It must be called only after createFreshCommandWd() (which
-// wipes the working directory) and after init, so the downloaded plan file and the initialized
-// .terraform directory coexist. The plan bytes are written to the same <wd>/plan.tfplan path that
-// the DETECT path produces.
+// copies the source files into the per-run working directory) and after init, so the downloaded plan
+// file and the initialized .terraform directory coexist. The plan bytes are written to the same
+// <wd>/plan.tfplan path that the DETECT path produces.
 //
 // Known limitation — provider version drift: APPLY runs in a fresh working directory and re-runs
 // `terraform init` (with -upgrade, see GenericTfCmd.init), so it re-selects provider versions

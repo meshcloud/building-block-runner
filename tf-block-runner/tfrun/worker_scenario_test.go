@@ -405,7 +405,7 @@ func (suite *WorkerTestSuite) Test_ApplyTfFailure() {
 	// UserMessage is now set to the error text for better panel visibility
 	assert.NotNil(suite.T(), executeTf.UserMessage)
 	assert.Equal(suite.T(), "test error", *executeTf.UserMessage)
-	assert.Equal(suite.T(), "apply in progress\nfailure\ntest error\n", *executeTf.SystemMessage) // includes error message
+	assert.Equal(suite.T(), "No plan artifact linked to this run; running a fresh terraform apply.\napply in progress\nfailure\ntest error\n", *executeTf.SystemMessage) // includes error message
 
 	outputStep := findStep(suite.T(), update, StepOutput)
 	assert.Equal(suite.T(), FAILED.str(), *outputStep.Status)
@@ -526,8 +526,13 @@ func (suite *WorkerTestSuite) Test_UpdatesStatusWithLiveLogs() {
 	assert.GreaterOrEqual(suite.T(), len(updateCalls), 9) // updates every 500ms, apply duration is minimum 5s
 
 	// to verify, we check if there are at least the expected updates existing
-	// with the systemMessages ["0", "01", "012", "0123", "01234"] in the execute_tf step
+	// with the systemMessages ["0", "01", "012", "0123", "01234"] in the execute_tf step,
+	// prefixed with the "no predecessor plan" notice logged before a fresh apply.
+	const noPredecessorNotice = "No plan artifact linked to this run; running a fresh terraform apply.\n"
 	expectedLogUpdates := []string{"0", "01", "012", "0123", "01234"}
+	for i, suffix := range expectedLogUpdates {
+		expectedLogUpdates[i] = noPredecessorNotice + suffix
+	}
 
 	for _, expected := range expectedLogUpdates {
 		found := false

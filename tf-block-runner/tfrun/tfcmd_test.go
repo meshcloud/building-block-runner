@@ -415,10 +415,13 @@ func Test_extractContentFromDataUrl(t *testing.T) {
 	}
 }
 
-// Test_prepareEnv_CreatesMeshStackRunVarsFile tests that:
-// 1. The meshStack_run_vars.tf file is created when it doesn't exist
-// Note: meshStack variables are now in *.auto.tfvars, not environment variables
-// Only variables not already defined will be written!
+// Test_setEnvWith_CreatesMeshStackRunVarsFileAndSetsTfVarEnv verifies that:
+//  1. The meshStack_run_vars.tf file is created when it doesn't exist.
+//  2. All three meshStack variables are declared: the building block id as required, and the
+//     deprecated run-scoped variables (run id / run b64) as optional (nullable, default null) so
+//     they can be omitted on dry-runs and saved-plan replays — see vars().
+//
+// Note: meshStack variables are provided via *.auto.tfvars, not environment variables.
 func Test_setEnvWith_CreatesMeshStackRunVarsFileAndSetsTfVarEnv(t *testing.T) {
 	uut := makeTestGenericTfCmd(t)
 
@@ -426,10 +429,6 @@ func Test_setEnvWith_CreatesMeshStackRunVarsFileAndSetsTfVarEnv(t *testing.T) {
 	uut.runContextInfo.runJsonBase64 = "dGVzdC1ydW4tanNvbi1iYXNlNjQ="
 	uut.runContextInfo.bbId = "test-bb-id"
 	uut.runContextInfo.runId = "test-run-id"
-
-	// Create an existing variables.tf file with one variable defined
-	err := os.WriteFile(path.Join(uut.runContextInfo.workingDirectory, "variables.tf"), customMeshStackRunVarsTf, 0644)
-	require.NoError(t, err)
 
 	// Call buildTfEnv
 	capturedEnv, err := uut.buildTfEnv()
@@ -439,20 +438,116 @@ func Test_setEnvWith_CreatesMeshStackRunVarsFileAndSetsTfVarEnv(t *testing.T) {
 	err = uut.vars()
 	require.NoError(t, err)
 
-	// Verify the file contains the expected variable declarations
+	// Verify the file declares the building block id (required) and the deprecated run-scoped
+	// variables as optional (nullable, default null).
 	meshStackVarsPath := path.Join(uut.runContextInfo.workingDirectory, "meshStack_run_vars.tf")
 	content, err := os.ReadFile(meshStackVarsPath)
 	require.NoError(t, err)
 	contentStr := string(content)
+	assert.Contains(t, contentStr, "variable \"meshstack_building_block_id\"")
 	assert.Contains(t, contentStr, "variable \"meshstack_building_block_run_b64\"")
-	assert.NotContains(t, contentStr, "variable \"meshstack_building_block_id\"") // defined in custom variables.tf
 	assert.Contains(t, contentStr, "variable \"meshstack_building_block_run_id\"")
+	assert.Contains(t, contentStr, "default")
+	assert.Contains(t, contentStr, "null")
 
 	// Verify the meshStack variables are NOT in environment (they go to *.auto.tfvars instead)
 	require.NotNil(t, capturedEnv, "Environment should be set")
 	assert.NotContains(t, capturedEnv, "TF_VAR_meshstack_building_block_run_b64", "meshStack variables should not be in env")
 	assert.NotContains(t, capturedEnv, "TF_VAR_meshstack_building_block_id", "meshStack variables should not be in env")
 	assert.NotContains(t, capturedEnv, "TF_VAR_meshstack_building_block_run_id", "meshStack variables should not be in env")
+}
+
+func readGeneratedTfvars(t *testing.T, uut *GenericTfCmd) string {
+	t.Helper()
+	tfvarsPath := path.Join(uut.runContextInfo.workingDirectory, "aaaaaa_meshstack-e48f8924-a6c0-4ff0-9528-ff3c1f6f94d8.auto.tfvars")
+	content, err := os.ReadFile(tfvarsPath)
+	require.NoError(t, err)
+	return string(content)
+}
+
+// Test_vars_OmitsRunScopedVarValuesOnDetectAndSavedPlanReplay verifies the saved-plan invariant:
+// the deprecated run-scoped variables (run id / run b64) get a value written into auto.tfvars only
+// for a fresh apply/destroy. On a DETECT plan (so nothing run-scoped is baked into the plan) and on
+// an APPLY replaying a predecessor plan (planArtifactUrl set, so no "Mismatch between input and plan
+// variable value") their value is omitted. The building block id is always written, and all three
+// remain declared regardless so building blocks referencing them still parse.
+func Test_vars_OmitsRunScopedVarValuesOnDetectAndSavedPlanReplay(t *testing.T) {
+	cases := []struct {
+		name            string
+		runMode         string
+		planArtifactUrl string
+		wantRunScoped   bool
+	}{
+		{name: "fresh apply writes run-scoped values", runMode: "APPLY", wantRunScoped: true},
+		{name: "destroy writes run-scoped values", runMode: "DESTROY", wantRunScoped: true},
+		{name: "detect omits run-scoped values", runMode: "DETECT", wantRunScoped: false},
+		{name: "apply replaying predecessor plan omits run-scoped values", runMode: "APPLY", planArtifactUrl: "https://example/artifact", wantRunScoped: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			uut := makeTestGenericTfCmd(t)
+			uut.params.runMode = tc.runMode
+			uut.params.planArtifactUrl = tc.planArtifactUrl
+			uut.runContextInfo.bbId = "some-bbd-id-123"
+			uut.runContextInfo.runId = "some-run-id-12345"
+			uut.runContextInfo.runJsonBase64 = "c29tZS1ydW4tanNvbg=="
+
+			require.NoError(t, uut.vars())
+
+			tfvars := readGeneratedTfvars(t, uut)
+			// The building block id is stable across runs and always written.
+			assert.Regexp(t, `meshstack_building_block_id\s+= "some-bbd-id-123"`, tfvars)
+
+			if tc.wantRunScoped {
+				assert.Regexp(t, `meshstack_building_block_run_id\s+= "some-run-id-12345"`, tfvars)
+				assert.Regexp(t, `meshstack_building_block_run_b64\s+= "c29tZS1ydW4tanNvbg=="`, tfvars)
+			} else {
+				assert.NotContains(t, tfvars, "meshstack_building_block_run_id")
+				assert.NotContains(t, tfvars, "meshstack_building_block_run_b64")
+			}
+
+			// Regardless of run mode, all three variables must be declared so modules that reference
+			// them keep parsing. The run-scoped ones are optional (default null).
+			declPath := path.Join(uut.runContextInfo.workingDirectory, "meshStack_run_vars.tf")
+			decl, err := os.ReadFile(declPath)
+			require.NoError(t, err)
+			assert.Contains(t, string(decl), `variable "meshstack_building_block_id"`)
+			assert.Contains(t, string(decl), `variable "meshstack_building_block_run_id"`)
+			assert.Contains(t, string(decl), `variable "meshstack_building_block_run_b64"`)
+		})
+	}
+}
+
+// Test_vars_SkipsDeclaringVariablesAlreadyDeclaredByBuildingBlock verifies that when a building
+// block already declares a meshStack variable in its own configuration, the runner does NOT emit a
+// duplicate declaration in the generated meshStack_run_vars.tf (a duplicate would make terraform
+// fail with "Duplicate variable declaration"). The variable's value is still written to auto.tfvars.
+// This restores coverage of the existingVariableInputs skip branch that the pre-existing variables.tf
+// version of Test_setEnvWith_CreatesMeshStackRunVarsFileAndSetsTfVarEnv used to exercise.
+func Test_vars_SkipsDeclaringVariablesAlreadyDeclaredByBuildingBlock(t *testing.T) {
+	uut := makeTestGenericTfCmd(t)
+	uut.runContextInfo.bbId = "test-bb-id"
+	uut.runContextInfo.runId = "test-run-id"
+	uut.runContextInfo.runJsonBase64 = "dGVzdC1ydW4tanNvbi1iYXNlNjQ="
+
+	// The building block declares meshstack_building_block_id itself (see the embedded fixture).
+	err := os.WriteFile(path.Join(uut.runContextInfo.workingDirectory, "variables.tf"), customMeshStackRunVarsTf, 0644)
+	require.NoError(t, err)
+
+	require.NoError(t, uut.vars())
+
+	// The runner must not re-declare the already-declared variable, but must still declare the others.
+	declPath := path.Join(uut.runContextInfo.workingDirectory, "meshStack_run_vars.tf")
+	decl, err := os.ReadFile(declPath)
+	require.NoError(t, err)
+	declStr := string(decl)
+	assert.NotContains(t, declStr, `variable "meshstack_building_block_id"`, "must not duplicate a building-block-declared variable")
+	assert.Contains(t, declStr, `variable "meshstack_building_block_run_id"`)
+	assert.Contains(t, declStr, `variable "meshstack_building_block_run_b64"`)
+
+	// The value is still provided via auto.tfvars regardless of who declares the variable.
+	assert.Regexp(t, `meshstack_building_block_id\s+= "test-bb-id"`, readGeneratedTfvars(t, uut))
 }
 
 // Test_setEnvWith_DoesNotOverwriteExistingMeshStackRunVarsFile tests that
@@ -496,6 +591,46 @@ func Test_setEnvWith_DoesNotOverwriteExistingMeshStackRunVarsFile(t *testing.T) 
 	assert.Equal(t, string(customMeshStackRunVarsTf), string(content), "Existing file should not be overwritten")
 }
 
+// Test_buildTfEnv_WithMeshBackendFallbackAndRunToken_SetsTfHttpBasicAuthEnv verifies that when the
+// meshStack HTTP backend is in play, buildTfEnv supplies the run token via TF_HTTP_USERNAME/PASSWORD
+// (Basic auth) rather than baking it into the backend config, so OpenTofu re-reads a live token at
+// every plan/apply instead of embedding a since-revoked one into a saved plan.
+func Test_buildTfEnv_WithMeshBackendFallbackAndRunToken_SetsTfHttpBasicAuthEnv(t *testing.T) {
+	uut := makeTestGenericTfCmd(t)
+	uut.runContextInfo.useMeshBackendFallback = true
+	uut.runContextInfo.runToken = "ephemeral-run-token"
+
+	capturedEnv, err := uut.buildTfEnv()
+	require.NoError(t, err)
+
+	assert.Equal(t, MeshStackRunTokenBasicUser, capturedEnv["TF_HTTP_USERNAME"])
+	assert.Equal(t, "ephemeral-run-token", capturedEnv["TF_HTTP_PASSWORD"])
+}
+
+// Test_buildTfEnv_WithoutMeshBackendFallback_DoesNotSetTfHttpBasicAuthEnv verifies that
+// buildTfEnv leaves TF_HTTP_* unset when the meshStack backend is not in play (e.g. a building
+// block brings its own backend), and also when no runToken is available.
+func Test_buildTfEnv_WithoutMeshBackendFallback_DoesNotSetTfHttpBasicAuthEnv(t *testing.T) {
+	uut := makeTestGenericTfCmd(t)
+	uut.runContextInfo.useMeshBackendFallback = false
+	uut.runContextInfo.runToken = "ephemeral-run-token"
+
+	capturedEnv, err := uut.buildTfEnv()
+	require.NoError(t, err)
+
+	assert.NotContains(t, capturedEnv, "TF_HTTP_USERNAME")
+	assert.NotContains(t, capturedEnv, "TF_HTTP_PASSWORD")
+
+	uut.runContextInfo.useMeshBackendFallback = true
+	uut.runContextInfo.runToken = ""
+
+	capturedEnv, err = uut.buildTfEnv()
+	require.NoError(t, err)
+
+	assert.NotContains(t, capturedEnv, "TF_HTTP_USERNAME")
+	assert.NotContains(t, capturedEnv, "TF_HTTP_PASSWORD")
+}
+
 func Test_createMeshStackHttpBackendFile_MissingRunToken_ReturnsError(t *testing.T) {
 	originalConfig := AppConfig
 	AppConfig = TfRunnerConfig{
@@ -527,9 +662,10 @@ func Test_createMeshStackHttpBackendFile_MissingRunToken_ReturnsError(t *testing
 	assert.Empty(t, filesWritten, "no backend file should be written when runToken is missing")
 }
 
-// Test_createMeshStackHttpBackendFile_WithRunToken verifies that when a runToken is available
-// (Kubernetes / single-run mode), the generated backend config uses a Bearer authorization
-// header instead of static username/password credentials.
+// Test_createMeshStackHttpBackendFile_WithRunToken verifies that the generated backend config
+// contains only the state endpoint address and no auth (no headers/Authorization/Bearer) — the
+// runToken is supplied to Terraform via TF_HTTP_USERNAME/TF_HTTP_PASSWORD env vars instead (see
+// buildTfEnv), so nothing secret is baked into a saved plan.
 // It also verifies that meshstackBaseUrl from the run links is used as the backend base URL.
 func Test_createMeshStackHttpBackendFile_WithRunToken(t *testing.T) {
 	originalConfig := AppConfig
@@ -560,6 +696,10 @@ func Test_createMeshStackHttpBackendFile_WithRunToken(t *testing.T) {
 			}
 			asserted = true
 			g.Assert(t, "backend", content)
+			assert.Contains(t, string(content), "address")
+			assert.NotContains(t, string(content), "headers")
+			assert.NotContains(t, string(content), "Authorization")
+			assert.NotContains(t, string(content), "Bearer")
 		}
 		return nil
 	}))

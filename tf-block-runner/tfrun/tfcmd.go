@@ -26,6 +26,12 @@ const (
 	defaultStateFilename = "terraform.tfstate"
 
 	HINT_INIT_FAILED = "Check provider and / or backend config"
+
+	// MeshStackRunTokenBasicUser is the fixed Basic-auth username that marks the
+	// Basic password as a run JWT rather than a real Basic credential. meshfed-api's
+	// TfStateRunTokenBasicAuthFilter rewrites Basic(MeshStackRunTokenBasicUser:<jwt>)
+	// to Bearer <jwt> for the state endpoint only; both sides must agree on this value.
+	MeshStackRunTokenBasicUser = "meshstack-run-token"
 )
 
 type TfCmdParams struct {
@@ -66,6 +72,13 @@ func (tfcmd *GenericTfCmd) Println(v ...any) {
 
 func (tfcmd *GenericTfCmd) Printfln(format string, v ...any) {
 	tfcmd.runContextInfo.logwrap.PrintlnToLocalLogs(fmt.Sprintf(format, v...))
+}
+
+// PrintlnUser writes to both the local operator logs and the update logs, so the
+// message becomes part of the current step's SystemMessage that the end user sees
+// in meshStack (in addition to the runner's local console logs).
+func (tfcmd *GenericTfCmd) PrintlnUser(v ...any) {
+	tfcmd.runContextInfo.logwrap.PrintlnToLocalAndUpdateLogs(v...)
 }
 
 func (tfcmd *GenericTfCmd) fail(err error) {
@@ -301,11 +314,12 @@ func (tfcmd *GenericTfCmd) createMeshStackHttpBackendFile() error {
 		// long-lived credentials into a .tf file on disk.
 		return fmt.Errorf("cannot configure meshStack HTTP backend: runToken is empty — the run object did not include an ephemeral token")
 	}
-	// Use the run-scoped ephemeral token as a Bearer authorization header.
-	// This avoids embedding long-lived credentials in the generated backend config.
-	backendBlockBody.SetAttributeValue("headers", cty.ObjectVal(map[string]cty.Value{
-		"Authorization": cty.StringVal("Bearer " + tfcmd.runContextInfo.runToken),
-	}))
+	// Auth is intentionally NOT baked into this backend config (no `headers` block):
+	// OpenTofu embeds the backend config verbatim into any saved plan, and a preflight
+	// APPLY may apply a plan produced by an earlier DETECT run days/weeks after that
+	// run's ephemeral key was revoked. Instead, the run token is supplied via
+	// TF_HTTP_USERNAME/TF_HTTP_PASSWORD (see buildTfEnv), which OpenTofu re-reads fresh
+	// at every plan/apply — OpenTofu's documented pattern for ephemeral backend credentials.
 
 	tfcmd.Println(fmt.Sprintf("Writing backend config file: '%s'.", backendFileName))
 	return workingDirRoot.WriteFile(backendFileName, f.Bytes(), 0600)
@@ -470,6 +484,19 @@ func (tfcmd *GenericTfCmd) buildTfEnv() (map[string]string, error) {
 		}
 	}
 
+	// Supply the meshStack HTTP state backend credentials via env (TF_HTTP_*), NOT via the backend config
+	// block: OpenTofu re-reads these fresh at plan AND apply time and never bakes them into the saved plan.
+	// This lets a preflight APPLY (which may run days/weeks after the DETECT that produced the plan) authenticate
+	// with its OWN live token instead of the DETECT run's long-revoked one. The token rides in the Basic password;
+	// the fixed sentinel username tells meshfed-api the password is a run JWT to validate via OIDC.
+	// Currently opentofu only support setting basic auth for the backend, but in the future they may also support
+	// setting bearer auth directly: https://github.com/opentofu/opentofu/issues/2659
+	if tfcmd.runContextInfo.useMeshBackendFallback && tfcmd.runContextInfo.runToken != "" {
+		env["TF_HTTP_USERNAME"] = MeshStackRunTokenBasicUser
+		env["TF_HTTP_PASSWORD"] = tfcmd.runContextInfo.runToken
+		envKeys = append(envKeys, "TF_HTTP_USERNAME") // do NOT log the password value
+	}
+
 	if len(envKeys) > 0 {
 		msg := "Set the following env variables: "
 		msg += strings.Join(envKeys, ", ")
@@ -600,31 +627,55 @@ func (tfcmd *GenericTfCmd) vars() error {
 	}
 
 	// Add meshStack-provided variables to the tfvars file.
-	// Variable declarations are still provided via meshStack_run_vars.tf to prevent
-	// Terraform from complaining about undeclared variables.
-	// These variables should always be present.
-	meshStackVars := map[string]string{
-		"meshstack_building_block_run_b64": tfcmd.runContextInfo.runJsonBase64,
-		"meshstack_building_block_id":      tfcmd.runContextInfo.bbId,
-		"meshstack_building_block_run_id":  tfcmd.runContextInfo.runId,
+	//
+	// Run-scoped vars (run_id, run_b64) are DEPRECATED and their value is omitted on a DETECT plan
+	// and on an APPLY replaying a predecessor's saved plan: applying a saved plan requires input
+	// values identical to plan time, but these necessarily differ between the DETECT run and the
+	// APPLY consuming its plan, so terraform would reject it with "Mismatch between input and plan
+	// variable value". They are always declared but optional/nullable so omitting the value is legal
+	// (reading as null in those modes); building blocks needing the full payload should read it from
+	// the pre-run script's stdin (see RunScript). building_block_id is stable across runs, so it is
+	// always written and stays required.
+	includeRunScopedVars := tfcmd.params.runMode != DETECT.str() && tfcmd.params.planArtifactUrl == ""
+	meshStackVarDecls := []struct {
+		name      string
+		value     string
+		runScoped bool // deprecated + optional; value only written on fresh apply/destroy
+	}{
+		{name: "meshstack_building_block_id", value: tfcmd.runContextInfo.bbId},
+		{name: "meshstack_building_block_run_b64", value: tfcmd.runContextInfo.runJsonBase64, runScoped: true},
+		{name: "meshstack_building_block_run_id", value: tfcmd.runContextInfo.runId, runScoped: true},
 	}
 	meshStackVarsFile := hclwrite.NewEmptyFile()
-	for varName, varValue := range util.SortedByKeys(meshStackVars) {
-		diags = varsFile.AddVariable(varName, varValue, AddVariableOptions{})
-		if diags.HasErrors() {
-			for _, diag := range diags {
-				_, _ = tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(fmt.Sprintf(
-					"While adding variable '%s': %s: %s", varName, diag.Summary, diag.Detail,
-				))
+	for _, decl := range meshStackVarDecls {
+		// Write the value to auto.tfvars unless it is a run-scoped variable on a dry-run / saved-plan replay.
+		if !decl.runScoped || includeRunScopedVars {
+			diags = varsFile.AddVariable(decl.name, decl.value, AddVariableOptions{})
+			if diags.HasErrors() {
+				for _, diag := range diags {
+					_, _ = tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(fmt.Sprintf(
+						"While adding variable '%s': %s: %s", decl.name, diag.Summary, diag.Detail,
+					))
+				}
+				continue
 			}
+		}
+		// Declare the variable unless the building block already declares it itself.
+		if _, variableBlockExists := existingVariableInputs[decl.name]; variableBlockExists {
+			tfcmd.Println(fmt.Sprintf("Skip defining variable block for %s as it is already present in configuration", decl.name))
 			continue
 		}
-		if _, variableBlockExists := existingVariableInputs[varName]; !variableBlockExists {
-			variableBlockBody := meshStackVarsFile.Body().AppendNewBlock("variable", []string{varName}).Body()
-			variableBlockBody.SetAttributeTraversal("type", hcl.Traversal{hcl.TraverseRoot{Name: "string"}})
-			variableBlockBody.SetAttributeValue("nullable", cty.BoolVal(false))
+		variableBlockBody := meshStackVarsFile.Body().AppendNewBlock("variable", []string{decl.name}).Body()
+		variableBlockBody.SetAttributeTraversal("type", hcl.Traversal{hcl.TraverseRoot{Name: "string"}})
+		if decl.runScoped {
+			// Deprecated run-scoped variable: optional so it can be omitted on dry-runs and saved-plan replays.
+			variableBlockBody.SetAttributeValue("nullable", cty.BoolVal(true))
+			variableBlockBody.SetAttributeValue("default", cty.NullVal(cty.String))
+			variableBlockBody.SetAttributeValue("description", cty.StringVal(
+				"DEPRECATED and null when a dry-run/change-detection (DETECT) plan is applied. "+
+					"Read the run payload from the pre-run script's stdin instead."))
 		} else {
-			tfcmd.Println(fmt.Sprintf("Skip defining variable block for %s as it is already present in configuration", varName))
+			variableBlockBody.SetAttributeValue("nullable", cty.BoolVal(false))
 		}
 	}
 

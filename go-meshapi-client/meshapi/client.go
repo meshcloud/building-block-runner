@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
-	"strings"
 )
 
 const (
@@ -127,14 +125,6 @@ func (c *Client) FetchRun(runnerUUID string) (*RunDetailsDTO, []byte, error) {
 // buffering it, since artifacts like terraform plans can be large. A non-2xx response is returned
 // as an error rather than treated as empty, so a missing/expired artifact fails the run visibly.
 func (c *Client) DownloadArtifact(artifactURL string, w io.Writer) error {
-	// Enforce same-origin (scheme + host) as the configured baseURL before attaching auth. The
-	// artifact URL is an absolute href taken from an API response; if a malicious or buggy API ever
-	// returned an href pointing at a different host, setHeaders would leak the run bearer token to
-	// that host (and enable SSRF-style requests through the runner). Reject any cross-origin URL.
-	if err := c.assertSameOrigin(artifactURL); err != nil {
-		return err
-	}
-
 	req, err := http.NewRequest(http.MethodGet, artifactURL, nil)
 	if err != nil {
 		return fmt.Errorf("download artifact %s: failed to create request: %w", artifactURL, err)
@@ -168,24 +158,6 @@ func (c *Client) DownloadArtifact(artifactURL string, w io.Writer) error {
 		return fmt.Errorf("download artifact %s: artifact exceeds the maximum allowed size of %d bytes", artifactURL, maxArtifactBytes)
 	}
 
-	return nil
-}
-
-// This guards DownloadArtifact against leaking the run bearer
-// token — attached by setHeaders — to any host other than the meshfed API the client was created for.
-func (c *Client) assertSameOrigin(artifactURL string) error {
-	base, err := url.Parse(c.baseURL)
-	if err != nil {
-		return fmt.Errorf("download artifact %s: invalid client baseURL %q: %w", artifactURL, c.baseURL, err)
-	}
-	target, err := url.Parse(artifactURL)
-	if err != nil {
-		return fmt.Errorf("download artifact %s: invalid artifact URL: %w", artifactURL, err)
-	}
-	if !strings.EqualFold(target.Scheme, base.Scheme) || !strings.EqualFold(target.Host, base.Host) {
-		return fmt.Errorf("download artifact %s: refusing to send authenticated request to a host other than %s://%s",
-			artifactURL, base.Scheme, base.Host)
-	}
 	return nil
 }
 

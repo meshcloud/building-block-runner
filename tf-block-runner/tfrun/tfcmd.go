@@ -26,6 +26,12 @@ const (
 	defaultStateFilename = "terraform.tfstate"
 
 	HINT_INIT_FAILED = "Check provider and / or backend config"
+
+	// MeshStackRunTokenBasicUser is the fixed Basic-auth username that marks the
+	// Basic password as a run JWT rather than a real Basic credential. meshfed-api's
+	// TfStateRunTokenBasicAuthFilter rewrites Basic(MeshStackRunTokenBasicUser:<jwt>)
+	// to Bearer <jwt> for the state endpoint only; both sides must agree on this value.
+	MeshStackRunTokenBasicUser = "meshstack-run-token"
 )
 
 type TfCmdParams struct {
@@ -301,11 +307,12 @@ func (tfcmd *GenericTfCmd) createMeshStackHttpBackendFile() error {
 		// long-lived credentials into a .tf file on disk.
 		return fmt.Errorf("cannot configure meshStack HTTP backend: runToken is empty — the run object did not include an ephemeral token")
 	}
-	// Use the run-scoped ephemeral token as a Bearer authorization header.
-	// This avoids embedding long-lived credentials in the generated backend config.
-	backendBlockBody.SetAttributeValue("headers", cty.ObjectVal(map[string]cty.Value{
-		"Authorization": cty.StringVal("Bearer " + tfcmd.runContextInfo.runToken),
-	}))
+	// Auth is intentionally NOT baked into this backend config (no `headers` block):
+	// OpenTofu embeds the backend config verbatim into any saved plan, and a preflight
+	// APPLY may apply a plan produced by an earlier DETECT run days/weeks after that
+	// run's ephemeral key was revoked. Instead, the run token is supplied via
+	// TF_HTTP_USERNAME/TF_HTTP_PASSWORD (see buildTfEnv), which OpenTofu re-reads fresh
+	// at every plan/apply — OpenTofu's documented pattern for ephemeral backend credentials.
 
 	tfcmd.Println(fmt.Sprintf("Writing backend config file: '%s'.", backendFileName))
 	return workingDirRoot.WriteFile(backendFileName, f.Bytes(), 0600)
@@ -468,6 +475,19 @@ func (tfcmd *GenericTfCmd) buildTfEnv() (map[string]string, error) {
 				return nil, fmt.Errorf("input decryption failed for '%s'", varName)
 			}
 		}
+	}
+
+	// Supply the meshStack HTTP state backend credentials via env (TF_HTTP_*), NOT via the backend config
+	// block: OpenTofu re-reads these fresh at plan AND apply time and never bakes them into the saved plan.
+	// This lets a preflight APPLY (which may run days/weeks after the DETECT that produced the plan) authenticate
+	// with its OWN live token instead of the DETECT run's long-revoked one. The token rides in the Basic password;
+	// the fixed sentinel username tells meshfed-api the password is a run JWT to validate via OIDC.
+	// Currently opentofu only support setting basic auth for the backend, but in the future they may also support
+	// setting bearer auth directly: https://github.com/opentofu/opentofu/issues/2659
+	if tfcmd.runContextInfo.useMeshBackendFallback && tfcmd.runContextInfo.runToken != "" {
+		env["TF_HTTP_USERNAME"] = MeshStackRunTokenBasicUser
+		env["TF_HTTP_PASSWORD"] = tfcmd.runContextInfo.runToken
+		envKeys = append(envKeys, "TF_HTTP_USERNAME") // do NOT log the password value
 	}
 
 	if len(envKeys) > 0 {

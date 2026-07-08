@@ -1,6 +1,6 @@
 # High-Level Plan: Single Go Binary for all Building Block Runners
 
-**Status:** draft for review · **Branch:** `refactor/single-go-binary` · **Owner:** @agrub
+**Status:** draft for review · **Branch:** `refactor/single-go-binary/plan` · **Owner:** @agrub
 
 ## 1. Goal
 
@@ -165,8 +165,13 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
 **Delivery model: one phase = one single-commit PR, stacked.** All detail plans are
 written up-front, then the phases are implemented by running through them in order; each
 phase is one squash-merged PR whose base is the previous phase's branch (stacked PRs,
-merged sequentially into `main`). Each lands green, behavior-compatible, and reviewable on
-its own; this feature branch carries only the plan documents. Phase 6 is the exception:
+merged sequentially into `main`). Branch naming:
+`refactor/single-go-binary/phase-<N>-<short-description>` (e.g.
+`refactor/single-go-binary/phase-1-characterization-tests`); the plan documents live on
+`refactor/single-go-binary/plan` (note: a bare `refactor/single-go-binary` branch cannot
+coexist with these — git refs cannot be both file and directory). Each PR lands green,
+behavior-compatible, and reviewable on its own; the plan branch carries only the plan
+documents. Phase 6 is the exception:
 **one PR per ported runner**, where the first PR (simplest runner) deliberately
 establishes the handler template, registration and test patterns the later ports fill in.
 Phase N+1 must not start before phase N's exit criteria hold.

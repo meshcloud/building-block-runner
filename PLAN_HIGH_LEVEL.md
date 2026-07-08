@@ -109,16 +109,28 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
   no-op — kills the `meshcrypto.Crypto` global and `ToInternalWithoutDecryption` fork),
   `StatusReporter`, `GitPort`, `TfPort`, clock. The observer loop + `logwrap` +
   `RunStatus`/`StepStatus` generalize into the **shared reporting facility** (runner-agnostic).
-- **D5 — dispatcher = capability registry.** The controller loop depends on a `Dispatcher`
-  interface. Capability (which implementation types it claims/registers for) derives from
-  what's registered: k8s job templates (any type) and/or in-process Go handlers (initially
-  only `TERRAFORM`, later each ported runner). This makes the Kotlin ports incremental —
-  no big-bang: un-ported types keep running via k8s Jobs with the existing Kotlin images.
-- **D6 — coverage gate: ≥90% lines on the refactored domain + application packages**, from
-  hermetic integration-style tests (fake HTTP API + `TfFacade`/`GitFacade` mocks — the
-  existing scenario-test style, extended). Real-tofu/real-git e2e is a separate opt-in make
-  target, not part of the gate (network + nondeterminism). Gate enforced in CI via
-  `go test -coverprofile` + threshold script.
+- **D5 — dispatcher = capability registry; claim-and-fail-fast for unhandled types.**
+  The controller loop depends on a `Dispatcher` interface. The registered capability is
+  **explicit config** (one concrete type or `ALL` — the backend's
+  `BuildingBlockRunnerCapabilityType` is a single enum value; subsets are not
+  representable). Dispatch per run: in-process where a Go handler is registered, k8s Job
+  where a job template is configured; a claimed run with **neither** is immediately
+  registered + reported `FAILED` with an actionable "this runner does not handle type X"
+  message (the pattern of `controller.go` for unconfigured implementations). This lets a
+  standalone runner register `ALL` before all Kotlin ports exist, at the documented cost
+  of failing runs of unported types — operators who don't accept that configure a
+  concrete capability. Kotlin ports stay incremental — no big-bang.
+- **D6 — coverage gate: ≥90% Go statement coverage** (the toolchain's measure; "lines" in
+  conversation means this) **on domain + application packages, with growing scope**: the
+  gate starts on `tfrun` (phase 1) and automatically extends to every new
+  domain/application package (shared core in phase 3, each ported runner in phase 6).
+  Source: hermetic integration-style tests (fake HTTP API + `TfFacade`/`GitFacade` mocks —
+  the existing scenario-test style, extended). The adapter exclusion list (real I/O: git
+  exec, tofu exec, k8s client) lives in one visible place with a justification per file;
+  real-tofu/real-git e2e is a separate opt-in task, not part of the gate. Enforced in CI
+  via `go test -coverprofile` + threshold script. **Kotlin corollary:** before each phase-6
+  port, the Kotlin runner's behavior is pinned by Kotlin tests (added where missing),
+  which are then ported truthfully to Go together with the code.
 - **D7 — config precedence: defaults < YAML file < env.** One config package; file path via
   `RUNNER_CONFIG_FILE` (default `runner-config.yml`). Nested structures (e.g. controller
   `implementations` map) remain file-only — env-first ≠ env-only. All existing env var
@@ -159,6 +171,28 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
   same mechanism both sibling repos use — not by tree shape. The tf handler may split into
   sibling packages (`tf` + e.g. `gitsource`, `tofu`) in Phase 2 only if the seams prove
   real; one cohesive package is acceptable otherwise.
+- **D12 — unified observability on `MANAGEMENT_PORT`.** Every persona serves `/healthz`
+  **and** Prometheus `/metrics` on a single management listener, configured via
+  `MANAGEMENT_PORT` with per-persona defaults preserving today's values (run-controller
+  2112 — which finally gains a healthz; tf 8100; manual 8104; github 8102; gitlab 8103;
+  azure-devops 8101; container default 8080 where PORT did that job before). Nothing is
+  served twice. All personas — including standalone runners, which have zero metrics
+  today — get basic Prometheus metrics (runs claimed/succeeded/failed, run duration,
+  poll errors), reusing the controller's `MetricsCollector` approach.
+- **D13 — bug policy during characterization: pin everything, fix after the refactor.**
+  Phase 1 pins *current* behavior verbatim — including behavior identified as buggy (e.g.
+  the swallowed workspace-select error, `tfcmd.go:229-233`). Each such pin is marked
+  `// FIXME(bug):` in the test and recorded in a bug inventory in the phase-1 detail
+  plan. A **dedicated bug-fix PR (phase 2b)** directly after the DDD refactor works
+  through the inventory: flip each pinned test to assert correct behavior, fix the code,
+  one inventory = one PR. No bug fixes sneak into phase 1 (tests-only) or phase 2
+  (behavior-preserving refactor).
+- **D14 — tooling: golangci-lint v2 + Taskfile in phase 0; CI reshaped only in the last
+  phase.** Phase 0 adopts golangci-lint v2 (`.golangci.yml` mirroring the provider repo:
+  gci import ordering, govet *inside* lint — the separate `go vet` target is dropped —
+  and depguard rules that grow as D11 packages appear) and replaces the Makefile with a
+  `Taskfile.yml`. GitHub Actions CI is left functionally as-is until the **cleanup phase
+  (7)**, which turns it into a Go-only CI with the docker image builds.
 
 ## 5. Phases (order matters)
 
@@ -192,9 +226,11 @@ outcome. Therefore every detail plan (01+) must carry:
 
 ### Phase 0 — Guardrails & baseline
 Coverage baseline measurement per package; CI coverage report + threshold plumbing (not
-yet gating); inventory of untested behaviors against the D9 pin list; verify the
+yet gating); adopt golangci-lint v2 and replace the Makefile with a Taskfile, dropping
+the separate vet target (D14 — GitHub Actions CI itself stays functionally untouched
+until phase 7); inventory of untested behaviors against the D9 pin list; verify the
 meshfed-release local-dev-stack + acceptance suite runs as the outer safety net.
-**Exit:** baseline numbers documented; CI publishes coverage.
+**Exit:** baseline numbers documented; CI publishes coverage; `task lint`/`task test` work.
 → Detail plan: `PLAN_DETAIL_00_guardrails.md`
 
 ### Phase 1 — Characterization tests to ≥90% (tf runner, pre-refactor)
@@ -202,8 +238,9 @@ Extend the existing scenario-suite style (fake HTTP transport, mocked facades) t
 every D9 pin and every use case (APPLY/DETECT/DESTROY × polling/single-run × async ×
 artifact-replay × failure paths). Tests are written against *current* behavior at
 use-case level (black-box through `Worker`/`SingleRunWorker`/`Manager`), so they survive
-the restructuring. **Exit:** ≥90% lines on `tfrun` (excluding declared adapter files),
-gate ON in CI.
+the restructuring. Bugs found are pinned, not fixed (D13): `// FIXME(bug):` markers + a
+bug inventory in the detail plan. **Exit:** ≥90% statement coverage on `tfrun` (excluding
+declared adapter files), gate ON in CI; bug inventory complete.
 → `PLAN_DETAIL_01_tf_characterization_tests.md`
 
 ### Phase 2 — DDD refactor of the tf runner (under green tests)
@@ -212,7 +249,11 @@ Extract domain (run, steps, status), application (execution engine unifying
 (`AppConfig`, `meshcrypto.Crypto`) via injection. Small, always-green steps; coverage gate
 stays ≥90%. **Exit:** one execution engine; polling and single-run are `RunSource`
 configurations; no package-level mutable state.
-→ `PLAN_DETAIL_02_tf_ddd_refactor.md`
+
+**Phase 2b — bug-fix pass (own stacked PR):** work through the phase-1 bug inventory
+(D13) — flip each `FIXME(bug)` pin to assert correct behavior, fix the code.
+**Exit:** inventory empty; no `FIXME(bug)` markers remain.
+→ `PLAN_DETAIL_02_tf_ddd_refactor.md` (covers 2 and 2b)
 
 ### Phase 3 — Shared runner-core & client consolidation
 Move runner-agnostic pieces to shared packages: config loader (D7), reporting facility,
@@ -234,9 +275,11 @@ images ship from the single binary; old per-module mains deleted.
 add `InProcessDispatcher` (go-func per run, per-run decrypt then runToken-only reporting —
 same trust model as the k8s Secret handover; `maxConcurrentRuns` mirrors
 `maxConcurrentJobs`; per-run working dirs; version-download locking in `TfBinaries`).
-Standalone polling runner becomes in-process dispatch with one handler. Registration
-capability derives from the registry (D5). **Exit:** one Docker container executes N
-concurrent TERRAFORM runs; k8s mode bit-identical to today.
+Standalone polling runner becomes in-process dispatch with one handler. Registered
+capability is explicit config (concrete type or `ALL`); claimed runs without a matching
+handler or job template fail fast with an actionable message (D5). **Exit:** one Docker
+container executes N concurrent TERRAFORM runs; `ALL` registration with fail-fast works;
+k8s mode bit-identical to today.
 → `PLAN_DETAIL_05_dispatcher.md`
 
 ### Phase 6 — Port Kotlin runners as Go handlers (one PR per runner)
@@ -246,14 +289,18 @@ D9). **The `manual` port is the template PR:** it must introduce the persona wir
 handler registration, config section shape, acceptance-test harness and Dockerfile pattern
 in the exact form the other three reuse — anticipate their needs (async handover, external
 pipeline polling, per-runner secrets) in the interfaces even though `manual` itself needs
-none of them. Each port is validated against the meshfed-release acceptance tests before
-the corresponding Kotlin module is deprecated. **Exit (per runner/PR):** Go handler passes
-acceptance; image switched; Kotlin module removed. **Exit (phase):** Gradle build gone.
+none of them. Per D6, each port starts by pinning the Kotlin runner's behavior with
+**Kotlin tests** (added where missing), which are then ported truthfully to Go with the
+code; the Go domain packages join the coverage gate. Each port is validated against the
+meshfed-release acceptance tests before the corresponding Kotlin module is deprecated.
+**Exit (per runner/PR):** Kotlin behavior pinned; Go handler passes acceptance; image
+switched; Kotlin module removed. **Exit (phase):** Gradle build gone.
 → `PLAN_DETAIL_06_kotlin_ports.md`
 
 ### Phase 7 — Cleanup & docs
-READMEs, public docs pointers, release workflow simplification, config deprecation
-warnings, memory of final architecture. → `PLAN_DETAIL_07_cleanup.md`
+READMEs, public docs pointers, config deprecation warnings, memory of final architecture;
+reshape GitHub Actions into a Go-only CI including the docker image builds (D14 — the
+JVM/Gradle CI legs die here with the last Kotlin module). → `PLAN_DETAIL_07_cleanup.md`
 
 ## 6. Key risks & caveats (watch-list)
 
@@ -303,33 +350,39 @@ Each `PLAN_DETAIL_*.md` is authored by a subagent that receives:
 > explicit "Open questions" section (empty is the goal).
 
 - **00 guardrails**: measure per-package coverage for all 3 Go modules (command lines +
-  CI wiring); design the threshold gate (fail-under, excluded files policy); verify
+  CI wiring); design the threshold gate (fail-under, excluded files policy); golangci-lint
+  v2 setup mirroring the provider repo (gci, govet-in-lint, depguard skeleton) and the
+  Makefile→Taskfile migration (D14; CI workflows functionally untouched); verify
   local-dev-stack acceptance flow against this branch; document baseline numbers.
 - **01 tf characterization tests**: map every D9 pin + every `tfrun` use case to an
   existing or missing test; specify new scenario tests (fixtures: run JSONs incl.
   encrypted inputs, fake API transcript assertions); define the coverage exclusion list
-  (adapter files exercised only by opt-in e2e) and get `tfrun` to ≥90%.
+  (adapter files exercised only by opt-in e2e) and get `tfrun` to ≥90% statement
+  coverage; maintain the D13 bug inventory (pin with `FIXME(bug)`, never fix here).
 - **02 tf DDD refactor**: propose the package layout (domain/application/ports/adapters)
   with a migration sequence of ≤~15 always-compiling steps; explicit inventory of global
   state and its injection replacement; show how `Worker`+`SingleRunWorker` collapse; how
-  `RunContextInfo`-in-context.Value is replaced.
+  `RunContextInfo`-in-context.Value is replaced. Includes **phase 2b**: the bug-fix pass
+  over the phase-1 inventory (D13) as its own stacked PR.
 - **03 shared core**: define the shared packages' API surface (config, reporting, polling,
   client+retry, crypto, registration); diff `controller/runapi.go` vs shared client and
   the merge path; controller re-base steps; alignment notes vs provider-client naming.
 - **04 single binary**: persona registry design (argv[0] + fallback arg), module/layout
   migration incl. `go.work` endgame, Dockerfile matrix, release workflow changes,
-  meshfed-release doc updates, healthz/metrics port unification table.
+  meshfed-release doc updates, `MANAGEMENT_PORT` unification incl. per-persona defaults
+  and the new standalone-runner metrics (D12).
 - **05 dispatcher**: `Dispatcher`/`RunHandler` interfaces, capacity semantics per
   dispatcher, in-process secret/auth model, concurrency hazards inventory (from risk #4)
-  each with a test, registration capability derivation.
+  each with a test, explicit capability config + claim-and-fail-fast for unhandled
+  types (D5).
 - **06 kotlin ports**: per-runner behavior inventory from Kotlin sources (endpoints,
-  auth, async semantics, config), Go handler design, acceptance-test validation plan,
-  deprecation/removal sequence. One sub-plan per runner (= one PR each); the `manual`
-  sub-plan is written first and must define the template every later port follows —
-  its interfaces are reviewed against the *other three* runners' inventoried needs
-  before any port is implemented.
-- **07 cleanup**: docs/README/release audit checklist; deprecation timeline; final
-  architecture record.
+  auth, async semantics, config), the Kotlin-tests-first pinning step (D6), Go handler
+  design, acceptance-test validation plan, deprecation/removal sequence. One sub-plan
+  per runner (= one PR each); the `manual` sub-plan is written first and must define the
+  template every later port follows — its interfaces are reviewed against the *other
+  three* runners' inventoried needs before any port is implemented.
+- **07 cleanup**: docs/README/release audit checklist; deprecation timeline; Go-only CI
+  reshape incl. docker builds (D14); final architecture record.
 
 ## 8. Explicitly out of scope
 

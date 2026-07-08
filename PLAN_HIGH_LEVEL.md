@@ -75,6 +75,18 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
   `Uuid`, `Api`) — consistent with both sibling repos and this repo's DTOs.
 - **P7 — Tests are part of every step,** not a follow-up (meshfed-release build-and-test
   rule); the coverage gate (D6) never dips below threshold once enabled.
+- **P8 — Code-quality gate: types that make misuse hard.** Every reviewable unit (each
+  step's checkpoint, and the PR as a whole) passes this gate before it counts as done:
+  functions and methods are small, single-purpose, and hang off **well-defined data
+  types** — not free-floating over primitives. Push misuse to compile time as far as Go's
+  type system allows: named types instead of bare `string`/`int` where the value has
+  meaning (the existing `Behavior`, `ExecutionStatus`, `RunnerImplementationType` are the
+  house pattern — extend it, e.g. run IDs, tokens, workspace names crossing package
+  boundaries); constructors that validate so a constructed value is always usable
+  (make invalid states unrepresentable rather than checked-everywhere); parameter lists
+  where two same-typed arguments can't be silently swapped (introduce a type or a params
+  struct); enums with a defined zero value or an explicit "unset" sentinel. Modern idioms
+  (P2) are part of the same gate — code that compiles but reads like Go 1.13 fails review.
 
 ## 4. Design decisions (self-grilled; override in review if wrong)
 
@@ -270,8 +282,9 @@ Each `PLAN_DETAIL_*.md` is authored by a subagent that receives:
 
 > **Standing rules for detail-plan subagents.** Research the referenced code first; quote
 > file:line evidence for every claim. The prime directives (§3) bind every proposed
-> design — a plan that violates P1–P7 (e.g. speculative interfaces, pointer-happy structs,
-> layer-cake packages) is wrong even if it works; package layout follows D11. List: scope
+> design — a plan that violates P1–P8 (e.g. speculative interfaces, pointer-happy structs,
+> layer-cake packages, stringly-typed APIs) is wrong even if it works; package layout
+> follows D11. List: scope
 > (in/out), step-by-step implementation order with always-green checkpoints (sized so the
 > phase can land as one reviewable single-commit PR, stacked on the previous phase's
 > branch), the frozen contracts touched (from D9/D10), test plan (what proves each step),

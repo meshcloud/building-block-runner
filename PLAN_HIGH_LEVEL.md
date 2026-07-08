@@ -131,15 +131,47 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
   dispatch to new runner images and vice versa (the k8s Job contract in D9 is frozen);
   mux claim contract unchanged; healthz ports unchanged; meshfed-release `local-dev-stack`
   + acceptance tests keep working (update that repo's docs in lock-step when layout changes).
+- **D11 — package layout: flat concept packages, one conceptual level deep.** The single
+  binary lives in a module at `./runner` (coexists with legacy module dirs during
+  migration; they are deleted phase by phase). Packages sit at exactly one level below the
+  module root, under `internal/` (visibility mechanism, exempt from the depth count — the
+  repo is public and these packages are not API): `internal/meshapi`, `internal/crypto`,
+  `internal/config`, `internal/report`, `internal/dispatch`, `internal/k8sjob`,
+  `internal/tf`, `internal/manual`, `internal/gitlab`, `internal/azdevops`,
+  `internal/github`. Rules: package name = last path element, named for a domain concept —
+  never `api`/`util`/`common`/`core` (the existing `tf-block-runner/util` dissolves into
+  its callers); no hyphenated directories (package identifier ≠ dir name is a permanent
+  papercut); no deeper nesting — a parent dir earns its place only by discriminating, and
+  call sites only ever see the last element anyway. Dependency direction (domain must not
+  import adapters; only `main.go` wires) is enforced by `depguard` in golangci-lint — the
+  same mechanism both sibling repos use — not by tree shape. The tf handler may split into
+  sibling packages (`tf` + e.g. `gitsource`, `tofu`) in Phase 2 only if the seams prove
+  real; one cohesive package is acceptable otherwise.
 
 ## 5. Phases (order matters)
 
-**Delivery model: one phase = one standalone, single-commit PR to `main`** — each lands
-green, behavior-compatible, and reviewable on its own (squash-merged; this feature branch
-carries only the plan documents). Phase 6 is the exception: **one PR per ported runner**,
-where the first PR (simplest runner) deliberately establishes the handler template,
-registration and test patterns the later ports fill in. Phase N+1 must not start before
-phase N's exit criteria hold.
+**Delivery model: one phase = one single-commit PR, stacked.** All detail plans are
+written up-front, then the phases are implemented by running through them in order; each
+phase is one squash-merged PR whose base is the previous phase's branch (stacked PRs,
+merged sequentially into `main`). Each lands green, behavior-compatible, and reviewable on
+its own; this feature branch carries only the plan documents. Phase 6 is the exception:
+**one PR per ported runner**, where the first PR (simplest runner) deliberately
+establishes the handler template, registration and test patterns the later ports fill in.
+Phase N+1 must not start before phase N's exit criteria hold.
+
+**Plans stack on assumptions, not facts — stop markers are mandatory.** Because detail
+plan N+1 is authored before plan N is implemented, it necessarily builds on N's *planned*
+outcome. Therefore every detail plan (01+) must carry:
+
+- an **"Assumptions from prior phases"** section: each assumption states what it presumes
+  exists (interface shape, package, coverage level, contract), which prior plan promised
+  it, and a concrete *verification step* (a command, a file to read, a test to run).
+- **STOP markers** in the implementation sequence: implementation of a phase begins by
+  running all verification steps; any materially failed assumption — and any mid-phase
+  discovery that invalidates a later step — is a **STOP: do not code around it.** Update
+  the affected detail plan(s) first (including cascading corrections to later plans),
+  get the revision reviewed, then resume. A drive-by workaround that "makes it fit" is
+  the failure mode this rule exists to prevent.
 
 ### Phase 0 — Guardrails & baseline
 Coverage baseline measurement per package; CI coverage report + threshold plumbing (not
@@ -239,10 +271,14 @@ Each `PLAN_DETAIL_*.md` is authored by a subagent that receives:
 > **Standing rules for detail-plan subagents.** Research the referenced code first; quote
 > file:line evidence for every claim. The prime directives (§3) bind every proposed
 > design — a plan that violates P1–P7 (e.g. speculative interfaces, pointer-happy structs,
-> layer-cake packages) is wrong even if it works. List: scope (in/out), step-by-step
-> implementation order with always-green checkpoints (sized so the phase can land as one
-> reviewable single-commit PR), the frozen contracts touched (from D9/D10), test plan
-> (what proves each step), rollback story, and cross-repo touch points. Flag any finding
+> layer-cake packages) is wrong even if it works; package layout follows D11. List: scope
+> (in/out), step-by-step implementation order with always-green checkpoints (sized so the
+> phase can land as one reviewable single-commit PR, stacked on the previous phase's
+> branch), the frozen contracts touched (from D9/D10), test plan (what proves each step),
+> rollback story, and cross-repo touch points. Plans 01+ must open with an **"Assumptions
+> from prior phases"** section (assumption → promising plan → concrete verification step)
+> and place **STOP markers** at every point where a failed assumption or mid-phase
+> discovery requires replanning instead of coding around it (see §5). Flag any finding
 > that contradicts PLAN_HIGH_LEVEL.md instead of silently deviating. No code in the plan
 > beyond illustrative signatures. Grill your own plan before returning: walk every
 > decision branch, resolve it from the codebase, and record unresolved questions in an

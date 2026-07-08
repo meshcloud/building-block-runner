@@ -143,8 +143,9 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
   async runs report `IN_PROGRESS` on successful handover; abort flag via status PATCH
   response cancels the run context; 10s status ticker; run-token > base-auth precedence and
   `ClearRunToken` after execution; 409-on-register = success; 404/409-on-claim = no run;
-  media types + `X-Block-Runner-Node-Id`/runner headers; plan-artifact download (only
-  same-origin URL, 128MiB cap); meshStack HTTP backend fallback incl. `TF_HTTP_USERNAME/
+  media types + `X-Block-Runner-Node-Id`/runner headers; plan-artifact download (128MiB
+  cap; NOTE: the former same-origin check was deliberately reverted in `88d67d4` — do not
+  reintroduce or pin it); meshStack HTTP backend fallback incl. `TF_HTTP_USERNAME/
   PASSWORD` ephemeral auth; pre-run script contract (`$MESHSTACK_USER_MESSAGE`, run JSON on
   stdin); `aaaaaa_…auto.tfvars` + `meshStack_run_vars.tf` generation rules (run-scoped vars
   omitted on DETECT/saved-plan APPLY); FILE inputs as data-URLs; env whitelist

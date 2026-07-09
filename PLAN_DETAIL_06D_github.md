@@ -451,7 +451,7 @@ notes where the translation is not mechanical.
 | `Instant`/`DateTimeFormatter.ISO_INSTANT` created-at comparison (`:245-247`) | `time.Parse(time.RFC3339, …)` | ISO_INSTANT ≡ RFC3339 for GitHub's timestamps; unparsable ⇒ error into the find-retry path (Kotlin: exception, same path) |
 | mutable `seenJobIds` set threaded through calls (`:270,301,318`) | local `map[int64]bool` in `pollWorkflow` | no shared state (P4) |
 | `Clock` bean default `Clock.systemUTC()` + unclocked `Instant.now()` in the token factory (`:24`, `AppTokenFactory.kt:31`) | one injected `Clock` used for JWT **and** polling | deliberate unification, test-visible only (flag §16.9) |
-| Spring DI/profiles, `@ConfigurationProperties`, `ImmediateRetryDecorator`, `SingleShotRunner` | `persona_github.go` wiring, `config.SingleRunMode`, `dispatch.Loop` + `Done()` wake — all 06A template artifacts | umbrella §4 rows 1–3 |
+| Spring DI/profiles, `@ConfigurationProperties`, `ImmediateRetryDecorator`, `SingleShotRunner` | `cmd/github/main.go` wiring (**Grill r4 (per-persona binaries):** own binary + `cmd/bbrunner` registration), `config.SingleRunMode`, `dispatch.Loop` + `Done()` wake — all 06A template artifacts | umbrella §4 rows 1–3 |
 | kotlin-logging + MDC pattern (`application.yml:1-5`) | `log/slog` text handler, run id as attr | log format not a contract (umbrella §8) |
 | `UrlSanitizerService` (Spring `@Service`) | unexported `sanitizeBaseUrl(string) (string, error)` in this package (umbrella §4 row 13) | behavior pinned by `GitHubClientFactoryTest` + `UrlSanitizerServiceTest` twins |
 | companion constants (`STEP_ID`, `MAX_*`, input keys) | package-level typed consts (`StepId`, `inputKeyApiToken`, …) | frozen strings (umbrella §7.1) |
@@ -495,10 +495,14 @@ New, additive only: `MANAGEMENT_PORT`, `RUNNER_CONFIG_FILE`, `maxConcurrentRuns`
 
 ## 7. Persona wiring & modes
 
-`persona_github.go` (package main) mirrors `persona_manual.go` (06A §7) — only the
-deltas are listed:
+**Grill r4 (per-persona binaries):** `cmd/github/main.go` (package main) is the github
+persona binary — it links only its handler + the polling dispatcher and mirrors
+`cmd/manual/main.go` (06A §7); the handler is also registered in the `cmd/bbrunner`
+superset (all personas by subcommand). No argv[0] multiplexing. Only the deltas are
+listed:
 
-- Registry entry `"github-block-runner"`; `meshapi.Identity{Name: "github-block-runner"}`.
+- Identity `meshapi.Identity{Name: "github-block-runner"}` (registered in the
+  `cmd/bbrunner` superset).
 - Polling: `dispatch.NewLoop(LoopConfig{PollInterval: 10s, ClaimBackoff: 0,
   MaxConcurrent: cfg.MaxConcurrentRuns}, …)` + `dispatch.NewInProcess(map[…]{
   meshapi.RunnerTypeGitHubWorkflow: handler})`. The type key is the enum constant
@@ -528,10 +532,11 @@ deltas are listed:
 
 The 06A §8 template stage, instantiated:
 
-- Final stage `github-block-runner` in `containers/runner.Dockerfile`: alpine (same
-  digest pin), `ca-certificates bash` only (HTTP-only), uid 2000, symlink
-  `/app/github-block-runner`, `ENV PORT=8080`, `EXPOSE 8080`,
-  `ENTRYPOINT ["/app/entrypoint.sh", "/app/github-block-runner"]`.
+- **Grill r4 (per-persona binaries):** `containers/github-block-runner/Dockerfile` builds
+  `./runner/cmd/github` as its own image: alpine (same digest pin), `ca-certificates bash`
+  only (HTTP-only), uid 2000, the persona binary at `/app/github-block-runner`,
+  `ENV PORT=8080`, `EXPOSE 8080`, **direct entrypoint**
+  `ENTRYPOINT ["/app/github-block-runner"]` (no symlink, no argv[0] `entrypoint.sh`).
 - `containers/github-block-runner/runner-config.yml`: effect-equivalent to §2.7's
   classpath defaults in flat Go keys — uuid `606f54c8-…`, api url
   `http://localhost:8302`, `bb-api`/`guest`, **plus the baked dev private key**
@@ -542,9 +547,11 @@ The 06A §8 template stage, instantiated:
   release tags); deployed controller configs keep working via the baked
   `SPRING_PROFILES_ACTIVE: kubernetes` honor (§6.2).
 - CI flip in the same PR as removal (§12): `ci.yml` github entries out of the JVM
-  matrices, a `github-block-runner` leg (`target: github-block-runner`) into
-  `go-runners-image`; `build-images.yml:35-37` flips to
-  `dockerfile: containers/runner.Dockerfile` + `target: github-block-runner`.
+  matrices, a `github-block-runner` image leg into `go-runners-image`. **Grill r4
+  (per-persona binaries):** the leg builds `./runner/cmd/github` via
+  `containers/github-block-runner/Dockerfile`; `build-images.yml:35-37` flips to
+  `dockerfile: containers/github-block-runner/Dockerfile` (no `target:`), paired with a
+  `go build ./runner/cmd/...` build-matrix leg `./runner/cmd/github`.
   Because 06D also deletes the now-empty JVM jobs, the flip and the §12 teardown are
   one motion here.
 - JVM `command:`-override incompatibility: same wording as 06A §16.9 (accepted,
@@ -563,7 +570,7 @@ Always-green steps for one reviewable single-commit PR; after every step `task t
 | 3 | **GitHub client.** `githubClient` (§4.3) + fake-GitHub transcript tests: the `GithubClientTest` twins (headers, paths, payload bytes, 422 heuristic table, permission gate). | `internal/github` | transcript suite green |
 | 4 | **Inputs builder.** Outbound payload struct + `dispatchInputs` (§4.4): `BuildingBlockWorkflowInputsBuilderTest` twins + Mode-A parsed-JSON parity against the Kotlin byte fixture (`GithubBlockRunnerServiceTest.kt:155-260` expected JSON) + G-P10 leak test. | `internal/github` | unit + fixture-parity tests |
 | 5 | **Handler + poller.** `NewHandler`/`Execute` + `pollWorkflow` (§4.1/§4.5): the scenario suite (§10.1) — run JSON in → fake meshStack + fake GitHub transcripts out, async/sync/error paths, fake clock driving find window and 30-min timeout. | `internal/github` | scenario suite matches the Kotlin pins |
-| 6 | **Persona wiring.** `persona_github.go` + registry entry; mgmt 8102; single-run tail. | `runner/main.go`, `persona_github.go` | loop-wiring scenario; alias precedence (`MANAGEMENT_PORT`>`PORT`>8102); single-run scenario incl. R12/G-P11 twins |
+| 6 | **Persona wiring.** **Grill r4 (per-persona binaries):** `cmd/github/main.go` + register the handler in the `cmd/bbrunner` superset; mgmt 8102; single-run tail. | `runner/cmd/github/main.go`, `runner/cmd/bbrunner` | loop-wiring scenario; alias precedence (`MANAGEMENT_PORT`>`PORT`>8102); single-run scenario incl. R12/G-P11 twins |
 | 7 | **Gate + tooling.** `thresholds.txt` += `internal/github 90` (no exclusions); depguard: `github` imports `dispatch`/`meshapi`/`report`/`config` + stdlib only. | `tools/coverage/*`, `.golangci.yml` | induced-failure check; `task coverage` |
 | 8 | **Image.** Dockerfile stage + `containers/github-block-runner/runner-config.yml` (§8). | containers/ | `docker build --target github-block-runner` + healthz/claim-loop smoke |
 | 9 | **Acceptance gate (§11).** Side-by-side transcripts + real-GitHub smoke. | — | STOP-E; evidence in the PR description |
@@ -655,8 +662,9 @@ STOP-E: only after this gate do steps 10–11 land.
 2. `settings.gradle`: drop `include 'github-block-runner'` (`settings.gradle:5`).
 3. `ci.yml`: drop the github entries from `jvm-runners-ci` and `jvm-runners-image`;
    add the go image leg (§8).
-4. `build-images.yml`: github leg → `containers/runner.Dockerfile` +
-   `target: github-block-runner` (drop `runner-module:`).
+4. `build-images.yml`: **Grill r4 (per-persona binaries):** github leg →
+   `dockerfile: containers/github-block-runner/Dockerfile`, build-matrix leg
+   `./runner/cmd/github` (no `target:`, drop `runner-module:`).
 
 ### 12.2 JVM machinery teardown (step 11 — phase exit "Gradle build gone")
 
@@ -721,8 +729,9 @@ One squash commit ⇒ one `git revert` — but 06D's blast radius is the largest
 build, wrapper, `jvm.Dockerfile`/`entrypoint-jvm.sh`, both JVM CI jobs (whose matrices
 then again contain only core+github — consistent, since 06A–C's reverts are not
 implied), the flake/ktlint/.gitignore/README edits, and deletes `internal/github`,
-`persona_github.go`, the Dockerfile stage, `containers/github-block-runner/`, the
-thresholds line and depguard rules. Wire/k8s/image contracts frozen (§13) ⇒ `:main`
+**Grill r4 (per-persona binaries):** `cmd/github/` + its `cmd/bbrunner` registration,
+`containers/github-block-runner/` (Dockerfile + config), the thresholds line and
+depguard rules. Wire/k8s/image contracts frozen (§13) ⇒ `:main`
 floats back to a JVM-built github image on the next CI run; operator configs unchanged
 in either direction (`SPRING_PROFILES_ACTIVE` honored by both generations,
 `EXECUTION_MODE` never required). Release tags immutable. Lost on revert (documented

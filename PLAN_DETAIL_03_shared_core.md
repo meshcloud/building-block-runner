@@ -89,7 +89,7 @@ the retry policy is then wrong; replan the policy, do not weaken the pin.
 - Capability-config registration API, claim-and-fail-fast → **phase 5** (D5).
 - Any DTO unification of the two PATCH body shapes (`StatusUpdateDTO` vs
   `RunStatusUpdateDTO`) — both are frozen wire shapes (§8).
-- Module consolidation, `runner/` module, persona registry → **phase 4**.
+- Module consolidation, `runner/` module, per-persona `cmd/<persona>` mains + `cmd/bbrunner` superset (D2 grill r4) → **phase 4**.
 - k8s dispatch restructuring (`kubernetes.go` stays a monolithic adapter; only its
   `AppConfig` reads become parameters) → **phase 5** (`KubernetesJobDispatcher`).
 - Cross-repo SDK extraction (explicitly out per high-level §8).
@@ -557,7 +557,7 @@ depend on it).
 `/metrics` on one port per persona (controller 2112 gaining healthz, tf 8100, …), the
 generic runner metrics for standalone personas (runs claimed/succeeded/failed, run
 duration, poll errors), and any shared metrics package. Rationale: those metrics have no
-consumer until the personas exist in one binary, and a shared prometheus-dependent
+consumer until the persona binaries exist (phase 4), and a shared prometheus-dependent
 package created now would be speculative (P3) and would bloat `go-meshapi-client` for
 nothing. The injectable-`Registerer` seam is the only plumbing phase 4 needs from us —
 stated here so phase 4's plan can assume it (its instruction already owns

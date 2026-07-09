@@ -238,7 +238,7 @@ phase-4 move into the `runner` module is a mechanical `git mv` + import-path rew
 | tf domain + application engine + ports + meshapi/config adapters | `tf-block-runner/internal/tf` (package `tf`) | `runner/internal/tf` |
 | git source acquisition (GitSource, auth, go-git/exec adapter) | `tf-block-runner/internal/gitsource` | `runner/internal/gitsource` |
 | terraform/tofu binary install + tfexec + mock facade | `tf-block-runner/internal/tofu` | `runner/internal/tofu` |
-| entrypoint | `tf-block-runner/main.go` (unchanged location — keeps meshfed-release `go run .` working, D10) | `runner` main + persona registry |
+| entrypoint | `tf-block-runner/main.go` (unchanged location — keeps meshfed-release `go run .` working, D10) | `runner/cmd/tf/main.go` (per-persona binary, D2 grill r4) + the `cmd/bbrunner` superset |
 | reporting facility seed (`progress`, `runLog`) | files inside `internal/tf` | extracted to `runner/internal/report` in **phase 3** (D4: runner-agnostic) |
 | config loading | file inside `internal/tf` (tf-specific keys) | generalized into `runner/internal/config` in **phase 3** (D7) |
 | meshapi client, crypto | `go-meshapi-client` module, unchanged | `runner/internal/meshapi`, `internal/crypto` (phase 3/4) |

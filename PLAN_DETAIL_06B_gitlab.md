@@ -25,7 +25,7 @@ umbrella §1 verification steps (A1–A12)** — incorporated by reference — p
 |---|---|---|---|
 | T1 | `meshapi.SourceUpdateDTO`/`StepUpdateDTO` (the marshaled lean PATCH body the adapter produces from the changed steps, all fields `omitempty`) + the unified `report.Reporter{Register(RunStatus) error, Report(RunStatus) (abort bool, err error)}` over a run-scoped `RunPatcher`, stateless, link-based URL construction with `{sourceId}` substitution + missing-placeholder error. Ported handlers call `Report(RunStatus)` with only the changed/new steps present in `RunStatus.Steps` (backend upserts steps by id) and **discard the `abort` return** (**Grill r3 (RunHandler purity):** no Observer/ticker for the ports; the handler still owns its own step dedup — stateless in the no-ticker sense). | 06A §4.3, steps 2 | read `runner/internal/report`; run the Go twins of C-P3–C-P7 |
 | T2 | `config.SingleRunMode` (`EXECUTION_MODE=single-run` OR `SPRING_PROFILES_ACTIVE` list-contains `kubernetes`, deprecation-logged), `config.BlockRunnerCompat` (incl. `privateKey`/`privateKeyFile` fields), `config.ResolvePrivateKey(log, fileKey, inlineKey)` reproducing `PrivateKeyLoader.kt:8-24` order (env `RUNNER_PRIVATE_KEY_FILE` > yaml file key > `/app/runner-private.pem`; missing file ⇒ inline fallback). | 06A §6.3–6.5 | read `runner/internal/config`; run its table tests. If 06A's reviewer deferred the `ResolvePrivateKey` *implementation* to 06B (06A flag §16.8), implement it here in step 3 against the fixed contract |
-| T3 | Shared `ClaimClassifier` (404 ⇒ no-run, 409 ⇒ no-run-logged, other ⇒ no-run-logged + `runner_poll_errors_total`, backoff 0) + persona wiring pattern (`persona_manual.go`), `MANAGEMENT_PORT`/`PORT` alias mechanics, R12 single-run exit tail, Dockerfile final-stage pattern, `containers/<persona>/runner-config.yml` layout, removal recipe, side-by-side comparison procedure + sanctioned-delta allowlist wording. | 06A §7, §8, §11.3, §12 | read `persona_manual.go`, `containers/runner.Dockerfile`; re-read 06A §11.3 evidence in its merged PR |
+| T3 | **Grill r4 (per-persona binaries):** Shared `ClaimClassifier` (404 ⇒ no-run, 409 ⇒ no-run-logged, other ⇒ no-run-logged + `runner_poll_errors_total`, backoff 0) + persona wiring pattern (`cmd/manual/main.go` + its `cmd/bbrunner` superset registration), `MANAGEMENT_PORT`/`PORT` alias mechanics, R12 single-run exit tail, per-persona `containers/<persona>-block-runner/Dockerfile` pattern (direct entrypoint), `containers/<persona>-block-runner/runner-config.yml` layout, removal recipe, side-by-side comparison procedure + sanctioned-delta allowlist wording. | 06A §7, §8, §11.3, §12 | read `runner/cmd/manual/main.go`, `runner/cmd/bbrunner/main.go`, `containers/manual-block-runner/Dockerfile`; re-read 06A §11.3 evidence in its merged PR |
 | T4 | The block-runner-core wire pins C-P1–C-P7 exist and are green (06B inherits, never re-writes). | 06A §3.3 | `./gradlew :block-runner-core:check`; grep the pin test names |
 | T5 | `dispatch.ClaimedRun.RawJson` carries the claimed run JSON **base64-encoded** (today's controller shape, `runapi.go:59`) and `Details` is the parsed `RunDetailsDTO` with `Links{Self, RegisterSource, UpdateSource, MeshstackBaseUrl}` (`go-meshapi-client/meshapi/dtos.go:19-28`). | Plan 05 §4.1 | read `runner/internal/dispatch`; `grep -n "RawJson" runner/internal/dispatch` |
 | T6 | Handler-visible JSON decoding preserves number fidelity (`json.Decoder.UseNumber` or equivalent) — recorded as a template requirement in 06A §17 precisely because gitlab embeds run JSON in outbound payloads. | 06A §4.2/§17 | read the decode path; run 06A's M-P3 Go twin |
@@ -317,7 +317,7 @@ captures the Kotlin baseline, §16.4 argues the delta.
   not be empty"`; drop one trailing `/` (`UrlSanitizerService.kt:8-20` — umbrella §4
   row 13: package-local helper, no shared package for 6 lines). Additionally
   `url.Parse` validation replaces OkHttp's `toHttpUrl` throw (same row-C outcome).
-- The `*http.Client` is constructed in `persona_gitlab.go` with
+- The `*http.Client` is constructed in `cmd/gitlab/main.go` with
   `CheckRedirect: func(…) error { return http.ErrUseLastResponse }` (§2.2.1 parity,
   G-P10) and injected — tests swap the transport (`httptest` fake GitLab).
 - Response handling reproduces §2.3 exactly: 2xx ⇒ nil; 404 ⇒ `ExternalCallError` A1;
@@ -492,9 +492,12 @@ published-image defaults is a **phase-7** ledger item.
 
 ## 7. Persona wiring & modes
 
-### 7.1 Registry & polling mode (`persona_gitlab.go`, package main — only main wires, D11)
+### 7.1 Persona wiring & polling mode (`cmd/gitlab/main.go`, package main — only main wires, D11)
 
-- Registry entry `"gitlab-block-runner"` → persona bootstrap;
+- **Grill r4 (per-persona binaries):** `cmd/gitlab/main.go` is the gitlab runner's own
+  `package main` (links only the gitlab handler + its deps; no persona registry, no
+  argv[0] switch of a shared binary); the same handler is *also* registered in the
+  `cmd/bbrunner` superset (persona by subcommand, 06A §7.1). Persona bootstrap sets
   `meshapi.Identity{Name: "gitlab-block-runner", Version: build-or-VERSION}` (06A §6.2).
 - `dispatch.NewLoop(LoopConfig{PollInterval: 10s, ClaimBackoff: 0, MaxConcurrent:
   cfg.MaxConcurrentRuns /* default 1 */}, …)` + `dispatch.NewInProcess(map[…]{
@@ -505,7 +508,7 @@ published-image defaults is a **phase-7** ledger item.
 - Decryptor wiring: polling ⇒ cert-based from the resolved private key (§6.1);
   the same decryptor instance serves token decryption and `DecryptInputs`.
 - `mgmt.NewServer` on `config.ManagementPort(log, 8103, PORT-alias)` + `mgmt.RunMetrics`
-  + plan-05 counters, wired like `persona_manual.go`. Metrics classification: the
+  + plan-05 counters, wired like `cmd/manual/main.go`. Metrics classification: the
   IN_PROGRESS handover with nil return counts **succeeded** (umbrella §7.2/§10.10).
 - Node id = plain runner uuid; header set = shared-client set (uniform sanctioned
   additive delta, umbrella §7.7 — wording copied from 06A).
@@ -542,12 +545,15 @@ non-zero (the sanctioned delta, baseline pin G-P13).
 
 ## 8. Dockerfile & image switch
 
-The 06A §8 template stage, mechanically repeated:
+The 06A §8 template, mechanically repeated:
 
-- New final stage `gitlab-block-runner` in `containers/runner.Dockerfile`: same alpine
-  digest pin, `ca-certificates bash` only (HTTP-only runner), meshcloud uid 2000,
-  binary + symlink `/app/gitlab-block-runner`, `ENV PORT=8080`, `EXPOSE 8080`,
-  `ENTRYPOINT ["/app/entrypoint.sh", "/app/gitlab-block-runner"]`.
+- **Grill r4 (per-persona binaries):** New per-persona
+  `containers/gitlab-block-runner/Dockerfile` building only the gitlab binary
+  (`go build ./runner/cmd/gitlab`): same alpine digest pin, `ca-certificates bash` only
+  (HTTP-only runner), meshcloud uid 2000, the fit binary at `/app/gitlab-block-runner`
+  (its own binary — no shared `bbrunner`, no symlink), `ENV PORT=8080`, `EXPOSE 8080`,
+  and a **direct** `ENTRYPOINT ["/app/entrypoint.sh", "/app/gitlab-block-runner"]` (no
+  argv[0] multiplexing).
 - `containers/gitlab-block-runner/runner-config.yml`: a **per-impl** file that
   deep-merges over the shared top-level base (base < per-impl < env, §6.3);
   effect-equivalent to the Kotlin classpath defaults (§2.4) in flat keys — uuid
@@ -559,9 +565,10 @@ The 06A §8 template stage, mechanically repeated:
   `SPRING_PROFILES_ACTIVE: kubernetes` (umbrella A12).
 - CI flip in the same PR as removal (§12): `ci.yml` — drop the gitlab entries from
   `jvm-runners-ci` (`ci.yml:34-35`) and `jvm-runners-image` (`:70-71`), add the
-  `go-runners-image` leg (`target: gitlab-block-runner`); `build-images.yml:38-40` —
-  the gitlab leg becomes `dockerfile: containers/runner.Dockerfile` +
-  `target: gitlab-block-runner` (drop `runner-module:`).
+  `go-runners-image` leg (`dockerfile: containers/gitlab-block-runner/Dockerfile`) plus a
+  `./runner/cmd/gitlab` leg to the go build matrix; `build-images.yml:38-40` — the gitlab
+  leg becomes `dockerfile: containers/gitlab-block-runner/Dockerfile` (a per-persona
+  Dockerfile — no shared `target:` stage; drop `runner-module:`).
 - JVM `command:`-override incompatibility: same flag wording as 06A §16.9 (umbrella
   §5.6), restated in §16.
 
@@ -578,10 +585,10 @@ until step 9.
 | 2 | **`meshapi.DecryptInputs`** (§4.4) + the `Decryptor` empty-string guard (T8) if missing. | `internal/meshapi` | table-driven tests: STRING/CODE/FILE decrypted, other-sensitive-type skip+warn, non-sensitive untouched, impl secret untouched, unknown-field passthrough, `UseNumber` fidelity, NoOp identity; cross-checked against a `MeshCertDecryptionServiceTest` fixture ciphertext (umbrella A9 style); `meshapi` stays ≥90 |
 | 3 | **`internal/gitlab` package:** `ExternalCallError` (§4.5), `sanitizeBaseUrl`, error classification, `valueString`, `buildTriggerForm`, `triggerPipeline`. | `internal/gitlab` | unit tests for the pure functions (sanitize table = `UrlSanitizerServiceTest` port, classification table, stringify table incl. G-P8 rows); fake-GitLab transcript tests for the multipart request (G-P1/G-P2 twins) and response taxonomy (G-P3–G-P5, G-P10 twins) |
 | 4 | **Handler.** `gitlab.Config`, `NewHandler`, `Execute` flow (§4.1). | `internal/gitlab` | Go scenario suite (§10.1): run JSON in → fake meshStack + fake GitLab transcripts out, matching the Kotlin pins |
-| 5 | **Persona wiring, polling.** `persona_gitlab.go` + registry entry; mgmt on 8103; loop + classifier + metrics; cert decryptor from resolved key. | `runner/main.go`, `persona_gitlab.go` | loop-wiring scenario (claim→register→trigger→handover→immediate re-claim→404); `resolvePersona` row; alias-precedence test (`MANAGEMENT_PORT`>`PORT`>8103); key-resolution failure = actionable startup error |
-| 6 | **Single-run mode.** `SingleRunMode` activation, file source, NoOp decryptor, R12 exit tail. | `persona_gitlab.go` (+ glue) | single-run scenario twin of G-P12 (pre-decrypted fixture ⇒ captured wire equal to the Kotlin capture modulo sanctioned deltas); exit-condition tests (G-P13 twins incl. the flagged tightening) |
+| 5 | **Persona wiring, polling (Grill r4 — per-persona binaries).** `cmd/gitlab/main.go` + register the gitlab handler in the `cmd/bbrunner` superset; mgmt on 8103; loop + classifier + metrics; cert decryptor from resolved key. | `runner/cmd/gitlab/main.go`, `runner/cmd/bbrunner/main.go` | loop-wiring scenario (claim→register→trigger→handover→immediate re-claim→404); `cmd/bbrunner` subcommand-dispatch row; alias-precedence test (`MANAGEMENT_PORT`>`PORT`>8103); key-resolution failure = actionable startup error |
+| 6 | **Single-run mode.** `SingleRunMode` activation, file source, NoOp decryptor, R12 exit tail. | `cmd/gitlab/main.go` (+ glue) | single-run scenario twin of G-P12 (pre-decrypted fixture ⇒ captured wire equal to the Kotlin capture modulo sanctioned deltas); exit-condition tests (G-P13 twins incl. the flagged tightening) |
 | 7 | **Gate + tooling.** `thresholds.txt` += `runner/internal/gitlab 90` (no exclusions); depguard: `gitlab` imports `dispatch`/`meshapi`/`report`/`config` + stdlib only; nothing imports `gitlab` but main. | `tools/coverage/*`, `.golangci.yml` | induced-failure check; `task coverage` green |
-| 8 | **Image.** Dockerfile stage + `containers/gitlab-block-runner/runner-config.yml` (§8, incl. dev key §6.3). | containers/ | `docker build --target gitlab-block-runner`; container smoke: healthz `OK` on 8080, boots to claim loop against a stub |
+| 8 | **Image.** `containers/gitlab-block-runner/Dockerfile` + `containers/gitlab-block-runner/runner-config.yml` (§8, incl. dev key §6.3). | containers/ | `docker build -f containers/gitlab-block-runner/Dockerfile`; container smoke: healthz `OK` on 8080, boots to claim loop against a stub |
 | 9 | **Acceptance gate (§11).** Side-by-side transcripts + manual smoke against a real GitLab; outer local-dev-stack/acceptance net green. | — | STOP-E lives here; evidence in the PR description |
 | 10 | **Removal.** Delete `gitlab-block-runner/`; `settings.gradle:6` include dropped; CI legs flipped per §8; grep gate. | module dir, gradle, workflows | full CI green incl. the flipped image leg; remaining modules' `./gradlew check` green |
 
@@ -671,7 +678,8 @@ Umbrella §5.8 recipe instantiated (last commits, after §11 passes):
 3. `.github/workflows/ci.yml`: drop the gitlab entries from `jvm-runners-ci`
    (`:34-35`) and `jvm-runners-image` (`:70-71`); add the go image leg (§8).
 4. `.github/workflows/build-images.yml`: gitlab leg (`:38-40`) →
-   `dockerfile: containers/runner.Dockerfile`, `target: gitlab-block-runner`.
+   `dockerfile: containers/gitlab-block-runner/Dockerfile` (a per-persona Dockerfile —
+   no shared `target:` stage).
 5. No meshfed-release edits required (§15 — verified, unlike 06A).
 6. Grep gate: `grep -rn "gitlab-block-runner" --exclude-dir=.git` — remaining hits
    must be image/persona *names* (workflows, containers/, run-controller sample
@@ -720,7 +728,8 @@ forwarding in `MESHSTACK_RUN` (§16.6), multipart boundary/part-order (§16.7).
 
 One squash commit ⇒ one `git revert` restores the Kotlin module, its
 `settings.gradle` include, both CI matrix entries and the JVM image leg, and deletes
-`internal/gitlab`, `persona_gitlab.go` + registry entry, the Dockerfile stage,
+`internal/gitlab`, `cmd/gitlab/main.go` + its `cmd/bbrunner` handler registration, the
+per-persona `containers/gitlab-block-runner/Dockerfile`,
 `containers/gitlab-block-runner/`, the thresholds line and depguard rules, **and
 `meshapi.DecryptInputs`** (its only consumer reverts with it — 06C/06D plans consume
 it *after* 06B merges, so a 06B revert forces their STOP-A verification to fail

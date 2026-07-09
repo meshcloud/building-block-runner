@@ -24,7 +24,7 @@ umbrella's STOP-A.
 | B3 | `meshapi.RunClient` supports per-run construction with runToken-only auth and a caller-supplied `RegistrationDTO` (one step, PENDING) via `RegisterSource`, and `PatchStatus(runId, sourceId string, payload any)` accepts an arbitrary marshalable body — i.e. the lean `SourceUpdate` shape (§4.3) needs **no client change**. Claim POST / status PATCH are never retried. | Plan 03 §5.2.4, Plan 05 A4 | read `runner/internal/meshapi/client.go` signatures; `grep -n "payload any" runner/internal/meshapi` |
 | B4 | `RunDetailsDTO` models everything the manual service reads: `Metadata.Uuid`, `Spec.RunToken`, `Spec.BuildingBlock.Spec.Inputs[]{Key, Value, Type, IsSensitive}`, `Links{Self, RegisterSource, UpdateSource, MeshstackBaseUrl}` with `LinkDTO.Templated` (`go-meshapi-client/meshapi/dtos.go:10-72` today, moved by plan 04). | Plan 03/04 moves | read `runner/internal/meshapi/dtos.go` |
 | B5 | `config.Path/LoadFile/Env`, `config.Api` (+`NewAuthProvider`, API-key-wins precedence), `config.ManagementPort(log, def, aliases…)` exist per plans 03/04; `mgmt.NewServer` + `mgmt.RunMetrics` + the plan-05 counters exist and are persona-reusable. | Plan 03 §5.3, Plan 04 §4.3, Plan 05 §10.3 | read `runner/internal/{config,mgmt}`; run the alias-precedence tests |
-| B6 | Persona mechanics: adding a persona = `persona_<name>.go` + registry entry + `containers/runner.Dockerfile` final stage + build-matrix leg; single-run tail implements the 2b-R12 exit rule (non-zero only when no terminal/handover status was reported). | Plan 04 §11, Plan 05 A9 | read `runner/main.go`, `persona_tf.go` single-run tail, `containers/runner.Dockerfile` |
+| B6 | **Grill r4 (per-persona binaries):** Persona mechanics: adding a persona = `cmd/<name>/main.go` (package main, wiring only — links just that persona's deps) + register its handler in the `cmd/bbrunner` superset + `containers/<name>-block-runner/Dockerfile` with a direct entrypoint + build-matrix leg `./runner/cmd/<name>`; single-run tail implements the 2b-R12 exit rule (non-zero only when no terminal/handover status was reported). | Plan 04 §11, Plan 05 A9 | read `runner/cmd/tf/main.go` (single-run tail), `runner/cmd/bbrunner/main.go` handler registration, a per-persona `containers/*/Dockerfile` |
 | B7 | The Kotlin manual suite is green as-is: `./gradlew :manual-block-runner:check` and `:block-runner-core:check` pass on the phase-5 branch (the pinning step builds on them). | Current `main` CI | run both gradle tasks once before writing pins |
 | B8 | `report` package has `Progress`/`RunStatus`/`StepStatus`/`ExecutionStatus` and the `Reporter` port; the `Observer` ticker exists but is **not** consumed by this port (umbrella §7.5). | Plan 03 §5.4 | read `runner/internal/report` |
 
@@ -343,8 +343,8 @@ Semantic-parity notes where the translation is not mechanical.
 | catch-all around fetch (`NoOpBlockRunnerService.kt:16-23`) | the persona's `ClaimClassifier`: every claim error ⇒ no-run-logged, `ClaimBackoff: 0` (umbrella §4 row 2) — the handler never sees claim errors | same observable: log + next-tick retry; new additive `runner_poll_errors_total` |
 | propagated register/update exceptions (§2.5) | `Execute` returns wrapped errors (`fmt.Errorf("registering as source for run %s: %w", …)`) | same outcome: run unreported, loop logs; k8s exit semantics via §7.3 |
 | `@Scheduled(10s)` + `ImmediateRetryDecorator` (`BlockRunRequestScheduler.kt:14`, `ImmediateRetryDecorator.kt:16-25`) | `dispatch.Loop{PollInterval: 10s}` + `InProcess.Done()` wake (immediate re-drain) | cadence-equivalent by construction (umbrella §4 row 1); pinned by loop-wiring tests §10.2 |
-| `@Profile("kubernetes")` bean split + `SingleShotRunner`/`RunTerminator` (`BlockRunnerServiceConfiguration.kt:15-28`, `SingleShotRunner.kt:15-49`) | persona mode switch in `persona_manual.go` (§7.3); exit code = return value of the single-run tail, no terminator interface (tests drive the handler, not the process) | exit-code delta on pre-report failures is the sanctioned §7.9 tightening |
-| Spring DI / `@ConfigurationProperties(prefix="blockrunner")` (`ManualRunnerConfig.kt:5-7`) | constructor injection wired in `persona_manual.go`; persona config struct over shared `config` + the `blockrunner:` compat block (§6) | key spellings preserved per §6.2 |
+| `@Profile("kubernetes")` bean split + `SingleShotRunner`/`RunTerminator` (`BlockRunnerServiceConfiguration.kt:15-28`, `SingleShotRunner.kt:15-49`) | persona mode switch in `cmd/manual/main.go` (§7.3); exit code = return value of the single-run tail, no terminator interface (tests drive the handler, not the process) | exit-code delta on pre-report failures is the sanctioned §7.9 tightening |
+| Spring DI / `@ConfigurationProperties(prefix="blockrunner")` (`ManualRunnerConfig.kt:5-7`) | constructor injection wired in `cmd/manual/main.go`; persona config struct over shared `config` + the `blockrunner:` compat block (§6) | key spellings preserved per §6.2 |
 | subclass override `DebugBlockRunnerService : NoOpBlockRunnerService` (`DebugBlockRunnerService.kt:14-22`) | one package, config-selected debug execution path; no embedding-as-inheritance | pinned by M-P4/M-P5 → Go scenario twins |
 | companion-object `STEP_ID` + `toOutputType` (`NoOpBlockRunnerService.kt:69-88`) | package-level typed constant + pure function | table pinned by the 8 kept unit tests |
 | `associateBy { it.key }` (`:36-42`) | ordered loop into a map (last-wins) | M-P2 |
@@ -438,9 +438,13 @@ handling is not touched (umbrella §2 out-scope).
 
 ## 7. Persona wiring & modes
 
-### 7.1 Registry & polling mode (`persona_manual.go`, package main — only main wires, D11)
+### 7.1 Persona wiring & polling mode (`cmd/manual/main.go`, package main — only main wires, D11)
 
-- Registry entry `"manual-block-runner"` → persona bootstrap;
+- **Grill r4 (per-persona binaries):** `cmd/manual/main.go` is the manual runner's own
+  `package main` — it links only the manual handler and its deps (no persona
+  registry, no argv[0] switch of a shared binary). The same handler is *also* registered
+  in the `cmd/bbrunner` superset (the opt-in all-in-process / local-dev build that links
+  every handler and both dispatchers, persona by subcommand). Persona bootstrap sets
   `meshapi.Identity{Name: "manual-block-runner", Version: build.Version-or-VERSION}`
   (§6.2). No legacy alias names exist (the JVM image had no binary path — §8).
 - Polling wiring: `dispatch.NewLoop(LoopConfig{PollInterval: 10s, ClaimBackoff: 0,
@@ -458,7 +462,7 @@ handling is not touched (umbrella §2 out-scope).
   shared-client set, the uniform sanctioned additive delta (umbrella §7.7), verified
   once against mux + coordinator in this PR's acceptance step (§11).
 - `mgmt.NewServer` on `config.ManagementPort(log, 8104, PORT-alias)` +
-  `mgmt.RunMetrics` + plan-05 counters, wired exactly like `persona_tf.go`. Metrics
+  `mgmt.RunMetrics` + plan-05 counters, wired exactly like `cmd/tf/main.go`. Metrics
   classification per umbrella §7.2 (terminal SUCCEEDED ⇒ succeeded; manual has no
   async handover case).
 - Self-registration: **off by default** (Kotlin parity — the runner object is
@@ -499,16 +503,19 @@ then retries only runs meshStack never heard about (plan 05 §16.3).
 
 ## 8. Dockerfile & image switch
 
-The template stage all of 06B–D copy (umbrella §5.6):
+The template all of 06B–D copy (umbrella §5.6):
 
-- New final stage `manual-block-runner` in `containers/runner.Dockerfile`:
-  `alpine:3.22.4` (same digest pin as the existing stages), `apk add ca-certificates
-  bash` only (HTTP-only runner — no git/tofu/nix), meshcloud uid 2000, binary
-  `/app/bbrunner` + symlink `/app/manual-block-runner`, config
+- **Grill r4 (per-persona binaries):** New per-persona
+  `containers/manual-block-runner/Dockerfile` building only the manual binary
+  (`go build ./runner/cmd/manual`): `alpine:3.22.4` (same digest pin as the other runner
+  images), `apk add ca-certificates bash` only (HTTP-only runner — no git/tofu/nix),
+  meshcloud uid 2000, the fit binary at `/app/manual-block-runner` (its own binary — no
+  shared `bbrunner`, no symlink entrypoint), config
   `COPY containers/manual-block-runner/runner-config.yml /app/runner-config.yml`,
-  `ENV PORT=8080`, `EXPOSE 8080` (parity with `jvm.Dockerfile:18-19`),
-  `ENTRYPOINT ["/app/entrypoint.sh", "/app/manual-block-runner"]` (the Go
-  entrypoint's CA-import + `exec "$@"` gives the symlink as argv[0], plan 04 §4.4).
+  `ENV PORT=8080`, `EXPOSE 8080` (parity with `jvm.Dockerfile:18-19`), and a **direct**
+  `ENTRYPOINT ["/app/entrypoint.sh", "/app/manual-block-runner"]` (the Go entrypoint's
+  CA-import + `exec "$@"` runs the persona binary directly — no argv[0] multiplexing,
+  plan 04 §4.4).
 - `containers/manual-block-runner/runner-config.yml`: **RULED (grill r2):** this is a
   **per-impl** config file that **deep-merges over** a shared top-level base
   `runner-config.yml` (base < per-impl < env) — the template layering the other three
@@ -520,13 +527,13 @@ The template stage all of 06B–D copy (umbrella §5.6):
 - Published name/tags unchanged: `ghcr.io/meshcloud/manual-block-runner:main` + release
   tags. Deployed controller configs keep working because the image honors their baked
   `SPRING_PROFILES_ACTIVE: kubernetes` (§6.3, umbrella A12).
-- CI flip **in the same PR as the module removal** (§12): `ci.yml` — drop the
-  `manual-block-runner` entries from `jvm-runners-ci` (`ci.yml:30-31`) and
-  `jvm-runners-image` (`:66-67`), add a `manual-block-runner` leg to the
-  `go-runners-image` matrix (`file: containers/runner.Dockerfile`,
-  `target: manual-block-runner`); `build-images.yml:32-34` — the manual leg becomes
-  `dockerfile: containers/runner.Dockerfile` + `target: manual-block-runner` (the
-  `target:` mechanism exists since plan 04 §4.5).
+- **Grill r4 (per-persona binaries):** CI flip **in the same PR as the module removal**
+  (§12): `ci.yml` — drop the `manual-block-runner` entries from `jvm-runners-ci`
+  (`ci.yml:30-31`) and `jvm-runners-image` (`:66-67`), add a `manual-block-runner` leg to
+  the `go-runners-image` matrix (`file: containers/manual-block-runner/Dockerfile`) plus a
+  `./runner/cmd/manual` leg to the go build matrix; `build-images.yml:32-34` — the manual
+  leg becomes `dockerfile: containers/manual-block-runner/Dockerfile` (a per-persona
+  Dockerfile — no shared `target:` stage).
 - Explicit non-goal (umbrella §5.6): no `java`-shaped compat. The JVM entrypoint was
   `["/app/entrypoint.sh","java","-jar","/app/executable"]` (`jvm.Dockerfile:27`);
   an operator `command:` override with java arguments breaks — flagged §16.9, accepted
@@ -546,10 +553,10 @@ green until step 9. Gradle CI stays green until the removal step (umbrella §5.1
 | 2 | **Wire seam.** `meshapi.SourceUpdateDTO`/`StepUpdateDTO` + the unified `report.Reporter` (§4.3) + the link-based run-scoped client construction (`{sourceId}` substitution, missing-placeholder error). | `internal/meshapi`, `internal/report` | new transcript tests = Go twins of C-P3–C-P7 (fake transport); both packages stay ≥90 |
 | 3 | **Config compat helpers.** `config.SingleRunMode` (§6.3), `config.BlockRunnerCompat` + normalization (§6.4), `config.ResolvePrivateKey` (§6.5). | `internal/config` | table-driven tests: profile-list membership, precedence per §6.4, the full Kotlin key-resolution order incl. missing-file→inline fallback; `config` ≥90 |
 | 4 | **Handler.** `internal/manual`: `Config`, `NewHandler`, echo path incl. `toOutputType` + last-wins + number fidelity, debug path (Clock/Rand injected). | `internal/manual` | Go scenario suite (§10.1): run JSON in → fake meshStack transcript out, matching the Kotlin pins; unit tests for the mapping table |
-| 5 | **Persona wiring, polling.** `persona_manual.go` + registry entry; ClaimClassifier (§7.1); mgmt on 8104 + metrics; loop wiring. | `runner/main.go`, `persona_manual.go` | loop-wiring scenario: claim 200→register→update→immediate re-claim→404; classifier table tests; `resolvePersona` test row; alias-precedence test (`MANAGEMENT_PORT`>`PORT`>8104) |
-| 6 | **Single-run mode.** `SingleRunMode` activation, file source, R12 exit tail. | `persona_manual.go` (+ small `manual` glue) | single-run scenario: the `ManualRunnerKubernetesStartupScenario` fixture JSON (§3.1) driven through the persona path produces the pinned register/update wire; exit-condition tests for M-P6/M-P7 twins (§10.1) |
+| 5 | **Persona wiring, polling (Grill r4 — per-persona binaries).** `cmd/manual/main.go` + register the manual handler in the `cmd/bbrunner` superset; ClaimClassifier (§7.1); mgmt on 8104 + metrics; loop wiring. | `runner/cmd/manual/main.go`, `runner/cmd/bbrunner/main.go` | loop-wiring scenario: claim 200→register→update→immediate re-claim→404; classifier table tests; `cmd/bbrunner` subcommand-dispatch test row; alias-precedence test (`MANAGEMENT_PORT`>`PORT`>8104) |
+| 6 | **Single-run mode.** `SingleRunMode` activation, file source, R12 exit tail. | `cmd/manual/main.go` (+ small `manual` glue) | single-run scenario: the `ManualRunnerKubernetesStartupScenario` fixture JSON (§3.1) driven through the persona path produces the pinned register/update wire; exit-condition tests for M-P6/M-P7 twins (§10.1) |
 | 7 | **Gate + tooling.** `thresholds.txt` gains `runner/internal/manual 90` (no exclusions); depguard: `manual` may import `dispatch`/`meshapi`/`report`/`config` + stdlib only, nothing imports `manual` but main. | `tools/coverage/*`, `.golangci.yml` | induced-failure check on the new line; `task coverage` green |
-| 8 | **Image.** Dockerfile stage + `containers/manual-block-runner/runner-config.yml` (§8). | containers/ | `docker build --target manual-block-runner` + container smoke: healthz `OK` on 8080, boots to claim loop against a stub |
+| 8 | **Image.** `containers/manual-block-runner/Dockerfile` + `containers/manual-block-runner/runner-config.yml` (§8). | containers/ | `docker build -f containers/manual-block-runner/Dockerfile` + container smoke: healthz `OK` on 8080, boots to claim loop against a stub |
 | 9 | **Acceptance gate (§11).** local-dev-stack with the Go persona; k8s single-run smoke; side-by-side transcript check. | — | STOP-E lives here; evidence in the PR description |
 | 10 | **Removal.** Delete `manual-block-runner/`; `settings.gradle:4` include dropped; CI legs flipped per §8; meshfed-release lock-step edits (§15); grep gate: no `manual-block-runner/` path references outside CHANGELOG/plan docs (image/persona name references remain). | module dir, gradle, workflows | full CI green incl. the flipped image leg; `./gradlew check` still green for the remaining modules |
 
@@ -605,7 +612,7 @@ gate before removal (step 9), all three legs required:
    as `RUN_JSON_FILE_PATH` + `SPRING_PROFILES_ACTIVE=kubernetes` against a captured
    fake meshStack → wire transcript equal to the Kotlin capture (modulo the sanctioned
    deltas: §7.7 headers, §16.4 null ≡ absent); exit 0. Executed against the built image
-   (docker run) so the entrypoint/symlink/env path is proven, not just the test suite.
+   (docker run) so the direct-entrypoint / persona-binary / env path is proven, not just the test suite.
 3. **Side-by-side transcript equivalence (template for 06B–D):** the same run JSON
    (sensitive + duplicate + typed inputs) driven through the Kotlin runner (pin-suite
    capture) and the Go handler (fake-transport capture); diff empty modulo the
@@ -628,8 +635,8 @@ Umbrella §5.8 recipe instantiated (last commits of the PR, after §11 passes):
    `jvm-runners-ci` (`:30-31`) and `jvm-runners-image` (`:66-67`); add the go image
    leg (§8).
 4. `.github/workflows/build-images.yml`: manual leg (`:32-34`) →
-   `dockerfile: containers/runner.Dockerfile`, `target: manual-block-runner`
-   (drop `runner-module:`).
+   `dockerfile: containers/manual-block-runner/Dockerfile` (a per-persona Dockerfile —
+   no shared `target:` stage; drop `runner-module:`).
 5. meshfed-release lock-step doc edits (§15) merged together with this PR.
 6. Grep gate: `grep -rn "manual-block-runner" --exclude-dir=.git` — remaining hits
    must be image/persona *names* (workflows, containers/, run-controller sample
@@ -668,7 +675,8 @@ serialization of optional PATCH/register fields (§16.4).
 
 One squash commit ⇒ one `git revert` restores the Kotlin module, its `settings.gradle`
 include, both CI matrix entries and the JVM image leg, and deletes `internal/manual`,
-`persona_manual.go` + its registry entry, the Dockerfile stage,
+`cmd/manual/main.go` + its `cmd/bbrunner` handler registration, the per-persona
+`containers/manual-block-runner/Dockerfile`,
 `containers/manual-block-runner/`, the thresholds line, the depguard rules, and the
 shared helpers of §4.3/§6.3–6.5 (their only consumers revert with them). Because the
 image name and every wire/k8s contract are frozen (§13), `:main` floats back to a
@@ -740,8 +748,9 @@ Findings the umbrella / prior plans did not anticipate, plus judgment calls for 
    orders the helpers into the template PR; P3 argues for shipping with 06B. Shipped
    here with tests + fixed contract; reviewer may move the implementation to 06B.
 9. **JVM `command:`-override incompatibility** (§8): no `/app/<binary>` existed in the
-   JVM image, so no symlink alias can help operators who exec java directly — accepted
-   per umbrella §5.6, restated here because 06A sets the wording B–D copy.
+   JVM image, so nothing on the Go image can alias `java` for operators who exec java
+   directly — accepted per umbrella §5.6, restated here because 06A sets the wording
+   B–D copy.
 10. **M-P7 exit-code delta** (§7.3): the one place a pinned Kotlin behavior is
     deliberately not preserved — umbrella §7.9/§10.3 sanction it; the pin documents
     the baseline. **RULED (grill r2):** confirmed — fix in phase 6; the old exit-0
@@ -770,7 +779,7 @@ Executed now at plan level; re-run mechanically at §9 step 0 before coding.
 | `BlockRunnerCompat` (§6.4) | + `privateKey`/`privateKeyFile` consumed (baked dev key, umbrella §10.5) | same | same | fits — fields already present, manual merely ignores them |
 | `ResolvePrivateKey` (§6.5) | first consumer | consumer | consumer | fits (contract = Kotlin `PrivateKeyLoader`, shared by all three) |
 | `ExternalCallError` shape (§4.4) | 404/verification/generic message pairs map onto {User,System,Status,Url,Body} | MeshHttpException fields 1:1 | 422-heuristic needs `ResponseBody` access ✓ | fits; ships in 06B as stated |
-| Dockerfile stage + config layout (§8) | + baked dev private key file placement (conscious, umbrella §10.5) | same | same | fits — one extra COPY per runner, pattern unchanged |
+| Per-persona Dockerfile + config layout (§8) | + baked dev private key file placement (conscious, umbrella §10.5) | same | same | fits — one extra COPY per runner, pattern unchanged |
 | Metrics classification (§7.1/umbrella §7.2) | always-async: handover + nil return ⇒ **succeeded** — rule already fixed umbrella §7.2 | async flag ⇒ same rule; sync ⇒ terminal-status keyed | same | fits |
 | `UseNumber` decode fidelity (§4.2) | required — `MESHSTACK_RUN` embeds run JSON | stringified `templateParameters` | base64 `buildingBlockRun` payload | fits; recorded as template requirement here so B–D don't rediscover it |
 | Removal recipe + CI flip (§8/§12) | mechanical repeat | mechanical repeat | + core/Gradle teardown (umbrella §5.8) | fits |

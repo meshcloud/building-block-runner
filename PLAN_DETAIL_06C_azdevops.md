@@ -500,12 +500,17 @@ the shipped literals are not carried (umbrella §10.4).
 
 ## 7. Persona wiring & modes
 
-### 7.1 Registry & polling mode (`persona_azdevops.go`, package main — only main wires, D11)
+### 7.1 Wiring & polling mode (`cmd/azdevops/main.go`, package main — only main wires, D11)
 
-- Registry entry `"azure-devops-block-runner"` →
-  `meshapi.Identity{Name: "azure-devops-block-runner", Version: …}` (06A §6.2 rule).
-  File name `persona_azdevops.go` matches the package/branch token; the *registry key
-  and image name* keep the full hyphenated module name (umbrella §7.1).
+**Grill r4 (per-persona binaries):** the azure-devops persona is its own binary
+`./runner/cmd/azdevops/main.go`, linking only its handler + the polling dispatcher; the
+handler is also registered in the `./runner/cmd/bbrunner` superset (all handlers + both
+dispatchers, persona by subcommand — the opt-in all-in-process build, not a default
+published image). No argv[0] multiplexing of a shared binary, no persona registry.
+
+- Identity `meshapi.Identity{Name: "azure-devops-block-runner", Version: …}` (06A §6.2
+  rule). The directory name `cmd/azdevops` matches the package/branch token; the
+  *Identity name and image name* keep the full hyphenated module name (umbrella §7.1).
 - Polling: `dispatch.NewLoop(LoopConfig{PollInterval: 10s, ClaimBackoff: 0,
   MaxConcurrent: cfg.MaxConcurrentRuns /* default 1 */}, …)` +
   `dispatch.NewInProcess(map[…]{meshapi.RunnerTypeAzureDevOpsPipeline: handler})`
@@ -555,10 +560,11 @@ up to 30 min — unchanged from Kotlin.
 
 The 06A §8 template stage repeated (umbrella §5.6):
 
-- New final stage `azure-devops-block-runner` in `containers/runner.Dockerfile`: same
-  alpine digest pin, `ca-certificates bash` only (HTTP-only), uid 2000, binary +
-  symlink `/app/azure-devops-block-runner`, `ENV PORT=8080`, `EXPOSE 8080`,
-  `ENTRYPOINT ["/app/entrypoint.sh", "/app/azure-devops-block-runner"]`.
+- **Grill r4 (per-persona binaries):** `containers/azure-devops-block-runner/Dockerfile`
+  builds `./runner/cmd/azdevops` as its own image: same alpine digest pin,
+  `ca-certificates bash` only (HTTP-only), uid 2000, the persona binary at
+  `/app/azure-devops-block-runner`, `ENV PORT=8080`, `EXPOSE 8080`, **direct entrypoint**
+  `ENTRYPOINT ["/app/azure-devops-block-runner"]` (no symlink, no argv[0] `entrypoint.sh`).
 - `containers/azure-devops-block-runner/runner-config.yml`: effect-equivalent to the
   Kotlin classpath defaults (§2.6) in flat keys — uuid `a9786b14-…`, api url
   `http://localhost:8304`, `bb-api`/`guest` — **plus the baked dev private key placed
@@ -570,9 +576,12 @@ The 06A §8 template stage repeated (umbrella §5.6):
   `SPRING_PROFILES_ACTIVE: kubernetes` (§7.2, umbrella A12).
 - CI flip in the same PR as module removal (§12): `ci.yml` — drop the
   `azure-devops-block-runner` entries from `jvm-runners-ci` (`ci.yml:36-37`) and
-  `jvm-runners-image` (`:72-73`), add the go image leg
-  (`target: azure-devops-block-runner`); `build-images.yml:41-43` — the leg becomes
-  `dockerfile: containers/runner.Dockerfile` + `target:` (drop `runner-module:`).
+  `jvm-runners-image` (`:72-73`), add the go image leg. **Grill r4 (per-persona
+  binaries):** the leg builds `./runner/cmd/azdevops` via
+  `containers/azure-devops-block-runner/Dockerfile`; `build-images.yml:41-43` — the leg
+  becomes `dockerfile: containers/azure-devops-block-runner/Dockerfile` (no `target:`,
+  drop `runner-module:`), paired with a `go build ./runner/cmd/...` build-matrix leg
+  `./runner/cmd/azdevops`.
 - JVM `command:`-override non-goal restated per 06A §16.9 wording (umbrella §5.6).
 
 ## 9. Migration sequence
@@ -587,8 +596,8 @@ until step 8.
 | 1 | **Kotlin pins (tests only).** §3.2: S-P1–6, U-P1–8, P-P1–5, A-P1–6, K-P1–2, F-P1 in `azure-devops-block-runner`; verify C-P1–7 exist (C3). | Kotlin test files only | `./gradlew :azure-devops-block-runner:check` green; `git diff -- ':!*Test*' ':!*Scenario*'` empty; the 2 slow poller tests tagged |
 | 2 | **Mapper + client.** `internal/azdevops`: status-mapping pure functions; `adoClient` + package-local DTOs + `renderValue`; payload struct. | `internal/azdevops` | Go twins of S-P1–6 (tables), A-P4–6 (fake-transport transcripts incl. leak + redirect pins) |
 | 3 | **Handler + poller.** `Config`, `NewHandler`, `Execute` skeleton, failure ladder, update builders, `pollCompletion` (fake clock). | `internal/azdevops` | scenario suite §10.1: async handover, sync happy, timeout, dedup/re-emission, fallback, resilience, PATCH-failure — fake meshStack + fake ADO transcripts matching the pins |
-| 4 | **Persona wiring, polling.** `persona_azdevops.go` + registry entry; mgmt on 8101; loop + shutdown-cancel wiring. | `runner/main.go`, `persona_azdevops.go` | loop-wiring scenario (claim→execute→re-drain); `resolvePersona` row; alias test (`MANAGEMENT_PORT`>`PORT`>8101); ctx-cancel shutdown test |
-| 5 | **Single-run mode.** `SingleRunMode` + file source + NoOp decryptor + R12 tail. | `persona_azdevops.go` (+ glue) | K-P1 twin (captured wire equal modulo sanctioned deltas); exit-condition tests (K-P2 twin asserting the R12 delta) |
+| 4 | **Persona wiring, polling.** **Grill r4 (per-persona binaries):** `cmd/azdevops/main.go` + register the handler in the `cmd/bbrunner` superset; mgmt on 8101; loop + shutdown-cancel wiring. | `runner/cmd/azdevops/main.go`, `runner/cmd/bbrunner` | loop-wiring scenario (claim→execute→re-drain); `bbrunner azure-devops-block-runner` subcommand-dispatch row; alias test (`MANAGEMENT_PORT`>`PORT`>8101); ctx-cancel shutdown test |
+| 5 | **Single-run mode.** `SingleRunMode` + file source + NoOp decryptor + R12 tail. | **Grill r4 (per-persona binaries):** `runner/cmd/azdevops/main.go` (+ glue) | K-P1 twin (captured wire equal modulo sanctioned deltas); exit-condition tests (K-P2 twin asserting the R12 delta) |
 | 6 | **Gate + tooling.** `thresholds.txt` += `runner/internal/azdevops 90` (no exclusions); depguard: `azdevops` imports `dispatch`/`meshapi`/`report`/`config`/`crypto` + stdlib only. | `tools/coverage/*`, `.golangci.yml` | induced-failure check; `task coverage` green |
 | 7 | **Image.** Dockerfile stage + `containers/azure-devops-block-runner/runner-config.yml`. | containers/ | `docker build --target azure-devops-block-runner`; container smoke: healthz on 8080, claim loop against a stub |
 | 8 | **Acceptance gate (§11).** Side-by-side transcripts + manual smoke + outer net. | — | STOP-E; evidence in PR description |
@@ -618,7 +627,8 @@ are K-P2 (umbrella §7.9) and the §4.5 tolerant-parse rows — flagged, not STO
 ### 10.2 New Go-only tests
 
 `renderValue` table (incl. `json.Number` literals + the §16.6 edge documentation),
-ctx-cancel mid-poll, shutdown-cancel wiring, alias precedence, `resolvePersona` row,
+ctx-cancel mid-poll, shutdown-cancel wiring, alias precedence, **Grill r4 (per-persona
+binaries):** `bbrunner azure-devops-block-runner` subcommand-dispatch row (superset),
 unknown-state tolerance rows (§4.5), leak test (payload never contains PAT in either
 form — the §7.6 pin).
 
@@ -663,8 +673,9 @@ Umbrella §5.8 recipe instantiated (last commits, after §11):
 2. `settings.gradle`: drop `include 'azure-devops-block-runner'` (`settings.gradle:7`).
 3. `.github/workflows/ci.yml`: drop the `jvm-runners-ci` entry (`:36-37`) and the
    `jvm-runners-image` entry (`:72-73`); add the go image leg (§8).
-4. `.github/workflows/build-images.yml`: the leg (`:41-43`) →
-   `dockerfile: containers/runner.Dockerfile`, `target: azure-devops-block-runner`.
+4. `.github/workflows/build-images.yml`: **Grill r4 (per-persona binaries):** the leg
+   (`:41-43`) → `dockerfile: containers/azure-devops-block-runner/Dockerfile`, build-matrix
+   leg `./runner/cmd/azdevops` (no `target:`, drop `runner-module:`).
 5. Cross-repo doc-truth check edits if any (§15) ride the lock-step PR.
 6. Grep gate: `grep -rn "azure-devops-block-runner" --exclude-dir=.git` — remaining
    hits must be image/persona *names* (workflows, containers/, run-controller sample,
@@ -706,8 +717,9 @@ rows (§16.9/§16.12); ctx-cancel poll abort (§16.11); explicit HTTP timeouts (
 
 One squash commit ⇒ one `git revert` restores the Kotlin module, its
 `settings.gradle` include, both CI matrix entries and the JVM image leg, and deletes
-`internal/azdevops`, `persona_azdevops.go` + registry entry, the Dockerfile stage,
-`containers/azure-devops-block-runner/`, the thresholds line and depguard rules.
+`internal/azdevops`, **Grill r4 (per-persona binaries):** `cmd/azdevops/` + its
+`cmd/bbrunner` registration, `containers/azure-devops-block-runner/` (Dockerfile +
+config), the thresholds line and depguard rules.
 Shared helpers are **not** deleted on revert — unlike 06A's, they have other consumers
 (06B's gitlab port precedes this PR; `report.Reporter`/`SingleRunMode`/compat block stay).
 Image name + wire/k8s contracts frozen (§13) ⇒ `:main` floats back to the JVM build on

@@ -26,7 +26,7 @@ reviewed, then resume.
 
 | # | Assumption | Promised by | Verification step |
 |---|---|---|---|
-| A1 | Phase-4 promise set holds: module `./runner`, no go.work, personas in `runner/main.go` + `persona_tf.go`/`persona_controller.go`; packages `runner/internal/{tf,gitsource,tofu,meshapi,crypto,config,report,mgmt,controller,build}`; task targets `test`/`lint`/`coverage`/`fmt`/`tidy`/`start:*`. | Plan 04 §11 | `git checkout refactor/single-go-binary/phase-4-single-binary && ls runner/internal && task test && task lint && task coverage` |
+| A1 | Phase-4 promise set holds: module `./runner`, no go.work, personas as **per-persona binaries** (**Grill r4 (per-persona binaries):** the fit binaries `runner/cmd/tf/main.go` + the four runner mains (`manual`/`gitlab`/`github`/`azdevops`) — each linking only its persona's deps — plus the `runner/cmd/bbrunner` superset binary that links all handlers + both dispatchers; **no** `runner/main.go` argv[0] multiplexing / persona registry) (**Grill r4 (controller ≡ superset):** there is **no** separate `runner/cmd/controller` binary — `cmd/bbrunner` **is** both the controller and the superset (= the `run-controller` image) and auto-detects its dispatcher at startup (`rest.InClusterConfig()`/`KUBERNETES_SERVICE_HOST` ⇒ k8sjob; else ⇒ InProcess; `RUNNER_DISPATCHER` overrides)); packages `runner/internal/{tf,gitsource,tofu,meshapi,crypto,config,report,mgmt,controller,build}`; task targets `test`/`lint`/`coverage`/`fmt`/`tidy`/`start:*`. | Plan 04 §11 | `git checkout refactor/single-go-binary/phase-4-single-binary && ls runner/internal && task test && task lint && task coverage` |
 | A2 | `runner/internal/controller` is the verbatim post-phase-3 controller code (drain loop `drainRuns`/`availableCapacity`/`processNextRun`/`reportRunFailure`, `JobManager` seam, `KubernetesClient`, de-globaled config/metrics), moved not rewritten, and declared transitional for this phase. | Plan 04 §5 step 1, §10.3 | `git diff --find-renames phase-3..phase-4 -- '**/controller/'` shows moves; read `runner/internal/controller/controller.go` against §3.1 |
 | A3 | Controller wire-characterization tests + k8s Job manifest goldens (fake clientset) exist and are green: claim transcript incl. node-id `run-controller-<uuid>`, registration PUT + v1-preview media type + WIF golden, `StatusUpdateDTO` PATCH shape, Job/Secret/SA goldens incl. `/var/run/secrets/meshstack` mount, `RUN_JSON_FILE_PATH`/`RUNNER_UUID`/`RUNNER_API_URL` env, no `EXECUTION_MODE`, `CountActiveJobs` finished-job filtering. | Plan 03 §6 step 1 | run the controller test files; `grep -rn "golden" runner/internal/controller` |
 | A4 | tf code has the plan-02/03 shape: one `tf.Engine.Execute(ctx, run)`; ports `StatusReporter`(→`report.Reporter`)/`ArtifactSource`/`Decryptor`(shared in `meshapi`)/`TfProvider`/`Source`/`Clock`; `Manager` polling loop with token protocol `work/done/norun/failed/stop/stopped`, delays 10s/60s, `atomic.Bool` shutdown; `handleFetchRunError` semantics verbatim incl. the chunked-transport string match. | Plan 02 §5.3/§5.4, Plan 03 §5.2.5 | `grep -rn "func (e Engine) Execute\|norun\|chunked" runner/internal/tf` |
@@ -306,6 +306,15 @@ type RunHandler interface {
 func NewInProcess(handlers map[meshapi.RunnerImplementationType]RunHandler, log *slog.Logger, m HandlerMetrics) *InProcess
 func (d *InProcess) Dispatch(run ClaimedRun) error // UnhandledTypeError if no handler; increments in-flight *before* spawning (§6)
 func (d *InProcess) InFlight() (int, error)        // never errors; satisfies Dispatcher
+// Grill r4 (per-persona binaries): InProcess + this registry are SHARED internal/dispatch
+// code, not a binary. Which handlers a process can run is fixed at LINK TIME by which
+// handler packages its binary imports: cmd/tf registers its one handler (single type);
+// the cmd/bbrunner SUPERSET links every handler + both dispatchers and is the only build
+// that registers ALL / runs every run type in one process. k8sjob.KubernetesJobDispatcher
+// is likewise shared code. **Grill r4 (controller ≡ superset):** it is linked ONLY by
+// cmd/bbrunner (= the run-controller image, the superset) — the sole binary that pulls in
+// k8s; there is no separate cmd/controller. internal/dispatch.InProcess is linked by
+// every persona binary AND by cmd/bbrunner.
 func (d *InProcess) Done() <-chan struct{}         // signaled on each run completion (loop wake)
 func (d *InProcess) Wait()                         // shutdown: drain in-flight within the configurable grace period, then cancel remaining sync-polling runs → ABORTED (§7 H7)
 ```
@@ -401,6 +410,16 @@ any claimed run without a handler/template fails fast regardless of configured c
 Plan 04 §10.3 moved the controller verbatim into a transitional package and handed its
 fate to this phase. Decision: **dissolve into `internal/dispatch` + `internal/k8sjob`**,
 exactly the D11 names — justified per file:
+
+**Grill r4 (per-persona binaries):** the destinations below are **shared `internal/*`
+packages**; the *binaries* that link them are `runner/cmd/<persona>/main.go` (one per
+persona) plus the `runner/cmd/bbrunner` superset. Wherever a row (or a §11 migration step
+— "persona_controller re-wired", "persona_tf.go") says wiring goes to `persona_<name>.go`,
+read `runner/cmd/<persona>/main.go`. **Grill r4 (controller ≡ superset):** `internal/k8sjob`
+(`KubernetesJobDispatcher`) is linked **only** by `cmd/bbrunner` (= the `run-controller`
+image, the superset — there is no separate `cmd/controller`); `internal/dispatch.InProcess`
+by every persona binary and by `cmd/bbrunner`. There is no argv[0]-multiplexed
+`runner/main.go`.
 
 | Today (`internal/controller/…`) | Destination | Why |
 |---|---|---|
@@ -522,6 +541,18 @@ actionable message of §10.1 — operators who don't accept that keep/configure 
 capability. The `capability` value never gates claiming or dispatching locally (§4.4);
 it only shapes the registration DTO.
 
+**Grill r4 (per-persona binaries):** "a standalone runner registers `ALL` / one container
+runs every run type in-process" is now specifically the **`cmd/bbrunner` superset** build
+(the only binary that links all handlers). A default per-persona binary (`cmd/tf`) links
+only its own handler, so it can in-process-dispatch only its own type no matter what
+capability its runner object carries — a `cmd/tf` whose runner object was flipped to `ALL`
+fails fast (§10.1) on every non-TERRAFORM claim. Registering `ALL` and actually serving
+all five types in one process requires the superset, not a per-persona binary.
+**Grill r4 (controller ≡ superset):** that superset build IS the `run-controller` image
+and IS the controller — `cmd/bbrunner` links BOTH dispatchers (`KubernetesJobDispatcher` +
+`InProcess`) and auto-detects the in-cluster k8s API at startup (in-cluster ⇒ k8sjob; else
+⇒ InProcess; `RUNNER_DISPATCHER` overrides). There is no separate `cmd/controller`.
+
 ---
 
 ## 10. Failure-path spec (exact messages, metrics)
@@ -543,6 +574,16 @@ The **message** is dispatcher-authored:
 
 One error type, two messages: unifying the string would change controller-visible bytes
 (forbidden) or ship the frozen-but-vague text to new users (defeats D5). Flagged §16.4.
+
+**Grill r4 (controller ≡ superset):** D5 fail-fast now also has a **compile-time
+dimension**. A fit per-persona binary literally **cannot** dispatch a type whose handler it
+did not link, so the runtime unhandled-type path is reachable only in a binary that
+registered a capability it can serve none/only-some of — i.e. the `cmd/bbrunner` superset
+(= the `run-controller` image; it may register `ALL`, or a k8s template it lacks a
+handler/template for). The runtime fail-fast (claim → register → `FAILED` with **process**
+credentials) applies to `cmd/bbrunner`; the compile-time dimension is what covers the fit
+binaries (`cmd/tf` + the four runner mains). The `ALL` capability is meaningful only for a
+binary that links all handlers (the superset).
 
 ### 10.2 Full loop taxonomy (behavior column is normative)
 

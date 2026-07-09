@@ -182,7 +182,9 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
   azure-devops 8101; container default 8080 where PORT did that job before). Nothing is
   served twice. All personas — including standalone runners, which have zero metrics
   today — get basic Prometheus metrics (runs claimed/succeeded/failed, run duration,
-  poll errors), reusing the controller's `MetricsCollector` approach.
+  poll errors), reusing the controller's `MetricsCollector` approach. Existing metric
+  *names* are a de-facto public surface (operator dashboards scrape them): renames get
+  the same alias/deprecation treatment as env vars (D7).
 - **D13 — bug policy during characterization: pin everything, fix after the refactor.**
   Phase 1 pins *current* behavior verbatim — including behavior identified as buggy (e.g.
   the swallowed workspace-select error, `tfcmd.go:229-233`). Each such pin is marked

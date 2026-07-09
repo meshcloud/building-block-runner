@@ -93,9 +93,13 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
 - **D1 — argv[0] selects the persona; env/config selects the mode.** `EXECUTION_MODE=single-run`
   etc. stay env/config concerns inside a persona. Fallback: `bbrunner <persona> [...]` when
   `argv[0]` is unrecognized (needed for `go run .` and debugging).
-- **D2 — one Go module for the binary.** New root `main.go` + `cmd/` persona registry; the
-  existing three modules collapse into it stepwise (workspace stays during migration).
-  Accepted cost: k8s client-go is linked into every persona (binary size, not runtime cost).
+- **D2 — one Go module for the binary.** New module at `./runner` with `main.go` and the
+  persona registry in **package main** (`main.go` + `persona_*.go` — a `cmd/` dir would
+  collide with D11's package rules and add a level for nothing); the existing three
+  modules collapse into it (atomically, not via shims — Go's module-scoped `internal/`
+  blocks cross-module imports in both directions; rollout compat is carried by the image
+  and wire contracts per D10, see plan 04). Accepted cost: k8s client-go is linked into
+  every persona (binary size, not runtime cost).
 - **D3 — keep the runner API client in this repo** (evolve `go-meshapi-client`), do **not**
   import `terraform-provider-meshstack/client`: it lives in another module, targets the
   user-facing meshObject API (not claim/status-source/artifact), and its startup version
@@ -184,7 +188,8 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
   today — get basic Prometheus metrics (runs claimed/succeeded/failed, run duration,
   poll errors), reusing the controller's `MetricsCollector` approach. Existing metric
   *names* are a de-facto public surface (operator dashboards scrape them): renames get
-  the same alias/deprecation treatment as env vars (D7).
+  the same alias/deprecation treatment as env vars (D7). Single-run (k8s Job) executions
+  run no management listener — a Job has no liveness/scrape lifecycle (plan 04).
 - **D13 — bug policy during characterization: pin everything, fix after the refactor.**
   Phase 1 pins *current* behavior verbatim — including behavior identified as buggy (e.g.
   the swallowed workspace-select error, `tfcmd.go:229-233`). Each such pin is marked

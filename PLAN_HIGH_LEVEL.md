@@ -151,7 +151,10 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
   omitted on DETECT/saved-plan APPLY); FILE inputs as data-URLs; env whitelist
   (`cleanSystemEnv`); decrypt-failure UX (key-mismatch guidance); workspace select/create/
   delete naming logic; k8s single-run contract (`RUN_JSON_FILE_PATH`,
-  `/var/run/secrets/meshstack/run.json`, `RUNNER_UUID`, `RUNNER_API_URL`, runToken-only auth).
+  `/var/run/secrets/meshstack/run.json`, `RUNNER_UUID`, `RUNNER_API_URL`, runToken-only
+  auth; NOTE: `EXECUTION_MODE=single-run` is NOT injected by the controller's code — it
+  comes from the job template's `env` map in the operator's `runner-config.yml`, i.e. it
+  is deployment config and part of the customer-facing contract).
 - **D10 — compatibility commitments during rollout:** old controller must be able to
   dispatch to new runner images and vice versa (the k8s Job contract in D9 is frozen);
   mux claim contract unchanged; healthz ports unchanged; meshfed-release `local-dev-stack`

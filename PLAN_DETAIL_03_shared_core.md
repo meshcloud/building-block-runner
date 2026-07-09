@@ -427,8 +427,11 @@ second consumer is named (P3):
 type ExecutionStatus int // PENDING, IN_PROGRESS, SUCCEEDED, FAILED, ABORTED — moved as-is
 // ABORTED (terminal): added per the grill-r2 D9 graceful-shutdown ruling / plan-05 H7
 // amendment — reported when an in-flight run is cancelled on shutdown so the coordinator
-// never sees a stale IN_PROGRESS. meshStack's status source already defines it as terminal
-// (block-runner-core ExecutionStatus.ABORTED); the tf runner never emitted it before.
+// never sees a stale IN_PROGRESS. VERIFIED against meshfed-release (PR#51 follow-up): the
+// runner-facing PATCH .../status/source/{sourceId} endpoint accepts inbound ABORTED and
+// persists it terminal (block-runner-core ExecutionStatus.ABORTED); accepted transition is
+// IN_PROGRESS->ABORTED, and an already-aborted run returns 409 {runAborted:true} (treat as
+// success). The tf runner never emitted ABORTED before.
 type RunStatus struct {
     RunId            string
     Status           ExecutionStatus

@@ -409,7 +409,7 @@ per-port validation gate is:
 | Runner | Gate before Kotlin removal |
 |---|---|
 | manual | local-dev-stack flow with the **Go** manual persona replacing the gradle bootRun (lock-step SKILL edit, §9) + ≥1 MANUAL acceptance run green + the k8s single-run smoke (run JSON file → captured wire identical to the `ManualRunnerKubernetesStartupScenario` transcript) |
-| github | **RULED (grill r2):** `github` (like `manual` and `tf`) has real end-to-end coverage in the sibling `meshstack-smoke-tests` repo — its port validates there before Kotlin module removal. That, plus the hermetic **side-by-side transcript comparison**: the same run JSON driven through the Kotlin runner (wiremock external API + captured meshStack updates — the pin suite) and through the Go handler (fake transport twins); transcripts must match modulo the sanctioned deltas of §7 |
+| github | **RULED (grill r2):** `github` (like `manual` and `tf`) has real end-to-end coverage in the sibling **`meshstack-smoke-test`** repo — its port validates there before Kotlin module removal. **VERIFIED (PR#51 follow-up):** that harness runs `tofu test` e2e modules against a live meshStack; `terraform` (tf) is covered by a module in the smoke-test repo itself, while the **`github_workflows`** (github) and `manual` e2e modules physically live in the `meshstack-hub` repo and are *discovered and executed* by the smoke-test harness (both repos are on its discovery path). So github/tf/manual coverage is real but split across `meshstack-smoke-test` + `meshstack-hub`. That, plus the hermetic **side-by-side transcript comparison**: the same run JSON driven through the Kotlin runner (wiremock external API + captured meshStack updates — the pin suite) and through the Go handler (fake transport twins); transcripts must match modulo the sanctioned deltas of §7 |
 | gitlab / azure-devops | **RULED (grill r2):** these two have **NO smoke tests** (accepted shortcoming — commissioning new meshfed-release acceptance tests for them is out of scope). Deletion leans entirely on the in-repo integration/transcript tests: the hermetic **side-by-side transcript comparison** (same run JSON through the Kotlin pin suite vs the Go handler, matching modulo the §7 deltas). A documented manual smoke against a real GitLab/ADO target (one trigger each, async + sync where applicable) is best-effort PR evidence, not a gate. Resolves flag §10.2 |
 | all | `local-dev-stack` + acceptance suite still green as the outer regression net (the runner under port claims from its mux port per A11) |
 
@@ -658,8 +658,10 @@ in migration/release notes; pins assert JSON.
    every existing controller deployment breaks on image update — hence §7.8. No prior
    plan mentions this.
 2. **No uniform acceptance coverage exists for gitlab/azdevops/github.** **RULED (grill
-   r2):** `github`, `tf` and `manual` have real end-to-end coverage in the sibling
-   `meshstack-smoke-tests` repo and validate there before Kotlin module removal;
+   r2):** `github`, `tf` and `manual` have real end-to-end coverage via the sibling
+   `meshstack-smoke-test` harness (tf in that repo; github/manual e2e modules in
+   `meshstack-hub`, discovered and run by it — VERIFIED, PR#51 follow-up) and validate
+   there before Kotlin module removal;
    `gitlab` and `azure-devops` have **no** smoke tests (accepted shortcoming) and lean
    on the in-repo side-by-side transcript equivalence (Kotlin pin suite vs Go).
    Commissioning new meshfed-release acceptance tests for those two is out of scope. The

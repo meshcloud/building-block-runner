@@ -229,12 +229,25 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
   **Grill r2 ruling (graceful-shutdown reporting):** on graceful shutdown, a persona that
   cancels an in-flight run (see the plan-05 H7 amendment) must leave the coordinator with a
   **terminal** status — never a stale `IN_PROGRESS` that only clears after the coordinator's
-  long timeout. Report `ABORTED` (the meshStack status source already defines
-  `ExecutionStatus.ABORTED` as terminal in `block-runner-core`; the Go `ExecutionStatus`
-  enum, today only `PENDING/IN_PROGRESS/SUCCEEDED/FAILED`, gains it), falling back to
-  `FAILED` if the endpoint rejects `ABORTED` — **never `SUCCEEDED`**. Shutdown drains a
-  **configurable grace period, default 120s** (deliberately longer than a typical graceful
-  shutdown, far below a ~30-min external poll), and logs clearly while it is in progress.
+  long timeout. Report `ABORTED` (the Go `ExecutionStatus` enum, today only
+  `PENDING/IN_PROGRESS/SUCCEEDED/FAILED`, gains it), falling back to `FAILED` if the
+  endpoint rejects `ABORTED` — **never `SUCCEEDED`**. Shutdown drains a **configurable grace
+  period, default 120s** (deliberately longer than a typical graceful shutdown, far below a
+  ~30-min external poll), and logs clearly while it is in progress.
+  **VERIFIED against meshfed-release (PR#51 follow-up), `ABORTED` is a real inbound runner
+  status — no longer an assumption:** the runner-facing `PATCH …/status/source/{sourceId}`
+  endpoint (`MeshBuildingBlockRunWriteController.updateSourceSteps`) deserializes
+  `MeshBuildingBlockRun.ExecutionStatus`, which includes `ABORTED(isTerminal=true)`;
+  `BlockRunService.processUpdateFromSource` forwards it to the coordinator, which persists
+  terminal `ABORTED` and reflects it back as `BuildingBlockStatus.ABORTED`. Two constraints
+  this pins for the implementation: (1) the accepted transition is **`IN_PROGRESS →
+  ABORTED`** (the endpoint's `ensureRunIsInProgress` rejects updates to a non-`IN_PROGRESS`
+  run; `PENDING` is the *only* status a runner is outright forbidden to send) — which is
+  exactly the graceful-shutdown case, an in-flight (IN_PROGRESS) run being cancelled; (2) if
+  the run was **already** aborted (e.g. a user `DELETE`d it), the endpoint returns **`409
+  {runAborted:true}`** — the shutdown reporter must treat that 409 as success/no-op, not an
+  error (it is the same abort-flag channel D9 already pins). The `FAILED` fallback stays
+  valid (also terminal, also accepted from `IN_PROGRESS`).
 - **D10 — compatibility commitments during rollout:** old controller must be able to
   dispatch to new runner images and vice versa (the k8s Job contract in D9 is frozen);
   mux claim contract unchanged; healthz ports unchanged; meshfed-release `local-dev-stack`

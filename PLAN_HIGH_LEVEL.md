@@ -306,7 +306,9 @@ code; the Go domain packages join the coverage gate. Each port is validated agai
 meshfed-release acceptance tests before the corresponding Kotlin module is deprecated.
 **Exit (per runner/PR):** Kotlin behavior pinned; Go handler passes acceptance; image
 switched; Kotlin module removed. **Exit (phase):** Gradle build gone.
-→ `PLAN_DETAIL_06_kotlin_ports.md`
+→ `PLAN_DETAIL_06_kotlin_ports_umbrella.md` (consistency contract for the
+Kotlin→Go migration) + one sub-plan per runner: `PLAN_DETAIL_06A_manual.md`,
+`PLAN_DETAIL_06B_gitlab.md`, `PLAN_DETAIL_06C_azdevops.md`, `PLAN_DETAIL_06D_github.md`.
 
 ### Phase 7 — Cleanup & docs
 READMEs, public docs pointers, config deprecation warnings, memory of final architecture;
@@ -386,12 +388,16 @@ Each `PLAN_DETAIL_*.md` is authored by a subagent that receives:
   dispatcher, in-process secret/auth model, concurrency hazards inventory (from risk #4)
   each with a test, explicit capability config + claim-and-fail-fast for unhandled
   types (D5).
-- **06 kotlin ports**: per-runner behavior inventory from Kotlin sources (endpoints,
-  auth, async semantics, config), the Kotlin-tests-first pinning step (D6), Go handler
-  design, acceptance-test validation plan, deprecation/removal sequence. One sub-plan
-  per runner (= one PR each); the `manual` sub-plan is written first and must define the
-  template every later port follows — its interfaces are reviewed against the *other
-  three* runners' inventoried needs before any port is implemented.
+- **06 kotlin ports**: split into an **umbrella plan + one sub-plan per runner** (= one
+  PR each). The umbrella (`PLAN_DETAIL_06_kotlin_ports_umbrella.md`) owns consistency:
+  the cross-runner behavior inventory from Kotlin sources (endpoints, auth, async
+  semantics, config, block-runner-core mechanics), the shared template contract every
+  sub-plan must satisfy (handler wiring, config section shape, Kotlin-tests-first
+  pinning step per D6, acceptance validation, deprecation/removal sequence), and the
+  port order. Sub-plans are authored umbrella-first, then `06A_manual` (defines the
+  concrete template, its interfaces reviewed against the other three runners'
+  inventoried needs before any port is implemented), then `06B_gitlab`/`06C_azdevops`/
+  `06D_github` (may be authored in parallel against umbrella + 06A).
 - **07 cleanup**: docs/README/release audit checklist; deprecation timeline; Go-only CI
   reshape incl. docker builds (D14); final architecture record.
 

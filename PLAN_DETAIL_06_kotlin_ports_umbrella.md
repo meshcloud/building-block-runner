@@ -3,7 +3,8 @@
 **Phase:** 6 (umbrella over 4 stacked PRs) · **Branches:** §6 · **Binding:** §3 P1–P8,
 D5, D6 (Kotlin corollary), D7, D8, D9 (async IN_PROGRESS handover, k8s contract), D10,
 D11 (`internal/manual`, `internal/gitlab`, `internal/azdevops`, `internal/github`),
-D12 (ports 8101–8104), D14 of `PLAN_HIGH_LEVEL.md`; plan 05 §17 promise set.
+D12 (ports 8101–8104), D14, **D15 (translation, not transliteration — §7.13)**, **D16
+(scenario-first coverage — §5.2)** of `PLAN_HIGH_LEVEL.md`; plan 05 §17 promise set.
 
 This umbrella owns **consistency** across the four per-runner ports. It contains the
 cross-runner behavior inventory, the shared machinery map, and the template contract the
@@ -215,7 +216,7 @@ owning sub-plan that must fill it (design agreed here, implementation there).
 | 12 | `HealthController` `/healthz` → "OK" on Spring `PORT` (8101–8104) | `mgmt.NewServer` on `MANAGEMENT_PORT`, per-persona defaults 8104/8103/8101/8102, `PORT` alias (plan 04 §4.3 mechanics) | none; note single-run listener delta §7.10 |
 | 13 | `UrlSanitizerService` (trim + drop trailing slash, error on empty) | a tiny unexported helper where consumed (gitlab/github/azdevops packages) — no shared package for 6 lines (P3) | sub-plan-local; behavior pinned by existing Kotlin tests |
 | 14 | `MeshHttpException{userMessage, systemMessage?, statusCode, requestUrl, responseBody}` — carries the user/system split into step updates | per-package typed error with the same fields (external-API error), mapped into step `userMessage`/`systemMessage` exactly as today | 06A defines the shape (gitlab/azdevops/github reuse); messages themselves are per-runner pins (§3.2) |
-| 15 | `ImmediateRetryDecorator`, `RequestLoggingUtility` (MDC request ids), Spring profiles/scheduling config, `MeshException`, `MeshObjectApiObjectMapper` | dissolved: loop wake (row 1), per-run `[RUN-<id>]` log prefixes (plan 05 H3), persona wiring, plain Go errors, `encoding/json` | none — deletions, no port |
+| 15 | `ImmediateRetryDecorator`, `RequestLoggingUtility` (MDC request ids), Spring profiles/scheduling config, `MeshException`, `MeshObjectApiObjectMapper` | dissolved: loop wake (row 1), per-run slog attrs (plan 05 H3 observable, §10.12), persona wiring, plain Go errors, `encoding/json` | none — deletions, no port |
 | 16 | `AppTokenFactory` (GitHub App JWT via auth0-jwt + BouncyCastle PKCS#1) | `internal/github`: stdlib `x509.ParsePKCS1PrivateKey` + hand-rolled RS256 JWT (header/payload/sign ≈ 40 lines) — **no new JWT dependency** (P2; the meshfed mux stdlib bar) | owner: 06D; flag for review — a maintained JWT lib is the fallback if review prefers it |
 
 ## 5. The template contract (every sub-plan must satisfy this)
@@ -231,38 +232,72 @@ Each sub-plan is one stacked single-commit PR and must contain exactly these sec
    coordinator/external-visible behavior listed with file:line.
 3. **Kotlin pin tests (tests-first step)** — closing its §3.3 gap column (§5.2).
 4. **Go handler design** — package, types, deps (§5.3); illustrative signatures only.
-5. **Config** — persona struct + the full §5.4 alias table instantiated for the runner.
-6. **Persona wiring & modes** — registry entry, `MANAGEMENT_PORT`, registration
+5. **Kotlin-isms → idiomatic Go (D15)** — the runner's transformation table: every
+   Kotlin-ism its code uses (exceptions, Spring annotations/profiles, Jackson
+   mixins/mappers, OkHttp interceptors, `Thread.sleep` loops, companion objects, MDC
+   logging, …) with the idiomatic Go replacement per the §7.13 rules. Semantic-parity
+   note per row where the translation is not mechanical.
+6. **Config** — persona struct + the full §5.4 alias table instantiated for the runner.
+7. **Persona wiring & modes** — registry entry, `MANAGEMENT_PORT`, registration
    section, single-run activation (§5.5).
-7. **Dockerfile & image switch** (§5.6).
-8. **Migration sequence** — always-green steps sized for one reviewable PR, each with
+8. **Dockerfile & image switch** (§5.6).
+9. **Migration sequence** — always-green steps sized for one reviewable PR, each with
    "what proves it"; Gradle CI stays green until the removal step.
-9. **Test plan & gate** — ported pins mapped 1:1 (Kotlin test → Go test), external-API
-   fake suite, package joins `thresholds.txt` at 90.
-10. **Acceptance validation** (§5.7) — the gate before Kotlin removal.
-11. **Kotlin module removal + Gradle shrink** (§5.8).
-12. **Frozen contracts touched** — instantiating §8 for the runner.
-13. **Rollback story** (§5.9).
-14. **Cross-repo touch points** (§9 subset).
-15. **Flags** + **Open questions** (empty is the goal).
+10. **Test plan & gate (D16)** — scenario-first: the pin→Go mapping per §5.2 (N:1
+    consolidation into scenario transcripts is the norm), the keep-as-unit list with
+    its decision-surface justification per §5.2, the external-API fake suite, package
+    joins `thresholds.txt` at 90 **via scenario coverage** — a unit test added solely
+    to reach the number is a review reject.
+11. **Acceptance validation** (§5.7) — the gate before Kotlin removal.
+12. **Kotlin module removal + Gradle shrink** (§5.8).
+13. **Frozen contracts touched** — instantiating §8 for the runner.
+14. **Rollback story** (§5.9).
+15. **Cross-repo touch points** (§9 subset).
+16. **Flags** + **Open questions** (empty is the goal).
 
-### 5.2 Kotlin-tests-first pinning (D6 corollary)
+### 5.2 Kotlin-tests-first pinning & scenario-first porting (D6 corollary + D16)
+
+**Pinning (Kotlin side):**
 
 - The pinning step is **tests-only in the Kotlin module** (`git diff -- ':!*_test*'`
   empty for it) and lands as the first commits of the same PR; the existing
   `jvm-runners-ci` leg proves them green before any Go code exists.
-- Pins target **observable behavior**: captured meshStack API interactions (the
+- Pins target **observable behavior** and are authored **at scenario level where
+  possible** (D16): captured meshStack API interactions (the
   `ManualRunnerKubernetesStartupScenario` capture style or mockwebserver/wiremock
   transcripts) and captured external-system requests (wiremock, already used by
   gitlab/github/azdevops). No pins on Kotlin internals that have no Go counterpart.
-- Every pin carries a stable name; the sub-plan's test plan maps each Kotlin pin to the
-  Go test that ports it **truthfully** (same inputs, same asserted bytes/fields). An
-  unportable assertion is STOP-B.
 - Bugs/quirks found while pinning are pinned as-is and listed in the sub-plan's flag
   section (the D13 discipline; phase 6 has no bug-fix pass — fixes are follow-ups after
   the port, never inside it).
 - 06A additionally writes the **block-runner-core wire pins** (§3.3 last row); B–D
   verify they exist instead of re-writing them.
+
+**Porting (Go side, D16 — scenario-first):**
+
+- Parity is **semantic, not structural** (D15): every pin carries a stable name and the
+  sub-plan's test plan maps each Kotlin pin to the Go test that preserves its asserted
+  *behavior* (same inputs, same observable bytes/fields on the wire) — but the mapping
+  is **N:1 by design**: Kotlin unit tests that merely restate structure through mocks
+  ("register called once with step id X", "update called with SUCCEEDED") consolidate
+  into one Go **scenario test** in the house harness style (run JSON in → fake meshStack
+  + fake external-API transcript out, black-box through `Handler.Execute`). An
+  assertion whose *behavior* cannot be preserved is STOP-B; a test whose *shape*
+  disappears into a scenario is the intended outcome, not a loss.
+- **Keep-as-unit criterion:** a ported test stays (or becomes) a unit test only where
+  the unit has real decision surface — pure input→output tables and parsers: the manual
+  `toOutputType` mapping, the ADO `StatusMapper` state/result table, the github
+  `InputsBuilder` variants and unsupported-input classification, JWT/PKCS#1 parsing,
+  crypto, config alias resolution. Rule of thumb for the github suite (~30 tests): the
+  wiremock scenarios (`SensitiveSystemInputsIntegrationScenario`, the service-level
+  trigger/poll tests) map to Go scenario transcripts; `GithubClientTest`'s
+  error-classification cases and `BuildingBlockWorkflowInputsBuilderTest` stay
+  unit-level; `GithubBlockRunnerServiceTest`'s mockk-verification tests consolidate
+  into the scenarios. Sub-plans apply this rule, not per-test litigation.
+- Existing **meaningful** tests (Kotlin or Go) are kept or transformed, never
+  discarded; nobody adds unit tests just to move the coverage number — the 90% gate is
+  reached through the scenario suites (STOP-C's "add tests" means scenario cases
+  first).
 
 ### 5.3 RunHandler implementation shape
 
@@ -278,7 +313,9 @@ func (h Handler) Execute(ctx context.Context, run dispatch.ClaimedRun) error
   `run.Details.Spec.RunToken`; claim credentials never reach the handler), the
   `meshapi.Decryptor` (cert-based in polling mode, NoOp in single-run mode — decrypt
   placement is handler-side, plan 05 §16.2), the external-API HTTP client seam
-  (fakeable), a `Clock`, and the runner's `*log.Logger` (per-run `[RUN-<id>]` prefix).
+  (fakeable), a `Clock`, and a `*slog.Logger` (D15) — per-run identification via
+  `logger.With("run", run.Id)`, satisfying the plan-05 H3 per-run-isolation observable
+  as an attribute rather than a `[RUN-<id>]` prefix (reconciliation flag §10.12).
 - Execution skeleton = the Kotlin skeleton: register one step → do work → event-driven
   updates (§4 row 7) → terminal or IN_PROGRESS-handover update. A failure that was
   reported as run `FAILED` returns `nil` (A1 contract); only claim/report transport
@@ -289,7 +326,8 @@ func (h Handler) Execute(ctx context.Context, run dispatch.ClaimedRun) error
 - External-API clients live in the same package as unexported types unless the package
   grows past cohesion (D11: sibling split only if seams prove real).
 - Coverage: the whole package is hermetically testable (fake meshStack transport + fake
-  external API); **no exclusion-list entries** are expected for any phase-6 package.
+  external API) and is covered **scenario-first** (D16, §5.2); **no exclusion-list
+  entries** are expected for any phase-6 package.
 
 ### 5.4 Config section + env/yaml alias table
 
@@ -525,6 +563,23 @@ reviewed together so 06A's interfaces are checked against real needs, not guesse
 12. **Per-runner RunType/capability naming** comes only from
     `meshapi/dtos.go:276-295` (`ToRunnerType` mapping GITLAB_CICD→GITLAB_PIPELINE,
     AZURE_DEVOPS→AZURE_DEVOPS_PIPELINE) — no new string literals in handler packages.
+13. **Kotlin→Go idiom rules (D15) — translation, not transliteration.** Behavior parity
+    is *semantic*, defined by the pinned tests (§5.2); the Go code is idiomatic Go, and
+    a Go file that mirrors the Kotlin class structure 1:1 fails review the same way a
+    P8 violation does. Uniform transformation table (each sub-plan instantiates it for
+    its own Kotlin-isms — skeleton section 5):
+
+    | Kotlin-ism | Idiomatic Go replacement |
+    |---|---|
+    | Exceptions + `try/catch` fan-out (`updateFailedBlockStatusWith…` per exception type) | returned error chains: `fmt.Errorf("triggering pipeline %s: %w", id, err)` — succinct, lowercase, context formatted in, chained with `:`, no stacktrace-style prose; the user/system *message strings* stay byte-identical (§7.11) — only the plumbing changes. Panics only for programmer errors |
+    | JVM logging (kotlin-logging, logback patterns, MDC `requestId`) | `log/slog`, default human-readable text handler on stdout/stderr, kept simple — no handler ceremony; per-run context as attrs (`slog.With("run", id)`), not string prefixes (§10.12) |
+    | Spring DI (`@Component`/`@Bean`/`@Profile`), `@ConfigurationProperties` | constructor injection wired in `persona_<name>.go` (P3/D11); profiles become the persona's mode switch (§5.5); properties become the persona config struct over the shared `config` package (D7) |
+    | Jackson (`@JsonProperty`, mixins, custom deserializers, `ObjectMapper` modules) | plain structs + `encoding/json` tags (the `meshapi` house style); the github sanitizing mixin becomes an explicit payload struct that simply omits the implementation field (§7.6) — structural omission over annotation magic |
+    | OkHttp interceptors (`BearerAuthInterceptor`, `ApiKeyAuthInterceptor`, version-header interceptor) | the existing `AuthProvider`/client composition in `meshapi` — no new middleware layer |
+    | `@Scheduled` + `ImmediateRetryDecorator`; `Thread.sleep` polling loops | `dispatch.Loop` ticker/wake (§4 row 1); poll loops as `select` on ticker/`ctx.Done()` with injected `Clock` (§5.3) |
+    | Sealed classes / `when` results (`TriggerWorkflowResult`) | small typed result values or typed errors with `errors.As` — whichever reads better at the call site; exhaustiveness via the P8 named-type pattern |
+    | Companion-object constants, `object` singletons (`AppTokenFactory`, `StatusMapper`) | package-level `const`/pure functions — no singleton state (P3) |
+    | Kotlin data-class `copy()` chains (decrypt-and-rebuild) | value-semantics structs mutated on a local copy (P4) |
 
 ## 8. Frozen contracts
 
@@ -554,9 +609,9 @@ reviewed together so 06A's interfaces are checked against real needs, not guesse
 **Sanctioned, flagged deltas (uniform across sub-plans):** additive client headers
 (§7.7); single-run exit-code tightening (§7.9); no listener in single-run pods (§7.10);
 new additive metrics/config (§7.2, §5.4); JVM `command:`-override incompatibility
-(§5.6); per-run `[RUN-<id>]` log prefixes and Go log format replacing Spring's
+(§5.6); the slog text format with per-run attrs replacing Spring's log format
 (operator-visible log *format* was never a wire contract; readiness markers in §9 are
-updated in lock-step).
+updated in lock-step; §10.12).
 
 ## 9. Cross-repo touch points
 
@@ -635,11 +690,23 @@ updated in lock-step).
     already models all fields the services read (incl. `omitRunObjectInput`,
     `MeshstackBaseUrl` link); no DTO gaps found — but `PipelineRun`/`Timeline`/
     `WorkflowRun` DTOs are runner-package-local ports (not `meshapi`).
+12. **D15's `log/slog` conflicts with the plans-02–05 logging baseline.** Every shared
+    package and both existing personas standardize on `*log.Logger` (e.g.
+    `dispatch.NewLoop` deps, `mgmt.NewServer(log *log.Logger, …)`, `config.Path/Env`
+    signatures — plans 03 §5.3, 04 §4.3, 05 §4.1), and plan 05 H3/§16.9 specifies the
+    per-run `[RUN-<id>]` *prefix*. Umbrella ruling: phase-6 handler packages use
+    `slog` per D15 (run id as an attr, H3's real observable — per-run log isolation —
+    retargeted onto it); persona wiring bridges where a shared-package signature
+    demands `*log.Logger` (`slog.NewLogLogger`). Migrating the shared packages and the
+    tf/controller personas to slog is **not** phase-6 work — it lands in phase 7 (or a
+    reviewed revision of plans 03–05 if the reviewer prefers one logging stack sooner).
+    Until then the binary has two logging styles — flagged, not hidden.
 
 ## 11. Open questions (self-grilled)
 
 All decision branches were walked and resolved from the sources; the judgment calls a
 reviewer may veto are encoded as flags/rules, not questions: the acceptance-gap reading
 (§10.2), the exit-code tightening (§10.3/§7.9), the lean-PATCH-body choice (§7.4), the
-stdlib JWT decision (§4 row 16), the relaxed-binding boundary (§10.4), and the
-dev-private-key placement (§10.5). *(empty otherwise)*
+stdlib JWT decision (§4 row 16), the relaxed-binding boundary (§10.4), the
+dev-private-key placement (§10.5), and the two-logging-stacks interim state
+(§10.12/D15). *(empty otherwise)*

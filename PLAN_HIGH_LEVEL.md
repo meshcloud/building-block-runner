@@ -207,7 +207,10 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
   chains (`fmt.Errorf("fetching pipeline %s: %w", id, err)` — succinct, lowercase,
   context formatted in, chained with `:`; panics only for programmer errors); JVM
   logging frameworks → `log/slog` with the default human-readable text handler on
-  stdout/stderr, kept simple (no logging ceremony); Spring DI/annotations/properties →
+  stdout/stderr, kept simple (no logging ceremony; adoption boundary: phase-6 packages
+  use slog natively — run id as attribute — bridged into the earlier phases'
+  `*log.Logger` seams via `slog.NewLogLogger`; migrating the shared/tf/controller
+  packages to slog is a phase-7 item, see the umbrella plan §10.12); Spring DI/annotations/properties →
   constructor injection (P3) + the shared config package (D7); Jackson DTOs → plain
   structs with `encoding/json` (existing `meshapi` house style); OkHttp interceptors →
   the existing `AuthProvider`/client composition; schedulers → ticker/goroutine loops

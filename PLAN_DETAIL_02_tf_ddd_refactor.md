@@ -366,6 +366,19 @@ type TfProvider interface {
 }
 // TfFacade moves unchanged (tffacade.go:15-31) — it is already the consumer-side seam;
 // tofu's concrete types (*tfexec.Terraform, *MockedTfFacade) satisfy it structurally.
+//
+// PR#51 review refinement (validate when the seams are cut, STOP if it fights the pins):
+//   - git side: the gitsource package should center on a cohesive `git.LocalRepo` value
+//     type (package `gitsource`/`git`) whose repo path is a field and whose repo-management
+//     operations are methods on it — clone/checkout and e.g. WalkFiles(callback) for the
+//     source copy — rather than the current thin passthrough facade (P8/data+methods
+//     cohesion). `Source.Materialize` becomes the operation that produces/uses a LocalRepo.
+//   - tf side: challenge "TfFacade moves unchanged" — the tf domain's vocabulary is
+//     Init/Plan/Apply/Destroy; prefer the domain owning those operations (the step table
+//     already names them) over threading a generic tfexec handle through call sites. Keep
+//     the facade only as the thin adapter over `*tfexec.Terraform`. This is a design
+//     refinement to weigh against churn, not a mandate to rewrite the pinned seam in one
+//     step.
 
 // Source materializes run sources into the working dir; kills the setLog late-mutation
 // (gitsource.go:28-31) by passing the log sink as a parameter (P3/P4).
@@ -446,6 +459,12 @@ unrepresentable**. Likewise the manager's `shutdownCalled` becomes `atomic.Bool`
 review rejects it, the fallback is mechanical (keep the shallow-copy publication and the
 bare bool behind the same tracker API, flip both in 2b) — isolated to two types, no
 sequence change.
+
+**RULED (grill r2):** GRANTED. B6 (mutable `progress` struct) and B10 (abort flag) are
+fixed structurally here in phase 2 (mutex-snapshot + `atomic.Bool`), **not** carried
+verbatim to 2b. `go test -race` turns ON in phase 2 and stays on; 2b's ledger merely records
+the `-race` flip as verification. This is the **only** sanctioned in-phase-2 behavior change
+— all other inventory bugs still wait for 2b.
 
 **All other inventory bugs are preserved verbatim in phase 2** (with their
 `// FIXME(bug):` comments moved alongside the code):
@@ -528,6 +547,17 @@ keeps every intermediate diff reviewable and the gate arithmetic stable.
 duplicated worker halves both numerator and denominator — projected net-positive since
 the duplicate was fully covered by then).
 
+**RULED (grill r2) — phase-2 runtime smokes (added to the step-12 exit criteria):** two
+manual runtime smokes are now **required** before the phase-2 PR merges:
+1. a local-dev-stack acceptance run in **polling mode** (per plan 00 §6 step 9);
+2. a **single-run** smoke — run the binary with `EXECUTION_MODE=single-run` +
+   `RUN_JSON_FILE_PATH` pointing at a fixture run JSON, and confirm it executes and reports.
+
+Rationale: the coverage gate cannot reach `main.go` wiring and local-dev-stack only
+exercises the polling path, so the next runtime check of single-run wiring would otherwise
+slip to phase 4. Evidence (log excerpts / exit codes) recorded in the phase-2 PR
+description.
+
 ## 7. Phase 2b — bug-fix pass (own stacked PR)
 
 One PR on `refactor/single-go-binary/phase-2b-bugfixes`, working through plan 01 §6.
@@ -547,7 +577,7 @@ fixes cluster by area. "Moot" = structurally eliminated in phase 2.
 | R9 | B13 (init hint missing for APPLY) | hint for all three behaviors (delete the phase-2 parametrization) | flip the CP6 asymmetry pin: APPLY logs `HINT_INIT_FAILED` too | low (message-only) |
 | R10 | B9 (`*g.path` nil deref) | guard the nil in the log statement | new unit test in `gitsource` (was inventory-only) | none |
 | R11 | B8 (`context.Background()` in tofu download) | pass the caller's ctx | none required (gate-excluded file); optional opt-in e2e note | none |
-| R12 | B11 (single-run failure exits 0) | exit non-zero **only when no terminal status was successfully reported** (init-class failures); keep exit 0 after a reported FAILED | new `main`-adjacent test where feasible; otherwise documented decision + acceptance-suite check | **high-care**: the controller's Job template uses `BackoffLimit: 1` + `RestartPolicy: Never` (`run-controller/controller/kubernetes.go:135,151`), so a blanket non-zero exit would make k8s **re-run a failed terraform run once** — double execution. The conditional fix avoids that; the full solution (BackoffLimit alignment) is a controller change → phase 5 note. **STOP-for-review** on the exact condition before implementing |
+| R12 | B11 (single-run failure exits 0) | exit non-zero **only when no terminal status was successfully reported** (init-class failures); keep exit 0 after a reported FAILED | new `main`-adjacent test where feasible; otherwise documented decision + acceptance-suite check | **high-care**: the controller's Job template uses `BackoffLimit: 1` + `RestartPolicy: Never` (`run-controller/controller/kubernetes.go:135,151`), so a blanket non-zero exit would make k8s **re-run a failed terraform run once** — double execution. The conditional fix avoids that; the full solution (BackoffLimit alignment) is a controller change → phase 5 note. **STOP-for-review** on the exact condition before implementing. **RULED (grill r2):** narrow scope confirmed — the single-run pod exits **non-zero ONLY for failures BEFORE the first potentially state-mutating step** (workdir setup / run-JSON parse / registration — i.e. before `tofu init`/`apply` begins). Once a run has begun applying it keeps **exit 0** even if the final terminal-status PATCH fails (today's hung-run behavior): re-triggering stateful terraform is a user action, never an automatic k8s Job re-run. The meshapi client has retry/backoff, so a lost final PATCH is unlikely in practice. This **narrows** the broader "no terminal status reported" framing in `PLAN_DETAIL_05` §16.3 — a failed final PATCH on an already-applying run does **not** force non-zero exit. |
 | R13 | Cleanup | delete the remaining behavioral `.golangci.yml` `tfrun`-successor exclusions (errcheck-class production pins, plan 00 §5.3 category 2) fixing each site; remove all `FIXME(bug)` markers; confirm `grep -c "FIXME(bug)"` = 0 | lint green with the block gone | low; each errcheck fix is reviewed as its own hunk |
 
 Exit: inventory empty, `-race` on, no `FIXME(bug)` markers (D13/phase-2b exit criteria).
@@ -617,6 +647,9 @@ commit; `go.work` keeps the modules in lock-step, and no published tag of
 5. **The D13 exception for data races** (B6/B10, §5.5) is new policy this plan adds:
    "pin everything" cannot pin a race, and "preserve behavior" cannot preserve undefined
    behavior. Needs explicit reviewer sign-off (STOP-D).
+   **RULED (grill r2):** GRANTED — B6/B10 are fixed structurally in phase 2 (the only
+   sanctioned in-phase-2 behavior change); `-race` flips on in phase 2 and 2b just records
+   the verification. See §5.5.
 6. **The timeout-message quirk** (`tfcmd.go:116` prints `TfCommandTimeoutMins` while the
    engine's actual timeout is a separately-plumbed duration) becomes *visible* once
    config is injected — preserved verbatim (the message keeps printing the config value);

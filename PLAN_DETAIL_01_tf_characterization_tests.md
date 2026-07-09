@@ -77,6 +77,15 @@ until 2b, or D13 gets a reviewed exception for data races.
   `PlainClone` accepts filesystem paths), which keeps the tests black-box (the URL is just data in
   the run JSON) and makes them hermetic and fast. This contradicts the high-level plan's
   description of the existing suites as "hermetic" (§2, D6) — flagged, not silently deviated from.
+  **PR#51 review refinement:** the CP1 local-repo move is exactly the direction PR#51 asks
+  for (bare git repos in `testdata`, per-testcase branches — the pattern copyable from
+  `terraform-provider-meshstack`). The larger PR#51 steer — replacing the fake
+  `http.RoundTripper` with a reusable `net/http/httptest` meshfed-API **server** mock
+  package shared across runner types — is deliberately **NOT** taken in phase 1 (it is
+  structural churn, and phase 1 must not restructure). Phase 1 keeps the fake transport to
+  pin behavior with minimal diff; the server-mock package is introduced in phase 2/3
+  (plan 03, shared core) and phase-1 fixtures are authored as replayable request/response
+  transcripts so they port onto it without rewriting the scenarios.
 - **F2 — D9's "same-origin URL" artifact pin is stale.** Commit `88d67d4` ("fix: revert the
   artifact url same origin check", 2026-07-02) deleted the check from
   `go-meshapi-client/meshapi/client.go` and its tests. Only the 128MiB cap remains

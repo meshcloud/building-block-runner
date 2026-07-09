@@ -250,6 +250,13 @@ plumbing (not yet gating)"**. Concretely, only `ci.yml`'s `go-runners-ci` job ch
 tests out of CI defeats a guardrails phase. Recommendation: add the matrix leg in this PR,
 explicitly called out in the PR description.
 
+**RULED (grill r2):** APPROVED for phase 0 — add the `go-meshapi-client` leg to the
+`go-runners-ci` matrix now, despite the minor deviation from D14 ("CI functionally
+untouched until phase 7"). Rationale: phase 1 deliberately places the D9 128MiB
+plan-artifact-cap pin test in `go-meshapi-client/meshapi/client_test.go`; without this leg
+that frozen-contract pin would not be CI-enforced until phase 3. Call it out in the PR
+description as the sanctioned additive exception.
+
 ## 6. Implementation order (always-green checkpoints, one squash commit)
 
 Each step ends with the stated checkpoint green before the next begins; the branch is
@@ -358,6 +365,9 @@ inventory (§8) survives a revert harmlessly (documentation only).
    change, colliding with D14's "CI functionally as-is". Recommendation: add it in this PR
    as a flagged, additive guardrail; alternative (defer to phase 7) leaves a shared module
    unguarded through the entire refactor. Reviewer decides on the PR.
+   **RULED (grill r2):** APPROVED — add the leg in phase 0 (the phase-1 D9 128MiB pin test
+   lives in `go-meshapi-client/meshapi/client_test.go`, so this leg is what CI-enforces that
+   frozen contract before phase 3). See §5.5.
 2. **231 lint findings** at provider parity — the high-level plan's "adopt golangci-lint v2"
    silently implied a nontrivial cleanup; §5.3's inert-vs-pin rule is new policy this plan
    adds so phase 0 stays behavior-neutral. ~25 production-code findings get *pinned*, not
@@ -401,3 +411,5 @@ Later plans may assume, verbatim:
 None. The two judgment calls this plan could not settle alone are recorded as flagged
 reviewer decisions, not open questions: the `go-meshapi-client` CI matrix leg (§11.1) and
 the inert-vs-pin lint policy (§5.3, reviewable via the PR diff audit).
+**RULED (grill r2):** the `go-meshapi-client` CI matrix leg is now resolved — APPROVED for
+phase 0 (see §5.5/§11.1).

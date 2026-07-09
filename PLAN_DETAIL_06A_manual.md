@@ -239,6 +239,16 @@ type HandlerDeps struct {
   outcome). Not a separate handler type — Kotlin's subclass override becomes a small
   strategy branch (D15 §5, no inheritance mimicry).
 - Step id/display-name are typed constants (`StepId = "manual"`, umbrella §7.1).
+- **PR#51 review refinement (handler purity — the manual litmus test, plan 05 §4.2).** The
+  manual handler is the proof that a `RunHandler` can be pure "inputs → outputs" logic:
+  its only injected collaborators are a run-scoped reporter (via `ReporterFactory`,
+  runToken-only), `Clock`/`Rand`, and `*slog.Logger` — **no direct `meshapi`/HTTP import**
+  in the handler's own logic, logging excepted. Reading inputs off
+  `run.Details.Spec.BuildingBlock.Spec.Inputs` currently couples the handler to the
+  `meshapi` DTO shape; the §17 fit review must decide whether that stays (thin, acceptable)
+  or whether inputs/outputs are lifted to a small domain type so the handler imports no
+  client package at all. Either way, the reporter stays a port, not a `meshapi.RunClient`
+  the handler builds itself. **STOP-D** already gates this via the fit review.
 
 ### 4.2 Echo semantics (the only decision surface)
 
@@ -479,11 +489,14 @@ The template stage all of 06B–D copy (umbrella §5.6):
   `ENV PORT=8080`, `EXPOSE 8080` (parity with `jvm.Dockerfile:18-19`),
   `ENTRYPOINT ["/app/entrypoint.sh", "/app/manual-block-runner"]` (the Go
   entrypoint's CA-import + `exec "$@"` gives the symlink as argv[0], plan 04 §4.4).
-- `containers/manual-block-runner/runner-config.yml`: effect-equivalent to the Kotlin
-  classpath defaults (§2.6) in Go-native flat keys — uuid `d943b032-…`, api url
+- `containers/manual-block-runner/runner-config.yml`: **RULED (grill r2):** this is a
+  **per-impl** config file that **deep-merges over** a shared top-level base
+  `runner-config.yml` (base < per-impl < env) — the template layering the other three
+  ports reuse (umbrella §5.4/§10.5). It is effect-equivalent to the Kotlin classpath
+  defaults (§2.6) in Go-native flat keys — uuid `d943b032-…`, api url
   `http://localhost:8301`, `bb-api`/`guest`, `debugMode: false` — with comments naming
-  the env overrides. No private key (manual needs none; contrast umbrella §10.5 for
-  06B–D).
+  the env overrides. No private key at either layer for manual (manual needs none; the
+  well-known dev key lives in the shared base only for 06B–D, umbrella §10.5).
 - Published name/tags unchanged: `ghcr.io/meshcloud/manual-block-runner:main` + release
   tags. Deployed controller configs keep working because the image honors their baked
   `SPRING_PROFILES_ACTIVE: kubernetes` (§6.3, umbrella A12).
@@ -711,8 +724,8 @@ Findings the umbrella / prior plans did not anticipate, plus judgment calls for 
    per umbrella §5.6, restated here because 06A sets the wording B–D copy.
 10. **M-P7 exit-code delta** (§7.3): the one place a pinned Kotlin behavior is
     deliberately not preserved — umbrella §7.9/§10.3 sanction it; the pin documents
-    the baseline. Reviewer may veto toward strict parity (then all four sub-plans
-    change together, umbrella §2 resolution rule).
+    the baseline. **RULED (grill r2):** confirmed — fix in phase 6; the old exit-0
+    behavior stays pinned (M-P7 is the pin) for audit.
 
 **Open questions:** none — every decision branch was walked and resolved from the
 sources; the reviewer-vetoable judgment calls are flags 5, 6, 8, 10 above and the

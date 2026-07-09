@@ -328,8 +328,9 @@ type HandlerDeps struct {
   register/update transport failures ⇒ non-nil error.
 - Timeout ownership (A1): the 30-min poll budget and the 12×10s find window live inside
   `Execute` as constructor-default constants (`findAttempts=12`, `pollInterval=10s`,
-  `pollTimeout=30m`), waits `select` on `Clock` timer vs `ctx.Done()` — cancellation is
-  new-but-inert vs Kotlin's `Thread.sleep` (same as 06C).
+  `pollTimeout=30m`), waits `select` on `Clock` timer vs `ctx.Done()` — cancellation now
+  drives a terminal shutdown report per the §4.5 RULED graceful-shutdown treatment (same
+  as 06C).
 - External-API errors use 06B's `ExternalCallError` (D3); the §2.6 message strings are
   produced in this package, byte-identical.
 
@@ -352,8 +353,10 @@ func parseAppPem(pem string) (*rsa.PrivateKey, error)
 - Justification: the JWS is three base64url segments + one `rsa.SignPKCS1v15` call —
   a dependency would import a whole claims/validation framework to *serialize* one
   static payload. Verification exists in tests via `rsa.VerifyPKCS1v15`.
-  Fallback if review disagrees: `golang-jwt/jwt` (maintained, minimal) — flagged for
-  review per the umbrella row, default is stdlib.
+  **RULED (grill r2): stdlib confirmed** — hand-rolled RS256 (`crypto/rsa`
+  `SignPKCS1v15` + `x509.ParsePKCS1PrivateKey`), no `golang-jwt/jwt`; the code only
+  signs, never verifies untrusted tokens (G-P1/G-P2 cross-check claims + signature).
+  The `golang-jwt/jwt` fallback is withdrawn.
 - `parseAppPem` deliberately does **not** use `encoding/pem` alone: `pem.Decode`
   rejects the single-line PEMs Kotlin accepts (G-P2). String-normalize first, exactly
   the Kotlin steps. PKCS#8 input fails as today (unsupported, same FAILED-generic UX).
@@ -408,9 +411,14 @@ func (h Handler) pollWorkflow(ctx context.Context, r report.SourceReporter, gc g
   concurrency observables hold trivially).
 - Dedup/first-batch/trigger-step rules exactly §2.5.3 incl. the G-P4 re-report quirk.
 - Error handling: find-phase and poll-phase errors log warn + retry within their
-  budgets; timeout and not-found produce the §2.6 messages; ctx cancellation returns
-  the ctx error (infrastructure — the loop/single-run tail logs it; no Kotlin
-  counterpart existed, same treatment as 06C).
+  budgets; timeout and not-found produce the §2.6 messages. **ctx cancellation.
+  RULED (grill r2 — plan-05 H7 amendment, not a 06D-local fork; same as 06C):** the
+  sync-polling GitHub handler, on `ctx.Done()`, reports the in-flight run with a
+  **terminal** status before returning the ctx error — `ABORTED` (now in the Go
+  `ExecutionStatus` enum, defined terminal by meshStack's status source), falling back
+  to `FAILED` if the endpoint rejects it, **never `SUCCEEDED`** — so the coordinator
+  never sees a stale IN_PROGRESS. Persona graceful shutdown cancels run contexts,
+  drains a **configurable grace period (default 120s)**, and emits clear shutdown logs.
 
 ### 4.6 Template fit-check (umbrella §6 review protocol — required for B–D)
 
@@ -508,7 +516,10 @@ deltas are listed:
   (UseNumber, D8) → `handler.Execute` once, no listener, R12 exit rule (exit 0 iff a
   terminal or IN_PROGRESS-handover update was reported — covers async single-run,
   where the handover *is* the job's success; pre-report fetch/parse failures exit
-  non-zero, the sanctioned §7.9 delta anchored by G-P11).
+  non-zero, the sanctioned §7.9 delta anchored by G-P11). **RULED (grill r2):** this
+  exit-code tightening is CONFIRMED for phase 6 — Go single-run pods exit non-zero on
+  pre-report fetch/parse failures where Kotlin exited 0; the old exit-0 behavior stays
+  PINNED (G-P11) for audit.
 - Node id = plain runner uuid; header set = shared-client set (umbrella §7.7, verified
   once in 06A).
 
@@ -592,9 +603,10 @@ unit tables — the D16 consolidation outcome. No assertion changes shape beyond
 
 ### 10.2 New Go-only tests
 
-Ctx-cancellation mid-poll (returns error, no terminal update), unknown job/run status
-retry path, `json.Number` fidelity through the Mode-A payload, single-run async
-handover exit 0, mgmt-on-8102 smoke. All hermetic (fake transport, fake clock).
+Ctx-cancellation mid-poll (reports a terminal `ABORTED` update, fallback `FAILED`, then
+returns the ctx error — §4.5 RULED), unknown job/run status retry path, `json.Number`
+fidelity through the Mode-A payload, single-run async handover exit 0, mgmt-on-8102
+smoke. All hermetic (fake transport, fake clock).
 
 ### 10.3 Gate
 
@@ -622,7 +634,10 @@ before removal (step 9) is:
    workflow, one `omitRunObjectInput: true` run, one GHE-style base-URL sanity check if
    an instance is available (else flagged as not exercised). This is the only leg that
    exercises real App-JWT acceptance by GitHub — the reason it is mandatory here and
-   was optional-ish for gitlab/ado.
+   was optional-ish for gitlab/ado. **RULED (grill r2):** GitHub has real coverage in
+   the sibling `meshstack-smoke-tests` repo, so the port validates there before Kotlin
+   module removal (in addition to the in-repo integration tests); the real-GitHub /
+   GHE-availability question is resolved — covered by `meshstack-smoke-tests`.
 3. **k8s single-run smoke** against the built image (docker run, pre-decrypted run
    JSON + `SPRING_PROFILES_ACTIVE=kubernetes`): captured wire equal to the Kotlin k8s
    scenario behavior; exit 0.
@@ -790,14 +805,17 @@ Findings the umbrella / prior plans did not anticipate, plus reviewer-vetoable c
     Gradle/CI/Dockerfile items): also `flake.nix` jdk21/ktlint, the `.claude/settings.json`
     ktlint hook, `.gitignore` gradle entries, and minimal README factual edits — all
     layout-forced (§12.2); the README *overhaul* stays phase 7.
-13. **Stdlib-JWT decision** (§4.2): the umbrella §4 row 16 default confirmed after
-    reading the auth0 usage — one static header + three claims + one sign call.
-    Fallback `golang-jwt/jwt` only if review vetoes hand-rolled JWS.
+13. **Stdlib-JWT decision. RULED (grill r2): stdlib CONFIRMED** (§4.2) — the App JWT is
+    hand-rolled RS256 via `crypto/rsa` `SignPKCS1v15` over PKCS#1 parsing
+    (`x509.ParsePKCS1PrivateKey`), with **no `golang-jwt/jwt` dependency**. The library
+    only ever *signs* (it never verifies untrusted tokens; the G-P1/G-P2 pins
+    cross-check the claims and the signature), so a claims/validation framework buys
+    nothing. The `golang-jwt/jwt` fallback is withdrawn.
 14. **DETECT uses `applyWorkflow`** (`:97-101`) — worth stating because tf treats
     DETECT specially (saved-plan rules); for github it is simply "run the apply
     workflow". Frozen in §13.
 
 **Open questions:** none — every decision branch was walked and resolved from the
-sources; the reviewer-vetoable judgment calls are flags 2, 5, 9, 13 above plus the
+sources; the reviewer-vetoable judgment calls are flags 2, 5, 9 above plus the
 umbrella-level calls they instantiate (§7.4 lean body, §7.9 exit rule, §10.5 baked dev
 key placement).

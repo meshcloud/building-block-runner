@@ -345,7 +345,9 @@ func (c adoClient) GetTimeline(ctx, id int64) ([]timelineRecord, error)
   byte-twin of the Jackson NON_NULL shape (frozen wire, umbrella §8). Parameter
   stringification via a package-local `renderValue` (§16.6): decoded with `UseNumber`
   (C2), strings verbatim, `json.Number` literal, bools `true`/`false`, arrays/objects
-  in Kotlin collection-`toString` form (`[a, b]` / `{k=v}`) — pinned by the A-P4 table.
+  rendered as **compact JSON** (**RULED (grill r2):** composite/exotic values emit JSON,
+  not Kotlin collection-`toString` `[a, b]` / `{k=v}` — a deliberate flagged byte change,
+  see §16.6) — pinned by the A-P4 table.
 - `PipelineRun`/`Timeline` DTOs are **package-local** (umbrella §10.11): typed string
   states/results (`runState("completed")` etc.) with two rendering helpers — wire value
   and Kotlin-enum-NAME (for the U-P7 final message). Unknown strings are representable
@@ -392,11 +394,17 @@ func (h Handler) pollCompletion(ctx context.Context, c adoClient, rep runReporte
   failed-update attempt (P-P5); if that PATCH also fails, `pollCompletion` returns the
   error and `Execute` propagates it (non-nil = infrastructure, A1) — the Go twin of
   Kotlin's outer-catch + propagation.
-- **ctx cancellation (new, D15):** `ctx.Done()` during a wait ⇒ return `ctx.Err()`
-  wrapped — no further PATCH (the run stays IN_PROGRESS, exactly what a JVM SIGKILL
-  mid-`Thread.sleep` produced; flagged §16.11). Consequence: graceful shutdown
-  (`Loop.Stop` + `InProcess.Wait`) does not wait out a 30-min poll if main cancels the
-  run context — wiring decision recorded in §7.1.
+- **ctx cancellation (new, D15). RULED (grill r2 — plan-05 H7 amendment, not a
+  06C-local fork):** `ctx.Done()` during a wait ⇒ the poller reports the in-flight run
+  with a **terminal** status before returning `ctx.Err()` wrapped — it emits `ABORTED`
+  (now added to the Go `ExecutionStatus` enum; meshStack's status source defines
+  `ABORTED` as terminal), falling back to `FAILED` if the endpoint rejects it, **never
+  `SUCCEEDED`**. This supersedes the earlier "no further PATCH / stays IN_PROGRESS"
+  design so the coordinator never sees a stale IN_PROGRESS until its long timeout.
+  Consequence: graceful shutdown (`Loop.Stop` + `InProcess.Wait`) drains a
+  **configurable grace period (default 120s)** and does not wait out a 30-min poll —
+  the run context is cancelled, the terminal report is sent, and clear logs are emitted
+  throughout. Wiring recorded in §7.1; flag 11 resolved (§16.11).
 - **Timeout reconciliation (C6):** A1's "handler owns its timeout" is satisfied by the
   30-min budget being *inside* `Execute`; no `LoopConfig` deadline exists or is added.
   With `maxConcurrentRuns` default 1, a sync poll blocks further claims for up to
@@ -499,9 +507,12 @@ the shipped literals are not carried (umbrella §10.4).
   `dispatch.NewInProcess(map[…]{meshapi.RunnerTypeAzureDevOpsPipeline: handler})`
   (`ToRunnerType`: AZURE_DEVOPS → AZURE_DEVOPS_PIPELINE, `dtos.go:289-290`, umbrella
   §7.12); wake from `Done()`; the shared `ClaimClassifier` (06A §7.1) verbatim.
-- Shutdown: `Loop.Stop()` → cancel the run context → `InProcess.Wait()`. The cancel
-  makes a mid-poll sync run return promptly (§4.4 ctx rule) instead of holding
-  shutdown for ≤30 min — recorded as part of the §16.11 flag.
+- Shutdown: `Loop.Stop()` → cancel the run context → `InProcess.Wait()`, draining a
+  **configurable grace period (default 120s)**. The cancel makes a mid-poll sync run
+  return promptly (§4.4 ctx rule) instead of holding shutdown for ≤30 min.
+  **RULED (grill r2):** the cancelled in-flight run is reported with a terminal status
+  (`ABORTED`, fallback `FAILED`, never `SUCCEEDED`) and clear shutdown logs are emitted;
+  this is a **reviewed amendment to plan 05's H7**, not a 06C-local fork (§16.11).
 - Decryptor wiring: `crypto.MeshCertBasedCrypto` from `cfg.PrivateKey` (polling);
   node id = plain runner uuid; headers = shared-client set (umbrella §7.7 delta).
 - `mgmt.NewServer` on `config.ManagementPort(log, 8101, PORT-alias)` + `mgmt.RunMetrics`
@@ -520,7 +531,10 @@ R12 exit tail (umbrella §7.9): exit 0 iff a terminal **or handover** status was
 reported — async handover exits 0; sync exits 0 after the final/failure update
 (including the pinned timeout failure); register/PATCH transport failure exits non-zero
 (Kotlin exit-1 parity); pre-report fetch/parse failure exits non-zero (the sanctioned
-K-P2 delta). A sync run may hold the Job pod for up to 30 min — unchanged from Kotlin.
+K-P2 delta). **RULED (grill r2):** the exit-code tightening is CONFIRMED for phase 6 —
+Go single-run pods exit non-zero on pre-report fetch/parse failures where Kotlin exited 0;
+the old exit-0 swallow stays PINNED (K-P2) for audit. A sync run may hold the Job pod for
+up to 30 min — unchanged from Kotlin.
 
 ### 7.3 Modes × behavior summary
 
@@ -744,12 +758,15 @@ Findings the umbrella / prior plans did not anticipate, plus judgment calls for 
    IN_PROGRESS (such a stage step never turns terminal); `completed+canceled/abandoned`
    user message renders `"<name>: completed"` (S-P4/S-P5). Pinned as-is per D13
    discipline; reviewer may commission a post-port fix.
-6. **templateParameters stringification is Kotlin/Java `toString`** over
-   Jackson-decoded values: lists render `[a, b]`, objects `{k=v}`, doubles
-   Java-style — customer pipelines may parse these, so the Go `renderValue` reproduces
-   them (pinned A-P4). One unpinnable edge: exotic numeric literals (`1e3` ⇒ Kotlin
-   `"1000.0"` vs `json.Number` literal `"1e3"`) — best-effort, documented in the
-   `renderValue` table test; byte parity holds for all plain literals.
+6. **templateParameters stringification. RULED (grill r2):** for composite/exotic
+   `templateParameters` values (arrays, objects, exotic numeric literals) the Go
+   `renderValue` emits **compact JSON** rather than reproducing Kotlin/Java `toString`
+   (`[a, b]` / `{k=v}` / Java-style doubles). This is a **deliberate, flagged byte
+   change** — recorded in the migration/release notes; the A-P4 pins assert the JSON
+   rendering, not the Kotlin `toString` bytes. Plain scalar literals (strings verbatim,
+   `json.Number` literal, bools) are unaffected and stay byte-identical; only
+   composite/exotic values move to JSON, which also resolves the previously unpinnable
+   numeric edge (`1e3`) by pinning its JSON form.
 7. **azdevops never sanitizes its base URL** — no `UrlSanitizerService` usage in the
    module (grep-verified), so umbrella §4 row 13 ("gitlab/github/azdevops" consumers)
    is an erratum for this runner; a trailing-slash `azureDevOpsBaseUrl` produces
@@ -766,13 +783,16 @@ Findings the umbrella / prior plans did not anticipate, plus judgment calls for 
     budget: Go's zero-value `http.Client` never times out, so the port sets explicit
     equivalents — without them a hung ADO read could stall a "30-min" poll forever
     (§4.2). No prior plan mentions external-HTTP timeout parity.
-11. **ctx cancellation of the poll loop is new surface:** Kotlin's `Thread.sleep` loop
-    died only with the JVM; the Go poller returns on `ctx.Done()` without a further
-    PATCH (run stays IN_PROGRESS — same observable as a JVM kill) and persona shutdown
-    cancels run contexts so `InProcess.Wait()` isn't held for ≤30 min (§4.4/§7.1).
-    Flagged because plan 05's shutdown ("Wait until in-flight == 0") assumed short
-    handlers; if review prefers waiting out sync polls, only the persona wiring
-    changes.
+11. **ctx cancellation of the poll loop. RULED (grill r2):** the contradiction with
+    plan 05's shutdown ("Wait until in-flight == 0", which assumed short handlers) is
+    resolved **in favor of CANCEL** for sync-polling handlers, as a **reviewed amendment
+    to plan 05's H7** (not a 06C-local fork). On `ctx.Done()` the Go poller no longer
+    leaves the run IN_PROGRESS: it reports a **terminal** status (`ABORTED` — now in the
+    Go `ExecutionStatus` enum, defined terminal by meshStack's status source — falling
+    back to `FAILED` if the endpoint rejects it, **never `SUCCEEDED`**) so the
+    coordinator never waits out its long timeout. Persona graceful shutdown cancels run
+    contexts, drains a **configurable grace period (default 120s)**, and emits clear
+    shutdown logs so `InProcess.Wait()` is not held for ≤30 min (§4.4/§7.1).
 12. **Timeline parse tolerance** (§4.5 row 3): Kotlin degrades to state-only fallback
     when ADO introduces an unknown timeline state/result string; Go keeps emitting
     stage steps via the mapper's else branches. 06A flag-5 precedent (tolerant-parse
@@ -787,5 +807,5 @@ Findings the umbrella / prior plans did not anticipate, plus judgment calls for 
     recorded so parallel authoring of 06B/06C cannot silently double-implement.
 
 **Open questions:** none — every decision branch was walked and resolved from the
-sources; the reviewer-vetoable judgment calls are flags 2, 5, 9, 11, 12 above plus the
+sources; the reviewer-vetoable judgment calls are flags 2, 5, 9, 12 above plus the
 umbrella-level calls they instantiate (§7.4 lean body, §7.9 exit rule, §7.7 headers).

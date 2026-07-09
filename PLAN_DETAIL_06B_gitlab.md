@@ -405,7 +405,7 @@ Every deviation from the 06A artifacts, mapped to an anticipating rule or escala
 | First consumer of `config.ResolvePrivateKey` + `BlockRunnerCompat.privateKey*` | 06A §6.4-6.5, §16.8 | anticipated |
 | External HTTP client with redirect-disable | umbrella §5.3 "external-API HTTP client seam (fakeable)" | anticipated |
 | No poll loop, no `Clock` dep | umbrella §3.1 (gitlab has no polling) | narrower than 06C/06D — fine |
-| `valueString` composite-JSON delta | **not anticipated** — new sanctioned-delta candidate | escalated as flag §16.4 (reviewer decision; if rejected, a Java-toString-compatible formatter is the fallback, no interface change) |
+| `valueString` composite-JSON delta | **not anticipated** — new sanctioned-delta candidate | **RULED (grill r2)** via flag §16.4: compact JSON, no Java-toString fallback |
 | k8s plaintext-token embedding limits §7.6 | **umbrella correction** | escalated as flag §16.3 (documentation-level; no shape change) |
 
 **Result: no `RunHandler`/`ClaimedRun`/reporter/config-helper shape change required —
@@ -480,11 +480,15 @@ shipped literals are not carried (umbrella §10.4).
 
 The Kotlin classpath yaml bakes an inline dev private key
 (`gitlab-block-runner/src/main/resources/runner-config.yml:12`) — the local-dev pair
-of meshfed's magic-runner public key. The port moves it **verbatim** into
-`containers/gitlab-block-runner/runner-config.yml` as the flat `privateKey:` value with
-a comment naming its purpose and the env override. Per the T2 resolution order it is
-used only when neither `RUNNER_PRIVATE_KEY_FILE` nor a mounted file key resolves —
-never a silent fallback over an operator-set key (the Kotlin order, preserved).
+of meshfed's magic-runner public key. **RULED (grill r2):** the port keeps it
+**verbatim** but places it in the **shared top-level base** `runner-config.yml`
+(deep-merged under the per-impl `containers/gitlab-block-runner/runner-config.yml`,
+base < per-impl < env) as the flat `privateKey:` value, with a one-line comment marking
+it the well-known dev key (so scanner hits self-answer) and naming the env override. It
+is **not** duplicated into the per-impl file. Per the T2 resolution order it is used
+only when neither `RUNNER_PRIVATE_KEY_FILE` nor a mounted file key resolves — never a
+silent fallback over an operator-set key (the Kotlin order, preserved). Removing it from
+published-image defaults is a **phase-7** ledger item.
 
 ## 7. Persona wiring & modes
 
@@ -544,11 +548,12 @@ The 06A §8 template stage, mechanically repeated:
   digest pin, `ca-certificates bash` only (HTTP-only runner), meshcloud uid 2000,
   binary + symlink `/app/gitlab-block-runner`, `ENV PORT=8080`, `EXPOSE 8080`,
   `ENTRYPOINT ["/app/entrypoint.sh", "/app/gitlab-block-runner"]`.
-- `containers/gitlab-block-runner/runner-config.yml`: effect-equivalent to the Kotlin
-  classpath defaults (§2.4) in flat keys — uuid `bfe76555-…`, api url
-  `http://localhost:8303`, `bb-api`/`guest` — **plus the baked dev private key**
-  (§6.3, the one COPY-content delta vs the manual stage, anticipated by 06A §17
-  row 11).
+- `containers/gitlab-block-runner/runner-config.yml`: a **per-impl** file that
+  deep-merges over the shared top-level base (base < per-impl < env, §6.3);
+  effect-equivalent to the Kotlin classpath defaults (§2.4) in flat keys — uuid
+  `bfe76555-…`, api url `http://localhost:8303`, `bb-api`/`guest`. **The baked dev
+  private key lives in the shared base, not this per-impl file** (§6.3, umbrella §10.5;
+  anticipated by 06A §17 row 11).
 - Published name/tags unchanged (`ghcr.io/meshcloud/gitlab-block-runner:main` +
   release tags); deployed controller configs keep working via the honored
   `SPRING_PROFILES_ACTIVE: kubernetes` (umbrella A12).
@@ -602,8 +607,9 @@ until step 9.
 | C-P1–C-P7 core wire pins | inherited Go twins from 06A (T1/T4) — verified present, not duplicated | — |
 
 Only G-P13's file-missing case changes asserted behavior — sanctioned by umbrella
-§7.9/§10.3, identical wording to 06A. Everything else ports semantically (STOP-B
-otherwise).
+§7.9/§10.3, identical wording to 06A (**RULED (grill r2):** confirmed — fix in phase 6;
+the old exit-0 behavior stays pinned as G-P13 for audit). Everything else ports
+semantically (STOP-B otherwise).
 
 ### 10.2 New Go-only tests
 
@@ -779,9 +785,10 @@ Findings the umbrella / 06A / prior plans did not anticipate, plus judgment call
    token (§4.2.1). Scalars (string/int/bool — the realistic cases) are byte-identical
    and pinned; composites are pinned as baseline (G-P8) and shipped as a flagged delta
    (Java toString is not parseable; a pipeline relying on it gets strictly better
-   bytes). **Reviewer may veto toward a Java-toString-compatible formatter** (~20
-   lines, no interface change) — then 06C (stringified `templateParameters`) must
-   adopt the same decision (umbrella §2 resolution rule).
+   bytes). **RULED (grill r2):** switch to **compact JSON** for composite/exotic values
+   — the pins assert JSON. This **overrides** the earlier Java-toString-compatible
+   formatter fallback; 06C (stringified `templateParameters`) adopts the same
+   compact-JSON decision (umbrella §2 resolution rule).
 5. **JSON `null` input values are Kotlin-unrepresentable** (`value: Any` fails the
    claim parse ⇒ run silently stuck until coordinator timeout) but Go-representable.
    Go stringifies `null` and proceeds (§4.2.1) rather than inventing a claim-failure

@@ -217,7 +217,7 @@ owning sub-plan that must fill it (design agreed here, implementation there).
 | 13 | `UrlSanitizerService` (trim + drop trailing slash, error on empty) | a tiny unexported helper where consumed (gitlab/github/azdevops packages) — no shared package for 6 lines (P3) | sub-plan-local; behavior pinned by existing Kotlin tests |
 | 14 | `MeshHttpException{userMessage, systemMessage?, statusCode, requestUrl, responseBody}` — carries the user/system split into step updates | per-package typed error with the same fields (external-API error), mapped into step `userMessage`/`systemMessage` exactly as today | 06A defines the shape (gitlab/azdevops/github reuse); messages themselves are per-runner pins (§3.2) |
 | 15 | `ImmediateRetryDecorator`, `RequestLoggingUtility` (MDC request ids), Spring profiles/scheduling config, `MeshException`, `MeshObjectApiObjectMapper` | dissolved: loop wake (row 1), per-run slog attrs (plan 05 H3 observable, §10.12), persona wiring, plain Go errors, `encoding/json` | none — deletions, no port |
-| 16 | `AppTokenFactory` (GitHub App JWT via auth0-jwt + BouncyCastle PKCS#1) | `internal/github`: stdlib `x509.ParsePKCS1PrivateKey` + hand-rolled RS256 JWT (header/payload/sign ≈ 40 lines) — **no new JWT dependency** (P2; the meshfed mux stdlib bar) | owner: 06D; flag for review — a maintained JWT lib is the fallback if review prefers it |
+| 16 | `AppTokenFactory` (GitHub App JWT via auth0-jwt + BouncyCastle PKCS#1) | `internal/github`: stdlib `x509.ParsePKCS1PrivateKey` + hand-rolled RS256 JWT (header/payload/sign ≈ 40 lines) — **no new JWT dependency** (P2; the meshfed mux stdlib bar) | owner: 06D. **RULED (grill r2):** stdlib — hand-rolled RS256 via `crypto/rsa` `SignPKCS1v15`, no `golang-jwt/jwt` dependency (it only signs, never verifies untrusted tokens) |
 
 ## 5. The template contract (every sub-plan must satisfy this)
 
@@ -340,13 +340,16 @@ var and yaml key keeps working (D7).** The compat matrix each sub-plan instantia
 | env `RUNNER_PRIVATE_KEY_FILE`; yaml `blockrunner.privateKey` / `blockrunner.privateKeyFile`; default `/app/runner-private.pem` | `PrivateKeyLoader.kt:8-24` | env > file key > default path > inline key — one resolution order defined in 06A (§4 row 9), deprecation-logged where it diverges from tf's key names |
 | env `PORT` (Spring `server.port`, defaults 8101–8104; images bake `PORT=8080`) | `*/application.yml:8`, `jvm.Dockerfile:19` | `MANAGEMENT_PORT` with `PORT` alias (deprecation-logged once) — plan-04 tf mechanics reused verbatim; images keep `ENV PORT=8080`, never bake `MANAGEMENT_PORT` (plan 04 §10.7 lesson) |
 | env `SPRING_PROFILES_ACTIVE=kubernetes` | operator job templates, `run-controller/runner-config.yml:142-157` | honored as single-run trigger (§7.8), deprecation-logged; `EXECUTION_MODE=single-run` also accepted (Go convention) |
-| yaml `blockrunner.uuid`, `blockrunner.api.url`, `blockrunner.auth.username/password`, `blockrunner.auth.api-key.client-id/client-secret` (kebab-case), `blockrunner.debugMode` (manual only), `blockrunner.version` | module `runner-config.yml`s, `StandaloneBlockRunnerApiConfig.kt`, `ManualRunnerConfig.kt` | the persona loader accepts **both** the Go-native flat keys (`api:`, `uuid:` — tf/controller style) and a `blockrunner:` compat block normalized after load (deprecation-logged). Customers mounting their existing yaml onto the published image keep working. Spring *relaxed-binding* variants beyond these literal spellings (e.g. `BLOCKRUNNER_UUID`) are **not** carried — flag §10.4 |
+| yaml `blockrunner.uuid`, `blockrunner.api.url`, `blockrunner.auth.username/password`, `blockrunner.auth.api-key.client-id/client-secret` (kebab-case), `blockrunner.debugMode` (manual only), `blockrunner.version` | module `runner-config.yml`s, `StandaloneBlockRunnerApiConfig.kt`, `ManualRunnerConfig.kt` | the persona loader accepts **both** the Go-native flat keys (`api:`, `uuid:` — tf/controller style) and a `blockrunner:` compat block normalized after load (deprecation-logged). Customers mounting their existing yaml onto the published image keep working. Spring *relaxed-binding* variants beyond these literal spellings (e.g. `BLOCKRUNNER_UUID`) are **not** carried; startup fails fast when an unconsumed `BLOCKRUNNER_*`-prefixed env var is present (§10.4 RULED) |
 | yaml `logging.*`, `server.*`, `spring.*` blocks | Spring framework config | ignored-with-warning when present in a mounted file (never an error — a mounted Kotlin-era file must still boot the persona) |
 
 New config (additive only): `maxConcurrentRuns` + `registration:` (plan 05 shapes),
-`RUNNER_CONFIG_FILE` (shared loader). Defaults: shipped uuids/api-urls per module
-`runner-config.yml` move into `containers/<persona>/runner-config.yml` byte-equivalent
-in effect (incl. the gitlab/azdevops/github baked dev private key — flag §10.5).
+`RUNNER_CONFIG_FILE` (shared loader). Config layering (**RULED (grill r2)**): a shared
+top-level base `runner-config.yml` holds the cross-persona defaults (incl. the
+gitlab/azdevops/github well-known dev private key — §10.5), and each per-impl
+`containers/<persona>/runner-config.yml` **deep-merges over** it, env last
+(base < per-impl < env). Defaults stay byte-equivalent in effect to the shipped module
+`runner-config.yml`s.
 
 ### 5.5 Persona wiring + MANAGEMENT_PORT + single-run mode
 
@@ -406,7 +409,8 @@ per-port validation gate is:
 | Runner | Gate before Kotlin removal |
 |---|---|
 | manual | local-dev-stack flow with the **Go** manual persona replacing the gradle bootRun (lock-step SKILL edit, §9) + ≥1 MANUAL acceptance run green + the k8s single-run smoke (run JSON file → captured wire identical to the `ManualRunnerKubernetesStartupScenario` transcript) |
-| gitlab / azure-devops / github | hermetic **side-by-side transcript comparison**: the same run JSON driven through the Kotlin runner (wiremock external API + captured meshStack updates — the pin suite) and through the Go handler (fake transport twins); transcripts must match modulo the sanctioned deltas of §7. Plus a documented manual smoke against a real GitLab/ADO/GitHub target (one trigger each, async + sync where applicable), evidence in the PR description. No automated per-type acceptance exists to run — flag §10.2 |
+| github | **RULED (grill r2):** `github` (like `manual` and `tf`) has real end-to-end coverage in the sibling `meshstack-smoke-tests` repo — its port validates there before Kotlin module removal. That, plus the hermetic **side-by-side transcript comparison**: the same run JSON driven through the Kotlin runner (wiremock external API + captured meshStack updates — the pin suite) and through the Go handler (fake transport twins); transcripts must match modulo the sanctioned deltas of §7 |
+| gitlab / azure-devops | **RULED (grill r2):** these two have **NO smoke tests** (accepted shortcoming — commissioning new meshfed-release acceptance tests for them is out of scope). Deletion leans entirely on the in-repo integration/transcript tests: the hermetic **side-by-side transcript comparison** (same run JSON through the Kotlin pin suite vs the Go handler, matching modulo the §7 deltas). A documented manual smoke against a real GitLab/ADO target (one trigger each, async + sync where applicable) is best-effort PR evidence, not a gate. Resolves flag §10.2 |
 | all | `local-dev-stack` + acceptance suite still green as the outer regression net (the runner under port claims from its mux port per A11) |
 
 ### 5.8 Kotlin module removal + Gradle shrink
@@ -553,7 +557,9 @@ reviewed together so 06A's interfaces are checked against real needs, not guesse
    parse failure before any report exited 0 in Kotlin (`NoOpBlockRunnerService.kt:16-23`
    catch + `SingleShotRunner.kt:38-49`), leaving the run to time out coordinator-side.
    The Go ports exit non-zero there so k8s retries a run meshStack never heard about —
-   sanctioned, flagged delta (§10.3), identical in all four sub-plans.
+   sanctioned, flagged delta (§10.3), identical in all four sub-plans. **RULED (grill
+   r2):** confirmed — fix in phase 6; the old exit-0 behavior is pinned per-runner
+   (M-P7, G-P13, …) for audit.
 10. **Single-run listener.** Like tf (plan 04 §10.4): no mgmt listener in single-run
     mode. Delta vs Kotlin: the Spring Job pods served an unprobed `/healthz`; the
     controller's Job template sets no probes (plan-03 goldens) — inert, flagged once.
@@ -611,7 +617,10 @@ reviewed together so 06A's interfaces are checked against real needs, not guesse
 new additive metrics/config (§7.2, §5.4); JVM `command:`-override incompatibility
 (§5.6); the slog text format with per-run attrs replacing Spring's log format
 (operator-visible log *format* was never a wire contract; readiness markers in §9 are
-updated in lock-step; §10.12).
+updated in lock-step; §10.12). **RULED (grill r2):** for GitLab `variables[k]`/
+`inputs[k]` and Azure DevOps `templateParameters`, composite/exotic values render as
+**compact JSON** (not Java `toString()`) — a deliberate, flagged byte change recorded
+in migration/release notes; pins assert JSON.
 
 ## 9. Cross-repo touch points
 
@@ -648,27 +657,39 @@ updated in lock-step; §10.12).
    (`run-controller/runner-config.yml:142-157`). The ported personas must honor it or
    every existing controller deployment breaks on image update — hence §7.8. No prior
    plan mentions this.
-2. **No acceptance coverage exists for gitlab/azdevops/github** — the high-level exit
-   criterion "Go handler passes acceptance" is only literally satisfiable for manual
-   (and tf). §5.7 substitutes side-by-side transcript equivalence + manual smoke;
-   reviewer should confirm this reading or commission new acceptance tests (which would
-   be a meshfed-release feature, out of this repo's scope).
+2. **No uniform acceptance coverage exists for gitlab/azdevops/github.** **RULED (grill
+   r2):** `github`, `tf` and `manual` have real end-to-end coverage in the sibling
+   `meshstack-smoke-tests` repo and validate there before Kotlin module removal;
+   `gitlab` and `azure-devops` have **no** smoke tests (accepted shortcoming) and lean
+   on the in-repo side-by-side transcript equivalence (Kotlin pin suite vs Go).
+   Commissioning new meshfed-release acceptance tests for those two is out of scope. The
+   §5.7 gate reads honestly per runner rather than promising a uniform manual smoke.
 3. **Kotlin swallows pre-report failures in k8s mode** (fetch/parse errors caught ⇒
    exit 0, no status ever reported — the run hangs until coordinator timeout), the twin
    of the controller's decrypt-failure quirk (plan 05 §16.8). §7.9 tightens this to the
    R12 rule instead of pinning the swallow — a deliberate, flagged behavior change in a
-   "truthful port" phase; reviewer may veto toward strict parity.
+   "truthful port" phase. **RULED (grill r2):** confirmed — fix in phase 6; the old
+   exit-0 behavior is pinned (M-P7, G-P13, …) for audit.
 4. **Spring relaxed binding is an unownable compat surface.** `blockrunner.uuid` can be
    spelled a dozen ways in Spring (env `BLOCKRUNNER_UUID`, `blockrunner.api-key…`).
    §5.4 carries the literal spellings that appear in shipped files and docs; anything
    else is documented as unsupported. D7's "all existing env var names keep working" is
-   read as "all names we ever shipped or documented".
+   read as "all names we ever shipped or documented". **RULED (grill r2):** support only
+   the literal shipped/documented spellings — do **not** reimplement Spring relaxed
+   binding. Startup **fails fast** (not just warns) with an actionable message when an
+   env var matching a known legacy prefix (e.g. `BLOCKRUNNER_*`) is present but consumed
+   by no config key.
 5. **The gitlab/azdevops/github modules ship a baked-in dev private key** inside the
    classpath `runner-config.yml` (e.g. `gitlab-block-runner/src/main/resources/
-   runner-config.yml:12`). The port keeps the dev-default behavior for local stacks but
-   the sub-plans must place it in `containers/<persona>/runner-config.yml` consciously
-   (it is the local-dev pair of meshfed's magic-runner public key) — not silently, and
-   never as a fallback when `RUNNER_PRIVATE_KEY_FILE` is set.
+   runner-config.yml:12`). **RULED (grill r2):** KEEP the well-known dev private key
+   **verbatim** (byte-equivalent defaults), with a one-line comment marking it the
+   well-known dev key so scanner hits self-answer. It lives **once** in a shared
+   top-level base `runner-config.yml` that the per-impl
+   `containers/<persona>/runner-config.yml` files deep-merge over (base < per-impl <
+   env) — not duplicated per persona, never a silent fallback when
+   `RUNNER_PRIVATE_KEY_FILE` is set (it is the local-dev pair of meshfed's magic-runner
+   public key). Removing it from published-image defaults is an explicit **phase-7**
+   ledger item.
 6. **The Kotlin runners never send `X-Block-Runner-Node-Id`** (and no runner-name
    header) — D9 lists the node-id header among frozen pins, but for these four types it
    is *new* wire surface, not preserved surface (§7.7).

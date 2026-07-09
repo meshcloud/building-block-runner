@@ -217,10 +217,10 @@ follow-up register, §9.1 — post-refactor work, out of this refactor per high-
 | L8 | Final architecture record ("memory of final architecture") | high-level §5 phase 7 | **DO** — `docs/ARCHITECTURE.md`, §9.1 |
 | L9 | Deprecation-warning audit + documented timeline (D7 alias inventory of phases 3–6) | 03 §5.3, 04 §4.3/§6.3, 06 §5.4/§7.8 | **DO** — §7 |
 | L10 | D12 metric-name aliases | D12, 03 §12.9 | **VERIFY** — inventory empty (A7): no metric was ever renamed; document the full metric set in ARCHITECTURE.md |
-| L11 | slog migration of shared/tf/controller-successor packages | D15, umbrella §10.12/§10 flag 12 | **DO** — §8 |
+| L11 | slog migration — **RULED (grill r2): reduced to ONLY the `tf`/`tfrun` package** (its phase-1/2 pins predate slog); shared-core, dispatcher and single-binary are already slog because plans 03/04/05 are now authored slog-native from the start (grill r2 amendment to D15) | D15, umbrella §10.12/§10 flag 12 | **DO** — §8 (reduced scope) |
 | L12 | Flip `containers/run-controller/runner-config.yml` job-template envs `SPRING_PROFILES_ACTIVE: kubernetes` → `EXECUTION_MODE: single-run` (+ comment that the old form stays honored) | umbrella §9 ("deferred to phase 7 so rollback stays symmetric") | **DO** — §6.3; safe now: no JVM image generation remains that the sample must roll back to |
 | L13 | Fail-fast message unification (two messages for `UnhandledTypeError`) | 05 §10.1/§16.4 | **DROP** — keep both: the controller string `no implementation handler configured for type '%s'` is frozen wire bytes (bit-identity mandate, 05 §12); collapsing to it would ship the vague text to standalone users, defeating D5. Documented in ARCHITECTURE.md |
-| L14 | Controller decrypt-failure silent hang (no status report; run waits for coordinator timeout) | 05 §10.2/§16.8 ("latent-bug candidate for a post-refactor fix") | **DO, flagged (STOP-D)** — last in-refactor opportunity; P5 (never suppress silently). Fix: after decrypt failure, run the loop's `reportRunFailure` with an actionable key-mismatch message (wording aligned with the tf decrypt-failure guidance, D9); keep `run_controller_decryption_errors_total` firing. Flip the plan-05 transcript-empty pin. Reviewer may veto → FUTURE |
+| L14 | Controller decrypt-failure silent hang (no status report; run waits for coordinator timeout) | 05 §10.2/§16.8 ("latent-bug candidate for a post-refactor fix") | **DO, flagged (STOP-D). RULED (grill r2): APPROVED for phase 7** behind the existing STOP-D PR-level review — last in-refactor opportunity; P5 (never suppress silently). Fix: after decrypt failure, the run-controller registers + PATCHes the run to `FAILED` with an actionable key-mismatch message (wording aligned with the tf decrypt-failure guidance, D9), reusing the already-accepted `reportRunFailure` wire shape (process creds); keep `run_controller_decryption_errors_total` firing. Flip the plan-05 transcript-empty pin. (STOP-D still gates implementation; veto ⇒ FUTURE.) |
 | L15 | tf single-run path reuse of the tf handler (delete the parallel glue) | 05 §2/§16.7 ("phase-7 cleanup candidate") | **DO, guarded (STOP-E)** — wire/exit observables must stay byte-identical under the existing CP3/single-run pins; abandon on any pin drift |
 | L16 | `.editorconfig` Kotlin/gradle sections | not in 06D §12.2 inventory (gap) | **DO** — §6.5 |
 | L17 | `.agents/skills/backend-go` stale paths (`tf-block-runner/`, `./tfrun/`) | no plan owns it (gap, §15.2) | **DO** — §6.6 |
@@ -247,8 +247,9 @@ follow-up register, §9.1 — post-refactor work, out of this refactor per high-
 | L38 | Java-toString-compat rendering decisions (gitlab/ADO composite stringification) | 06B flag 4, 06C flag 6 | **VERIFY** consistency only — decided during 06B/06C review; phase 7 confirms both personas resolved it the same way and documents it |
 | L39 | `BackoffLimit: 1` alignment question | 02 R12 → 05 §16.3 | **DROP** — resolved "keep 1" in plan 05; recorded in ARCHITECTURE.md as a settled decision |
 | L40 | Errata in plan documents (umbrella test counts 06A §16.7/06D §16.1; umbrella §4 row 13 azdevops-sanitizer erratum 06C §16.7; umbrella §3.2 log-only-messages correction 06B §16.1; D9 same-origin staleness 01 F2) | 06A–D §16, 01 F2 | **DO (docs-only)** — a one-page `docs/plans/ERRATA.md` accompanies the archived plans so the historical record is honest (§9.2); no code impact |
+| L41 | Baked well-known dev private key in the shared base `runner-config.yml` (kept verbatim through phase 6, umbrella §10.5) | umbrella §10.5, 06A/06C/06D §8 | **RULED (grill r2): DO — scheduled phase-7 item (not a loose note)** — phase 7 explicitly evaluates moving the well-known dev key out of the published-image default configs (`containers/<persona>/runner-config.yml`) and records the decision in ARCHITECTURE.md; the key is never consulted when `RUNNER_PRIVATE_KEY_FILE` is set (resolution order), so removal is compat-safe to assess here |
 
-Ledger totals: **40 items — 14 DO, 8 VERIFY, 4 DROP (each with rationale), 14 FUTURE**
+Ledger totals: **41 items — 15 DO, 8 VERIFY, 4 DROP (each with rationale), 14 FUTURE**
 (the FUTURE set becomes the ARCHITECTURE.md follow-up register verbatim, §9.1).
 
 ## 5. CI end-state design (D14)
@@ -446,8 +447,18 @@ ARCHITECTURE.md; the warning text links there.
 
 ## 8. slog migration (umbrella §10.12 / D15)
 
+**RULED (grill r2 — amendment to D15):** because plans 03/04/05 are now authored
+slog-native from the start, `config`, `report`, `mgmt`, `dispatch`, `k8sjob`,
+`gitsource`, `tofu`, the persona bootstraps and `main` (shared-core, dispatcher,
+single-binary) already emit slog. The phase-7 logging migration therefore shrinks to
+**ONLY the `tf`/`tfrun` package**, whose phase-1/2 pins predate slog. The subsections
+below are scoped accordingly: the `*log.Logger`→`*slog.Logger` retarget, the §8.3
+SystemMessage hazard and the §8.5 depguard deny now apply to `tf`/`tfrun` only; the
+shared packages are verified-already-slog (a §1/A8 verification), not migrated.
+
 Goal: one logging stack. Phase-6 packages already use slog natively; this phase
-migrates everything else (§3.4 inventory) and deletes the `slog.NewLogLogger` bridges.
+migrates the remaining `tf`/`tfrun` package and deletes any residual `slog.NewLogLogger`
+bridges.
 
 ### 8.1 Target shape
 

@@ -16,7 +16,14 @@ meshfed-release, tf-block-runner and run-controller are the in-repo starting poi
   - `InProcessDispatcher` — `go func` per run inside one process; this makes a standalone
     Docker runner able to execute **multiple runs of any type concurrently**.
   - A polling standalone runner is then the degenerate case: in-process dispatch with a
-    single handler type.
+    single handler type. (Note — PR#51: "standalone" also covers the case where the run
+    controller dispatches a run *as a k8s Job*; that Job runs the binary in single-run
+    in-process mode. Standalone/in-process and k8s-Job are not exclusive.)
+- **Downstream goal — make the `multiplexing-block-runner` (mux) obsolete (PR#51).** Once
+  the single binary can register `ALL` and dispatch every run type in-process (D5), the
+  mux's per-type fan-out in meshfed-release has no remaining job. Its actual removal from
+  meshfed-release is cross-repo and tracked as a follow-up (see §8), but the refactor is
+  designed to reach that end state, not to preserve the mux indefinitely.
 - Configuration: **env-first, YAML file second** (default file locations, path overridable
   via env). Per-run input arrives as a run JSON (API claim, mounted file, or in-memory
   handover), including sensitive values decrypted with the runner's private key.
@@ -68,6 +75,11 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
   (actual mutation, identity, or embedded locks) — never as premature optimization that
   sacrifices clarity. Pointers + `omitempty` only for fields genuinely nullable in the
   API; non-nullable fields are value types.
+  **PR#51 review refinement:** the pointer-for-nullable rule is scoped to **composite**
+  types (structs/slices/maps). A nullable *simple* field (`int`, `string`) stays a
+  non-pointer value when the zero value (`""`, `0`) already means "not present" and is not
+  itself a valid domain value — reach for a pointer only when zero is a legitimate value
+  that must be distinguished from absent.
 - **P5 — Fail fast, never suppress silently.** Errors carry context (`fmt.Errorf` with
   `%w`), are handled or escalated, never swallowed. Validation at startup (config) fails
   the process with an actionable message, as the config packages already do.
@@ -75,6 +87,11 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
   `Uuid`, `Api`) — consistent with both sibling repos and this repo's DTOs.
 - **P7 — Tests are part of every step,** not a follow-up (meshfed-release build-and-test
   rule); the coverage gate (D6) never dips below threshold once enabled.
+  **PR#51 review refinement:** coverage is never a reason to add a unit test. Before
+  writing one, reconsider whether a scenario/integration test belongs there instead;
+  structure related scenarios as Go subtests (`t.Run`) under one test rather than many
+  near-duplicate functions. Add unit tests **sparingly, if at all** — only for units with
+  real decision surface (see D16).
 - **P8 — Code-quality gate: types that make misuse hard.** Every reviewable unit (each
   step's checkpoint, and the PR as a whole) passes this gate before it counts as done:
   functions and methods are small, single-purpose, and hang off **well-defined data
@@ -87,6 +104,11 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
   where two same-typed arguments can't be silently swapped (introduce a type or a params
   struct); enums with a defined zero value or an explicit "unset" sentinel. Modern idioms
   (P2) are part of the same gate — code that compiles but reads like Go 1.13 fails review.
+  **PR#51 review refinement:** data and the methods that interpret it must be **cohesive** —
+  a domain string becomes a named type carrying its own parsing/manipulation/interpretation
+  methods, rather than free functions over a bare `string`. The counter-weight still holds:
+  do not introduce a type purely for ceremony — it earns its place by owning behavior or
+  preventing a misuse.
 
 ## 4. Design decisions (self-grilled; override in review if wrong)
 
@@ -124,21 +146,63 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
   standalone runner register `ALL` before all Kotlin ports exist, at the documented cost
   of failing runs of unported types — operators who don't accept that configure a
   concrete capability. Kotlin ports stay incremental — no big-bang.
+  **Grill r2 ruling:** the fail-fast FAILED report uses the **runner's process
+  credentials** (controller parity), not the claimed run's runToken — fail-fast happens
+  before any handler owns the run, so reaching for that run's token would carve an
+  exception into the "runToken = executing handler only" invariant (risk #5). This is the
+  one run-scoped call deliberately made with process creds; examined here, not accidental.
 - **D6 — coverage gate: ≥90% Go statement coverage** (the toolchain's measure; "lines" in
   conversation means this) **on domain + application packages, with growing scope**: the
   gate starts on `tfrun` (phase 1) and automatically extends to every new
   domain/application package (shared core in phase 3, each ported runner in phase 6).
-  Source: hermetic integration-style tests (fake HTTP API + `TfFacade`/`GitFacade` mocks —
-  the existing scenario-test style, extended). The adapter exclusion list (real I/O: git
-  exec, tofu exec, k8s client) lives in one visible place with a justification per file;
+  Source: hermetic integration-style tests. **PR#51 review refinement (test
+  infrastructure):** prefer a reusable **meshfed-API server mock package** built on the
+  stdlib `net/http/httptest` server (a real HTTP server the client dials) over a
+  hand-rolled fake `http.RoundTripper` — it exercises the client's real transport and is
+  shared across every runner type's integration tests. Where feasible, git-clone steps
+  pull from a **bare git repo in `testdata`** with per-testcase remote branches (the
+  pattern `terraform-provider-meshstack` already uses, copyable here) instead of a mocked
+  `GitFacade`, so cloning is exercised end to end. The `TfFacade`/`GitFacade` mocks remain
+  only where driving the real tool is impractical. The adapter exclusion list (real I/O:
+  git exec, tofu exec, k8s client) lives in one visible place with a justification per file;
   real-tofu/real-git e2e is a separate opt-in task, not part of the gate. Enforced in CI
   via `go test -coverprofile` + threshold script. **Kotlin corollary:** before each phase-6
   port, the Kotlin runner's behavior is pinned by Kotlin tests (added where missing),
   which are then ported truthfully to Go together with the code.
-- **D7 — config precedence: defaults < YAML file < env.** One config package; file path via
-  `RUNNER_CONFIG_FILE` (default `runner-config.yml`). Nested structures (e.g. controller
-  `implementations` map) remain file-only — env-first ≠ env-only. All existing env var
-  names and file keys keep working (aliases + deprecation warnings where renamed).
+- **D7 — config precedence: defaults < shared base YAML < per-impl YAML < env.** One config
+  package; file path via `RUNNER_CONFIG_FILE` (default `runner-config.yml`). Nested
+  structures (e.g. controller `implementations` map) remain file-only — env-first ≠
+  env-only. All existing env var names and file keys keep working (aliases + deprecation
+  warnings where renamed).
+  **Grill r2 ruling (config layering):** the YAML layer is itself **two files
+  deep-merged** — a shared top-level base `runner-config.yml` (keys common to all personas,
+  including the well-known dev private key, per D8/§6) overlaid by an optional per-impl
+  `runner-config.yml` (persona-specific overrides). Effective precedence: compiled-in
+  defaults < base YAML < per-impl YAML < env. One place owns each shared key; per-impl
+  files carry only their deltas. Plan 03 defines the deep-merge loader; plan 04 lays out
+  the `containers/*` file tree.
+  **PR#51 review refinement (config package shape):** the loader is a well-designed Go
+  package that exposes configuration as **typed struct fields** (`bool`/`int`/`string`/…),
+  parsed identically whether the value arrives from env or YAML (typed coercion in one
+  place, not stringly-typed lookups scattered at call sites). **Env-var naming is kept
+  as-is (PR#51 ruling):** the existing `RUNNER_*` and `TF_*` spellings stay — no new
+  `BB_RUNNER_`/`RUNNER_TF_` canonical prefix scheme is introduced. `TF_*` in particular is
+  **passed straight through to the tofu process** and must not be touched; `RUNNER_*` is
+  runner config; a future `RUNNER_TF_*`-style key is admissible only if the tf runner
+  itself needs a runner-specific knob, but is not a mandated rename. Backwards-compatible
+  env vars are supported by **`${VAR}` interpolation inside the YAML defaults** (e.g.
+  `mode: ${SPRING_PROFILE}` resolving `SPRING_PROFILE=kubernetes`) rather than a growing
+  alias table in code — the base `runner-config.yml` maps legacy env vars onto struct keys
+  declaratively. This composes with the fail-fast guard below (a legacy-prefixed env var
+  that no interpolation or key consumes is still an error). Plan 03 owns the concrete
+  struct layout, the env→field mapping, and the interpolation syntax.
+  **Grill r2 ruling (env-var compat):** "existing env var names keep working" means the
+  **literal spellings actually shipped or documented** — the Go ports do NOT reimplement
+  Spring's relaxed-binding matrix (`BLOCKRUNNER_UUID`, `runner.uuid`, …). To make silent
+  misconfiguration impossible, startup **fails fast** (P5) with an actionable message when
+  an env var matching a known legacy prefix (e.g. `BLOCKRUNNER_*`) is present but consumed
+  by no config key — a relaxed-binding holdover must surface as a hard error, never as a
+  runner that boots on wrong defaults and polls forever.
 - **D8 — one binary, several thin images.** Same binary copied into per-persona images
   (tf needs git/tofu/nix/aws-cli; controller is slim), entrypoint = persona symlink.
   Published image names stay (`tf-block-runner`, `run-controller`, …) — customers reference
@@ -162,6 +226,15 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
   single-run mode is triggered by `SPRING_PROFILES_ACTIVE=kubernetes` in those same
   operator configs — the phase-6 Go images must honor that variable as an alias or
   deployed controller configs break).
+  **Grill r2 ruling (graceful-shutdown reporting):** on graceful shutdown, a persona that
+  cancels an in-flight run (see the plan-05 H7 amendment) must leave the coordinator with a
+  **terminal** status — never a stale `IN_PROGRESS` that only clears after the coordinator's
+  long timeout. Report `ABORTED` (the meshStack status source already defines
+  `ExecutionStatus.ABORTED` as terminal in `block-runner-core`; the Go `ExecutionStatus`
+  enum, today only `PENDING/IN_PROGRESS/SUCCEEDED/FAILED`, gains it), falling back to
+  `FAILED` if the endpoint rejects `ABORTED` — **never `SUCCEEDED`**. Shutdown drains a
+  **configurable grace period, default 120s** (deliberately longer than a typical graceful
+  shutdown, far below a ~30-min external poll), and logs clearly while it is in progress.
 - **D10 — compatibility commitments during rollout:** old controller must be able to
   dispatch to new runner images and vice versa (the k8s Job contract in D9 is frozen);
   mux claim contract unchanged; healthz ports unchanged; meshfed-release `local-dev-stack`
@@ -201,16 +274,29 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
   through the inventory: flip each pinned test to assert correct behavior, fix the code,
   one inventory = one PR. No bug fixes sneak into phase 1 (tests-only) or phase 2
   (behavior-preserving refactor).
+  **Grill r2 ruling (data-race exception):** the two *data races* in the phase-1 inventory
+  (B6 mutable `progress` struct, B10 abort flag) are exempted from "pin verbatim, fix in
+  2b" and are fixed **structurally in phase 2** (mutex-snapshot + `atomic.Bool`). A data
+  race is undefined behavior — it cannot be meaningfully "preserved," and `go test -race`
+  would flag it the moment the DDD refactor touches that code. The `-race` gate turns on in
+  phase 2 and stays on; phase 3's shared reporting package inherits the correct shapes.
+  This is the *only* sanctioned in-phase-2 behavior change; every other inventory bug still
+  waits for 2b. (Plan 02 §5.5 STOP-D records the mechanical fallback if a reviewer later
+  disagrees.)
 - **D15 — Kotlin→Go ports are translations, not transliterations.** Behavior parity is
   defined by the pinned Kotlin tests at the *semantic* level; the Go code itself takes
   the freedom to be idiomatic Go. Concretely: exceptions/stacktraces → returned error
   chains (`fmt.Errorf("fetching pipeline %s: %w", id, err)` — succinct, lowercase,
   context formatted in, chained with `:`; panics only for programmer errors); JVM
   logging frameworks → `log/slog` with the default human-readable text handler on
-  stdout/stderr, kept simple (no logging ceremony; adoption boundary: phase-6 packages
-  use slog natively — run id as attribute — bridged into the earlier phases'
-  `*log.Logger` seams via `slog.NewLogLogger`; migrating the shared/tf/controller
-  packages to slog is a phase-7 item, see the umbrella plan §10.12); Spring DI/annotations/properties →
+  stdout/stderr, kept simple (no logging ceremony; **Grill r2 ruling (slog adoption):**
+  the shared-core, dispatcher and single-binary packages — plans 03/04/05, none yet
+  implemented — are authored **slog-native from the start**, deleting the earlier
+  `slog.NewLogLogger` bridge, the two-logging-style interim, and the standalone phase-7
+  logging migration. Only the `tf`/`tfrun` package, whose phase-1/2 characterization pins
+  predate this decision, still migrates to slog in phase 7 (see umbrella §10.12) so those
+  pins aren't disturbed mid-refactor. New phase-6 packages use slog natively, run id as
+  attribute); Spring DI/annotations/properties →
   constructor injection (P3) + the shared config package (D7); Jackson DTOs → plain
   structs with `encoding/json` (existing `meshapi` house style); OkHttp interceptors →
   the existing `AuthProvider`/client composition; schedulers → ticker/goroutine loops
@@ -283,7 +369,11 @@ Extract domain (run, steps, status), application (execution engine unifying
 `Worker`/`SingleRunWorker`, observer/reporting), ports & adapters (D4). Eliminate globals
 (`AppConfig`, `meshcrypto.Crypto`) via injection. Small, always-green steps; coverage gate
 stays ≥90%. **Exit:** one execution engine; polling and single-run are `RunSource`
-configurations; no package-level mutable state.
+configurations; no package-level mutable state; **plus two manual runtime smokes** (Grill
+r2 — the coverage gate can't reach `main.go` wiring and local-dev-stack only exercises
+polling): a local-dev-stack acceptance run (polling) and a single-run smoke (binary with
+`EXECUTION_MODE=single-run` + `RUN_JSON_FILE_PATH` against a fixture run JSON), so a
+single-run wiring regression can't ride to `main` invisibly until phase 4.
 
 **Phase 2b — bug-fix pass (own stacked PR):** work through the phase-1 bug inventory
 (D13) — flip each `FIXME(bug)` pin to assert correct behavior, fix the code.
@@ -326,13 +416,16 @@ in the exact form the other three reuse — anticipate their needs (async handov
 pipeline polling, per-runner secrets) in the interfaces even though `manual` itself needs
 none of them. Per D6, each port starts by pinning the Kotlin runner's behavior with
 **Kotlin tests** (added where missing), which are then ported truthfully to Go with the
-code; the Go domain packages join the coverage gate. Each port is validated before the
-corresponding Kotlin module is deprecated: via the meshfed-release acceptance tests where
-they exist — discovered during planning: only some runner types have them — and otherwise
-via side-by-side transcript equivalence (Kotlin vs Go against the same fake/local
-meshStack) plus a manual smoke run (see the phase-6 umbrella plan).
-**Exit (per runner/PR):** Kotlin behavior pinned; Go handler passes acceptance; image
-switched; Kotlin module removed. **Exit (phase):** Gradle build gone.
+code; the Go domain packages join the coverage gate. **Grill r2 ruling (validation gate,
+per runner):** the deletion gate is honest about what real coverage exists — `github`,
+`tf` and `manual` have real end-to-end coverage in the sibling `meshstack-smoke-tests`
+repo, so their ports are validated there before the Kotlin module is removed. `gitlab` and
+`azure-devops` have **no** smoke tests (accepted shortcoming) — their deletion leans on the
+in-repo integration/transcript tests (hermetic side-by-side equivalence, Kotlin pin suite
+vs Go, against the same fake/local meshStack). Commissioning new meshfed-release acceptance
+tests for these two is explicitly out of scope.
+**Exit (per runner/PR):** Kotlin behavior pinned; Go handler validated per the gate above;
+image switched; Kotlin module removed. **Exit (phase):** Gradle build gone.
 → `PLAN_DETAIL_06_kotlin_ports_umbrella.md` (consistency contract for the
 Kotlin→Go migration) + one sub-plan per runner: `PLAN_DETAIL_06A_manual.md`,
 `PLAN_DETAIL_06B_gitlab.md`, `PLAN_DETAIL_06C_azdevops.md`, `PLAN_DETAIL_06D_github.md`.
@@ -432,5 +525,13 @@ Each `PLAN_DETAIL_*.md` is authored by a subagent that receives:
 
 - Extracting a cross-repo `meshstack-go-sdk` shared with terraform-provider-meshstack
   (confirmed: provider-client convergence happens later; D3 keeps the door open).
-- Changing the meshStack/meshfed API surface or the mux.
+  **PR#51 ruling:** the provider client's retry/backoff **is in scope** — this repo adopts
+  it for the runner client (D3, plan 03) as an important robustness improvement. Only
+  *merging* the two clients into one package/repo is deferred, not the retry feature.
+- Changing the meshStack/meshfed API surface. The **mux** (`multiplexing-block-runner`)
+  is not modified here, but this refactor is designed to make it obsolete (§1 downstream
+  goal). **PR#51 ruling:** its **removal from meshfed-release** is **tracked as a separate
+  meshfed-release work item**, not scheduled as a phase-7 task in this plan — this keeps
+  this repo's task list from bloating further. Phase 7 only records the end state and the
+  hand-off note pointing at that separate item.
 - New runner features (this is a refactor; feature freeze per phase where possible).

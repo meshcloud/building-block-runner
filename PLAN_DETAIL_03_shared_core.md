@@ -57,7 +57,7 @@ the retry policy is then wrong; replan the policy, do not weaken the pin.
     split (`RunClient` + `RunnerClient` incl. the controller's registration PUT),
     de-globaled client identity (kills `runnerName`/`runnerVersion` — the plan-02
     deferred global), shared run-JSON decryption (`DecryptRunDetails` + `Decryptor`).
-  - new `config`: D7 loader mechanics (defaults < YAML < env), shared `Api` section with
+  - new `config`: D7 loader mechanics (defaults < base YAML < per-impl YAML < env), shared `Api` section with
     the `user`/`username` yaml alias, env-binding helper, full compat alias table (§5.3).
   - new `report`: runner-agnostic reporting facility (D4) — `RunStatus`/`StepStatus`/
     `ExecutionStatus`, `Progress` tracker, `RunLog`, `Observer` (10s ticker, abort-cancel,
@@ -201,6 +201,13 @@ tests + acceptance checks, §6/§9); shared packages join the D6 gate at ≥90.
 ---
 
 ## 5. Target design
+
+**RULED (grill r2 — slog-native):** the shared-core packages (`meshapi`, `crypto`,
+`config`, `report`) are authored slog-native (`log/slog`) **from the start**. There is
+**no** `*log.Logger` seam and **no** `slog.NewLogLogger` bridge for shared core; every
+logger parameter below is a `*slog.Logger`. The whole-repo two-logging-style interim and
+the standalone phase-7 logging migration are dropped — only the `tf`/`tfrun` package
+still migrates to slog in phase 7 (its phase-1/2 pins predate this ruling).
 
 ### 5.1 Module decision: shared packages live in `go-meshapi-client` during this phase
 
@@ -347,22 +354,31 @@ satisfies the port without renaming the existing API.
 
 Persona config **structs stay in their persona packages** (`internal/tf` keeps its keys;
 `controller` keeps `ControllerConfig` incl. the file-only `implementations` map — D7).
-The shared package owns the mechanics and the genuinely shared sections:
+The shared package owns the mechanics and the genuinely shared sections.
+
+**RULED (grill r2 — config deep-merge):** the loader deep-merges **two** YAML file
+layers — a shared top-level base `runner-config.yml` (common keys) overlaid by an
+optional per-impl/per-persona `runner-config.yml` (overrides) — instead of reading a
+single file. Effective precedence: **compiled-in defaults < base YAML < per-impl YAML <
+env**. The merge is key-wise: a key present in the per-impl layer wins over the base;
+absent keys inherit the base value.
 
 ```go
-// Path resolves the config file path: primary env var RUNNER_CONFIG_FILE, then
+// Path resolves a config file path: primary env var RUNNER_CONFIG_FILE, then
 // persona-specific aliases (deprecation-warned), then the default runner-config.yml.
-func Path(log *log.Logger, aliases ...EnvAlias) string
+// Called once for the base layer and once for the per-impl layer.
+func Path(log *slog.Logger, aliases ...EnvAlias) string
 type EnvAlias struct{ Var string; Deprecated bool }
 
-// LoadFile unmarshals YAML into the persona struct; found=false when the file does not
-// exist (personas decide whether that is fatal — the controller's implementations map
-// makes it so, the tf runner runs on defaults+env).
-func LoadFile(path string, into any) (found bool, err error)
+// Load unmarshals the base YAML then deep-merges the per-impl/per-persona YAML on top
+// (per-impl keys override), decoding both into the persona struct; found=false when
+// neither layer exists (personas decide whether that is fatal — the controller's
+// implementations map makes it so, the tf runner runs on defaults+env).
+func Load(basePath, perImplPath string, into any) (found bool, err error)
 
 // Env applies explicit env-var bindings (highest precedence), logging each use —
 // preserving today's "Using X from environment" lines verbatim. No reflection (P2).
-func Env(log *log.Logger, bindings ...EnvBinding)
+func Env(log *slog.Logger, bindings ...EnvBinding)
 type EnvBinding struct{ Var string; Target *string }
 
 // Api is the shared API section. Both yaml spellings keep working:
@@ -408,7 +424,11 @@ Everything below moves from `internal/tf` (post-plan-02 shapes, §3.6). Each sea
 second consumer is named (P3):
 
 ```go
-type ExecutionStatus int // PENDING, IN_PROGRESS, SUCCEEDED, FAILED — moved as-is
+type ExecutionStatus int // PENDING, IN_PROGRESS, SUCCEEDED, FAILED, ABORTED — moved as-is
+// ABORTED (terminal): added per the grill-r2 D9 graceful-shutdown ruling / plan-05 H7
+// amendment — reported when an in-flight run is cancelled on shutdown so the coordinator
+// never sees a stale IN_PROGRESS. meshStack's status source already defines it as terminal
+// (block-runner-core ExecutionStatus.ABORTED); the tf runner never emitted it before.
 type RunStatus struct {
     RunId            string
     Status           ExecutionStatus
@@ -433,7 +453,7 @@ func (p *Progress) Mutate(f func(*RunStatus))
 func (p *Progress) Snapshot() RunStatus
 
 // RunLog: file-backed live log with size tracking + segment reads (phase-2 shape).
-func NewRunLog(logger *log.Logger, path string) *RunLog
+func NewRunLog(logger *slog.Logger, path string) *RunLog
 
 // Reporter is the status backchannel port (identical to plan 02's StatusReporter —
 // it relocates together with its consumer, the Observer; the tf meshapi adapter and
@@ -447,7 +467,7 @@ type Reporter interface {
 // abort response cancels the run context; on completion sends the final update with
 // the async mapping (SUCCEEDED => IN_PROGRESS) and skips it when ctx is cancelled.
 // D9 pins: 10s ticker, abort-cancel, async IN_PROGRESS, no-final-after-cancel.
-type Observer struct { Interval time.Duration; Reporter Reporter; Async bool; Log *log.Logger }
+type Observer struct { Interval time.Duration; Reporter Reporter; Async bool; Log *slog.Logger }
 func (o Observer) Run(ctx context.Context, cancel context.CancelFunc, p *Progress)
 
 // ToStatusUpdate parametrizes today's tf-only DTO mapping (dtos.go:164-174) by source

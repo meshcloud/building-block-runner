@@ -222,6 +222,11 @@ Accepted D2 cost: k8s client-go linked into every persona (binary size only).
 
 ## 4. Target design
 
+**RULED (grill r2 — slog-native):** the single-binary and persona-wiring packages
+(`main`, `mgmt`, `config`) are slog-native (`log/slog`) **from the start** — no
+`*log.Logger` seam and no `slog.NewLogLogger` bridge (consistent with plan 03's
+shared-core ruling). Every logger parameter below is a `*slog.Logger`.
+
 ### 4.1 Naming decision & persona registry (D1, D2, D11)
 
 **Module path:** `github.com/meshcloud/building-block-runner/runner` at `./runner`.
@@ -297,7 +302,7 @@ a real ≥2-consumer package, not speculative. Contents:
 // Server serves GET /healthz (200, body "OK" — byte-identical to main.go:96-99) and
 // GET /metrics (promhttp for an injected prometheus.Gatherer) on one listener.
 // Nothing is served twice (D12); bind failure is fatal (P5 — see sanctioned change §6).
-func NewServer(log *log.Logger, addr string, g prometheus.Gatherer) Server
+func NewServer(log *slog.Logger, addr string, g prometheus.Gatherer) Server
 func (s Server) Start() error // binds, then serves in a goroutine (today's pattern, main.go:100-109)
 
 // RunMetrics is the D12 generic standalone-runner instrumentation (new, additive names):
@@ -311,7 +316,7 @@ Port resolution lives in `runner/internal/config` (it is D7 alias mechanics):
 ```go
 // ManagementPort resolves MANAGEMENT_PORT, then the persona's legacy aliases
 // (deprecation-logged, D7), then the persona default.
-func ManagementPort(log *log.Logger, def Port, aliases ...EnvAlias) Port
+func ManagementPort(log *slog.Logger, def Port, aliases ...EnvAlias) Port
 type Port uint16 // typed; a set-but-unparseable value is fatal (mux precedent, envOrInt)
 ```
 
@@ -352,8 +357,8 @@ deleted. Stages:
 | Stage | Base | Content |
 |---|---|---|
 | `builder` | `golang:1.26-alpine` (`--platform=$BUILDPLATFORM`) | `COPY runner/go.mod runner/go.sum` → `go mod download` → `COPY runner/` → `CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags "-s -w -X '…/runner/internal/build.Version=${VERSION}'" -o bbrunner .` — no go.work needed (§4.6) |
-| `run-controller` (final) | `alpine:3.22.4` (digest-pinned as today) | apk/user layers verbatim from `run-controller/Dockerfile:28-36`; binary + symlink; config from `containers/run-controller/runner-config.yml`; `ENTRYPOINT ["/app/entrypoint.sh", "/app/run-controller"]` |
-| `tf-block-runner` (final) | `alpine:3.22.4` (same pin) | apk/user/nix layers verbatim from `tf-block-runner/Dockerfile:28-59`; binary + symlinks; config + `known_hosts` from `containers/tf-block-runner/`; `ENV SSH_KNOWN_HOSTS=/app/known_hosts`, `ENV PORT=8080` (kept, §4.3), `EXPOSE 8080`; `ENTRYPOINT ["/app/entrypoint.sh", "/app/tf-block-runner"]` |
+| `run-controller` (final) | `alpine:3.22.4` (digest-pinned as today) | apk/user layers verbatim from `run-controller/Dockerfile:28-36`; binary + symlink; config = base `containers/runner-config.yml` + per-persona `containers/run-controller/runner-config.yml` (deep-merged, §4.4 RULED); `ENTRYPOINT ["/app/entrypoint.sh", "/app/run-controller"]` |
+| `tf-block-runner` (final) | `alpine:3.22.4` (same pin) | apk/user/nix layers verbatim from `tf-block-runner/Dockerfile:28-59`; binary + symlinks; config = base `containers/runner-config.yml` + per-persona `containers/tf-block-runner/runner-config.yml` (deep-merged, §4.4 RULED) + `known_hosts` from `containers/tf-block-runner/`; `ENV SSH_KNOWN_HOSTS=/app/known_hosts`, `ENV PORT=8080` (kept, §4.3), `EXPOSE 8080`; `ENTRYPOINT ["/app/entrypoint.sh", "/app/tf-block-runner"]` |
 
 **Entrypoint / symlink table (per image):**
 
@@ -363,11 +368,15 @@ deleted. Stages:
 | `run-controller` | `/app/bbrunner` | `/app/run-controller` | `/app/entrypoint.sh /app/run-controller` | `command: ["/app/run-controller"]` (name unchanged) |
 
 `entrypoint-go.sh` is unchanged — its `exec "$@"` (`:17`) is exactly what makes the
-symlink path become argv[0]. Runtime assets move from the deleted module dirs to
-`containers/tf-block-runner/{runner-config.yml,known_hosts}` and
-`containers/run-controller/runner-config.yml` (Dockerfile-adjacent, like the entrypoint
-scripts); in-image destinations (`/app/runner-config.yml`, `/app/known_hosts`) are
-byte-identical. D10 check: old-controller→new-tf-image (env contract + default
+symlink path become argv[0]. **RULED (grill r2 — config file tree):** the `containers/*`
+layout ships a shared top-level **base** `containers/runner-config.yml` (common keys)
+plus **per-persona** override files `containers/tf-block-runner/runner-config.yml` and
+`containers/run-controller/runner-config.yml`, which the loader **deep-merges** (base
+then per-impl then env — plan 03 §5.3). Runtime assets move from the deleted module dirs
+to those paths plus `containers/tf-block-runner/known_hosts` (Dockerfile-adjacent, like
+the entrypoint scripts); in-image both layers are copied (base `/app/runner-config.yml`
++ per-persona `/app/<persona>/runner-config.yml`, `/app/known_hosts`), each layer
+byte-identical to today's per-persona file. D10 check: old-controller→new-tf-image (env contract + default
 entrypoint: works), new-controller→old-tf-image (controller code untouched
 behaviorally: works), custom `command:` referencing legacy paths: works via symlinks.
 

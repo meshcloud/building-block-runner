@@ -158,7 +158,10 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
   `/var/run/secrets/meshstack/run.json`, `RUNNER_UUID`, `RUNNER_API_URL`, runToken-only
   auth; NOTE: `EXECUTION_MODE=single-run` is NOT injected by the controller's code — it
   comes from the job template's `env` map in the operator's `runner-config.yml`, i.e. it
-  is deployment config and part of the customer-facing contract).
+  is deployment config and part of the customer-facing contract. The KOTLIN runners'
+  single-run mode is triggered by `SPRING_PROFILES_ACTIVE=kubernetes` in those same
+  operator configs — the phase-6 Go images must honor that variable as an alias or
+  deployed controller configs break).
 - **D10 — compatibility commitments during rollout:** old controller must be able to
   dispatch to new runner images and vice versa (the k8s Job contract in D9 is frozen);
   mux claim contract unchanged; healthz ports unchanged; meshfed-release `local-dev-stack`
@@ -198,6 +201,24 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
   through the inventory: flip each pinned test to assert correct behavior, fix the code,
   one inventory = one PR. No bug fixes sneak into phase 1 (tests-only) or phase 2
   (behavior-preserving refactor).
+- **D15 — Kotlin→Go ports are translations, not transliterations.** Behavior parity is
+  defined by the pinned Kotlin tests at the *semantic* level; the Go code itself takes
+  the freedom to be idiomatic Go. Concretely: exceptions/stacktraces → returned error
+  chains (`fmt.Errorf("fetching pipeline %s: %w", id, err)` — succinct, lowercase,
+  context formatted in, chained with `:`; panics only for programmer errors); JVM
+  logging frameworks → `log/slog` with the default human-readable text handler on
+  stdout/stderr, kept simple (no logging ceremony); Spring DI/annotations/properties →
+  constructor injection (P3) + the shared config package (D7); Jackson DTOs → plain
+  structs with `encoding/json` (existing `meshapi` house style); OkHttp interceptors →
+  the existing `AuthProvider`/client composition; schedulers → ticker/goroutine loops
+  (the dispatch package). Sub-plans list their runner's Kotlin-isms and the idiomatic
+  Go replacement for each.
+- **D16 — coverage comes from scenario tests, not unit-test armadas.** The D6 gate is
+  reached with use-case/scenario tests in the house harness style (fake HTTP
+  transcripts, black-box through the engine/handlers) — the same style phase 1 extends.
+  Unit tests are written only where a unit has real decision surface (e.g. parsers,
+  crypto, type conversions); existing meaningful unit tests (Kotlin and Go) are kept or
+  transformed, not discarded — but nobody adds unit tests just to move the number.
 - **D14 — tooling: golangci-lint v2 + Taskfile in phase 0; CI reshaped only in the last
   phase.** Phase 0 adopts golangci-lint v2 (`.golangci.yml` mirroring the provider repo:
   gci import ordering, govet *inside* lint — the separate `go vet` target is dropped —
@@ -302,8 +323,11 @@ in the exact form the other three reuse — anticipate their needs (async handov
 pipeline polling, per-runner secrets) in the interfaces even though `manual` itself needs
 none of them. Per D6, each port starts by pinning the Kotlin runner's behavior with
 **Kotlin tests** (added where missing), which are then ported truthfully to Go with the
-code; the Go domain packages join the coverage gate. Each port is validated against the
-meshfed-release acceptance tests before the corresponding Kotlin module is deprecated.
+code; the Go domain packages join the coverage gate. Each port is validated before the
+corresponding Kotlin module is deprecated: via the meshfed-release acceptance tests where
+they exist — discovered during planning: only some runner types have them — and otherwise
+via side-by-side transcript equivalence (Kotlin vs Go against the same fake/local
+meshStack) plus a manual smoke run (see the phase-6 umbrella plan).
 **Exit (per runner/PR):** Kotlin behavior pinned; Go handler passes acceptance; image
 switched; Kotlin module removed. **Exit (phase):** Gradle build gone.
 → `PLAN_DETAIL_06_kotlin_ports_umbrella.md` (consistency contract for the

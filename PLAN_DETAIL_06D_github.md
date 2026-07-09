@@ -329,7 +329,7 @@ type HandlerDeps struct {
 - Timeout ownership (A1): the 30-min poll budget and the 12×10s find window live inside
   `Execute` as constructor-default constants (`findAttempts=12`, `pollInterval=10s`,
   `pollTimeout=30m`), waits `select` on `Clock` timer vs `ctx.Done()` — cancellation now
-  drives a terminal shutdown report per the §4.5 RULED graceful-shutdown treatment (same
+  drives a terminal shutdown report per the §4.5 graceful-shutdown treatment (same
   as 06C).
 - External-API errors use 06B's `ExternalCallError` (D3); the §2.6 message strings are
   produced in this package, byte-identical.
@@ -352,11 +352,10 @@ func parseAppPem(pem string) (*rsa.PrivateKey, error)
 
 - Justification: the JWS is three base64url segments + one `rsa.SignPKCS1v15` call —
   a dependency would import a whole claims/validation framework to *serialize* one
-  static payload. Verification exists in tests via `rsa.VerifyPKCS1v15`.
-  **RULED (grill r2): stdlib confirmed** — hand-rolled RS256 (`crypto/rsa`
-  `SignPKCS1v15` + `x509.ParsePKCS1PrivateKey`), no `golang-jwt/jwt`; the code only
-  signs, never verifies untrusted tokens (G-P1/G-P2 cross-check claims + signature).
-  The `golang-jwt/jwt` fallback is withdrawn.
+  static payload. Verification exists in tests via `rsa.VerifyPKCS1v15`. Hand-rolled
+  RS256 (`crypto/rsa` `SignPKCS1v15` + `x509.ParsePKCS1PrivateKey`), no `golang-jwt/jwt`;
+  the code only signs, never verifies untrusted tokens (G-P1/G-P2 cross-check claims +
+  signature).
 - `parseAppPem` deliberately does **not** use `encoding/pem` alone: `pem.Decode`
   rejects the single-line PEMs Kotlin accepts (G-P2). String-normalize first, exactly
   the Kotlin steps. PKCS#8 input fails as today (unsupported, same FAILED-generic UX).
@@ -412,14 +411,14 @@ func (h Handler) pollWorkflow(ctx context.Context, r report.Reporter, gc githubC
   concurrency observables hold trivially).
 - Dedup/first-batch/trigger-step rules exactly §2.5.3 incl. the G-P4 re-report quirk.
 - Error handling: find-phase and poll-phase errors log warn + retry within their
-  budgets; timeout and not-found produce the §2.6 messages. **ctx cancellation.
-  RULED (grill r2 — plan-05 H7 amendment, not a 06D-local fork; same as 06C):** the
-  sync-polling GitHub handler, on `ctx.Done()`, reports the in-flight run with a
-  **terminal** status before returning the ctx error — `ABORTED` (now in the Go
-  `ExecutionStatus` enum, defined terminal by meshStack's status source), falling back
-  to `FAILED` if the endpoint rejects it, **never `SUCCEEDED`** — so the coordinator
-  never sees a stale IN_PROGRESS. Persona graceful shutdown cancels run contexts,
-  drains a **configurable grace period (default 120s)**, and emits clear shutdown logs.
+  budgets; timeout and not-found produce the §2.6 messages. **ctx cancellation
+  (plan-05 H7 amendment, same as 06C):** the sync-polling GitHub handler, on
+  `ctx.Done()`, reports the in-flight run with a **terminal** status before returning the
+  ctx error — `ABORTED` (in the Go `ExecutionStatus` enum, defined terminal by
+  meshStack's status source), falling back to `FAILED` if the endpoint rejects it,
+  **never `SUCCEEDED`** — so the coordinator never sees a stale IN_PROGRESS. Persona
+  graceful shutdown cancels run contexts, drains a **configurable grace period
+  (default 120s)**, and emits clear shutdown logs.
 
 ### 4.6 Template fit-check (umbrella §6 review protocol — required for B–D)
 
@@ -427,7 +426,7 @@ func (h Handler) pollWorkflow(ctx context.Context, r report.Reporter, gc githubC
 |---|---|---|
 | `RunHandler`/`ClaimedRun` (plan 05 §4) | impl JSON from `Details`, `AppPem` via Decryptor, dual input modes and both poll loops inside `Execute` | **fits; no new `Execute` parameter** (confirms 06A §17 row 1) |
 | `HandlerDeps` pattern | + `Decryptor`, `HTTP`, `Clock` — constructor-grown, shape unchanged | fits |
-| `report.Reporter` (no Observer) | **Grill r3 (RunHandler purity):** job-step batches + trigger-step-in-first-batch + terminal update fed through `Report(RunStatus)` (abort discarded) — caller-side dedup exactly as 06A §17 anticipated | fits |
+| `report.Reporter` (no Observer) | job-step batches + trigger-step-in-first-batch + terminal update fed through `Report(RunStatus)` (abort discarded) — caller-side dedup exactly as 06A §17 anticipated | fits |
 | Lean `SourceUpdateDTO` | needs per-step `displayName`/`userMessage`/`systemMessage`/`status`, run-status-bearing batches — all present | fits |
 | `ExternalCallError` (06B) | `MeshHttpException` twin for installation calls; needs `ResponseBody` + `RequestUrl` for the §2.6 message — present per 06A §4.4 contract | fits |
 | `meshapi.DecryptInputs` (06B) | Mode A/B payloads; impl-secret asymmetry preserved (G-P10) | fits (signature was reviewed against 06D per umbrella §4 row 8) |
@@ -451,7 +450,7 @@ notes where the translation is not mechanical.
 | `Instant`/`DateTimeFormatter.ISO_INSTANT` created-at comparison (`:245-247`) | `time.Parse(time.RFC3339, …)` | ISO_INSTANT ≡ RFC3339 for GitHub's timestamps; unparsable ⇒ error into the find-retry path (Kotlin: exception, same path) |
 | mutable `seenJobIds` set threaded through calls (`:270,301,318`) | local `map[int64]bool` in `pollWorkflow` | no shared state (P4) |
 | `Clock` bean default `Clock.systemUTC()` + unclocked `Instant.now()` in the token factory (`:24`, `AppTokenFactory.kt:31`) | one injected `Clock` used for JWT **and** polling | deliberate unification, test-visible only (flag §16.9) |
-| Spring DI/profiles, `@ConfigurationProperties`, `ImmediateRetryDecorator`, `SingleShotRunner` | `cmd/github/main.go` wiring (**Grill r4 (per-persona binaries):** own binary + `cmd/bbrunner` registration), `config.SingleRunMode`, `dispatch.Loop` + `Done()` wake — all 06A template artifacts | umbrella §4 rows 1–3 |
+| Spring DI/profiles, `@ConfigurationProperties`, `ImmediateRetryDecorator`, `SingleShotRunner` | `cmd/github/main.go` wiring (own binary + `cmd/bbrunner` registration), `config.SingleRunMode`, `dispatch.Loop` + `Done()` wake — all 06A template artifacts | umbrella §4 rows 1–3 |
 | kotlin-logging + MDC pattern (`application.yml:1-5`) | `log/slog` text handler, run id as attr | log format not a contract (umbrella §8) |
 | `UrlSanitizerService` (Spring `@Service`) | unexported `sanitizeBaseUrl(string) (string, error)` in this package (umbrella §4 row 13) | behavior pinned by `GitHubClientFactoryTest` + `UrlSanitizerServiceTest` twins |
 | companion constants (`STEP_ID`, `MAX_*`, input keys) | package-level typed consts (`StepId`, `inputKeyApiToken`, …) | frozen strings (umbrella §7.1) |
@@ -495,11 +494,10 @@ New, additive only: `MANAGEMENT_PORT`, `RUNNER_CONFIG_FILE`, `maxConcurrentRuns`
 
 ## 7. Persona wiring & modes
 
-**Grill r4 (per-persona binaries):** `cmd/github/main.go` (package main) is the github
-persona binary — it links only its handler + the polling dispatcher and mirrors
-`cmd/manual/main.go` (06A §7); the handler is also registered in the `cmd/bbrunner`
-superset (all personas by subcommand). No argv[0] multiplexing. Only the deltas are
-listed:
+`cmd/github/main.go` (package main) is the github persona binary — it links only its
+handler + the polling dispatcher and mirrors `cmd/manual/main.go` (06A §7); the handler
+is also registered in the `cmd/bbrunner` superset (all personas by subcommand). No
+argv[0] multiplexing. Only the deltas are listed:
 
 - Identity `meshapi.Identity{Name: "github-block-runner"}` (registered in the
   `cmd/bbrunner` superset).
@@ -521,10 +519,9 @@ listed:
   (UseNumber, D8) → `handler.Execute` once, no listener, R12 exit rule (exit 0 iff a
   terminal or IN_PROGRESS-handover update was reported — covers async single-run,
   where the handover *is* the job's success; pre-report fetch/parse failures exit
-  non-zero, the sanctioned §7.9 delta anchored by G-P11). **RULED (grill r2):** this
-  exit-code tightening is CONFIRMED for phase 6 — Go single-run pods exit non-zero on
-  pre-report fetch/parse failures where Kotlin exited 0; the old exit-0 behavior stays
-  PINNED (G-P11) for audit.
+  non-zero, the sanctioned §7.9 delta anchored by G-P11): Go single-run pods exit
+  non-zero on pre-report fetch/parse failures where Kotlin exited 0; the old exit-0
+  behavior stays pinned (G-P11) for audit.
 - Node id = plain runner uuid; header set = shared-client set (umbrella §7.7, verified
   once in 06A).
 
@@ -532,8 +529,8 @@ listed:
 
 The 06A §8 template stage, instantiated:
 
-- **Grill r4 (per-persona binaries):** `containers/github-block-runner/Dockerfile` builds
-  `./runner/cmd/github` as its own image: alpine (same digest pin), `ca-certificates bash`
+- `containers/github-block-runner/Dockerfile` builds `./runner/cmd/github` as its own
+  image: alpine (same digest pin), `ca-certificates bash`
   only (HTTP-only), uid 2000, the persona binary at `/app/github-block-runner`,
   `ENV PORT=8080`, `EXPOSE 8080`, **direct entrypoint**
   `ENTRYPOINT ["/app/github-block-runner"]` (no symlink, no argv[0] `entrypoint.sh`).
@@ -547,11 +544,11 @@ The 06A §8 template stage, instantiated:
   release tags); deployed controller configs keep working via the baked
   `SPRING_PROFILES_ACTIVE: kubernetes` honor (§6.2).
 - CI flip in the same PR as removal (§12): `ci.yml` github entries out of the JVM
-  matrices, a `github-block-runner` image leg into `go-runners-image`. **Grill r4
-  (per-persona binaries):** the leg builds `./runner/cmd/github` via
-  `containers/github-block-runner/Dockerfile`; `build-images.yml:35-37` flips to
-  `dockerfile: containers/github-block-runner/Dockerfile` (no `target:`), paired with a
-  `go build ./runner/cmd/...` build-matrix leg `./runner/cmd/github`.
+  matrices, a `github-block-runner` image leg into `go-runners-image`. The leg builds
+  `./runner/cmd/github` via `containers/github-block-runner/Dockerfile`;
+  `build-images.yml:35-37` flips to `dockerfile: containers/github-block-runner/Dockerfile`
+  (no `target:`), paired with a `go build ./runner/cmd/...` build-matrix leg
+  `./runner/cmd/github`.
   Because 06D also deletes the now-empty JVM jobs, the flip and the §12 teardown are
   one motion here.
 - JVM `command:`-override incompatibility: same wording as 06A §16.9 (accepted,
@@ -570,7 +567,7 @@ Always-green steps for one reviewable single-commit PR; after every step `task t
 | 3 | **GitHub client.** `githubClient` (§4.3) + fake-GitHub transcript tests: the `GithubClientTest` twins (headers, paths, payload bytes, 422 heuristic table, permission gate). | `internal/github` | transcript suite green |
 | 4 | **Inputs builder.** Outbound payload struct + `dispatchInputs` (§4.4): `BuildingBlockWorkflowInputsBuilderTest` twins + Mode-A parsed-JSON parity against the Kotlin byte fixture (`GithubBlockRunnerServiceTest.kt:155-260` expected JSON) + G-P10 leak test. | `internal/github` | unit + fixture-parity tests |
 | 5 | **Handler + poller.** `NewHandler`/`Execute` + `pollWorkflow` (§4.1/§4.5): the scenario suite (§10.1) — run JSON in → fake meshStack + fake GitHub transcripts out, async/sync/error paths, fake clock driving find window and 30-min timeout. | `internal/github` | scenario suite matches the Kotlin pins |
-| 6 | **Persona wiring.** **Grill r4 (per-persona binaries):** `cmd/github/main.go` + register the handler in the `cmd/bbrunner` superset; mgmt 8102; single-run tail. | `runner/cmd/github/main.go`, `runner/cmd/bbrunner` | loop-wiring scenario; alias precedence (`MANAGEMENT_PORT`>`PORT`>8102); single-run scenario incl. R12/G-P11 twins |
+| 6 | **Persona wiring.** `cmd/github/main.go` + register the handler in the `cmd/bbrunner` superset; mgmt 8102; single-run tail. | `runner/cmd/github/main.go`, `runner/cmd/bbrunner` | loop-wiring scenario; alias precedence (`MANAGEMENT_PORT`>`PORT`>8102); single-run scenario incl. R12/G-P11 twins |
 | 7 | **Gate + tooling.** `thresholds.txt` += `internal/github 90` (no exclusions); depguard: `github` imports `dispatch`/`meshapi`/`report`/`config` + stdlib only. | `tools/coverage/*`, `.golangci.yml` | induced-failure check; `task coverage` |
 | 8 | **Image.** Dockerfile stage + `containers/github-block-runner/runner-config.yml` (§8). | containers/ | `docker build --target github-block-runner` + healthz/claim-loop smoke |
 | 9 | **Acceptance gate (§11).** Side-by-side transcripts + real-GitHub smoke. | — | STOP-E; evidence in the PR description |
@@ -612,7 +609,7 @@ unit tables — the D16 consolidation outcome. No assertion changes shape beyond
 ### 10.2 New Go-only tests
 
 Ctx-cancellation mid-poll (reports a terminal `ABORTED` update, fallback `FAILED`, then
-returns the ctx error — §4.5 RULED), unknown job/run status retry path, `json.Number`
+returns the ctx error — §4.5), unknown job/run status retry path, `json.Number`
 fidelity through the Mode-A payload, single-run async handover exit 0, mgmt-on-8102
 smoke. All hermetic (fake transport, fake clock).
 
@@ -642,10 +639,10 @@ before removal (step 9) is:
    workflow, one `omitRunObjectInput: true` run, one GHE-style base-URL sanity check if
    an instance is available (else flagged as not exercised). This is the only leg that
    exercises real App-JWT acceptance by GitHub — the reason it is mandatory here and
-   was optional-ish for gitlab/ado. **RULED (grill r2):** GitHub has real coverage in
-   the sibling `meshstack-smoke-tests` repo, so the port validates there before Kotlin
-   module removal (in addition to the in-repo integration tests); the real-GitHub /
-   GHE-availability question is resolved — covered by `meshstack-smoke-tests`.
+   was optional-ish for gitlab/ado. GitHub has real coverage in the sibling
+   `meshstack-smoke-tests` repo, so the port validates there before Kotlin module removal
+   (in addition to the in-repo integration tests); real-GitHub / GHE coverage lives in
+   `meshstack-smoke-tests`.
 3. **k8s single-run smoke** against the built image (docker run, pre-decrypted run
    JSON + `SPRING_PROFILES_ACTIVE=kubernetes`): captured wire equal to the Kotlin k8s
    scenario behavior; exit 0.
@@ -662,9 +659,8 @@ STOP-E: only after this gate do steps 10–11 land.
 2. `settings.gradle`: drop `include 'github-block-runner'` (`settings.gradle:5`).
 3. `ci.yml`: drop the github entries from `jvm-runners-ci` and `jvm-runners-image`;
    add the go image leg (§8).
-4. `build-images.yml`: **Grill r4 (per-persona binaries):** github leg →
-   `dockerfile: containers/github-block-runner/Dockerfile`, build-matrix leg
-   `./runner/cmd/github` (no `target:`, drop `runner-module:`).
+4. `build-images.yml`: github leg → `dockerfile: containers/github-block-runner/Dockerfile`,
+   build-matrix leg `./runner/cmd/github` (no `target:`, drop `runner-module:`).
 
 ### 12.2 JVM machinery teardown (step 11 — phase exit "Gradle build gone")
 
@@ -728,10 +724,9 @@ One squash commit ⇒ one `git revert` — but 06D's blast radius is the largest
 6: the revert restores the github module **and** `block-runner-core`, the root Gradle
 build, wrapper, `jvm.Dockerfile`/`entrypoint-jvm.sh`, both JVM CI jobs (whose matrices
 then again contain only core+github — consistent, since 06A–C's reverts are not
-implied), the flake/ktlint/.gitignore/README edits, and deletes `internal/github`,
-**Grill r4 (per-persona binaries):** `cmd/github/` + its `cmd/bbrunner` registration,
-`containers/github-block-runner/` (Dockerfile + config), the thresholds line and
-depguard rules. Wire/k8s/image contracts frozen (§13) ⇒ `:main`
+implied), the flake/ktlint/.gitignore/README edits, and deletes `internal/github`, `cmd/github/` +
+its `cmd/bbrunner` registration, `containers/github-block-runner/` (Dockerfile + config),
+the thresholds line and depguard rules. Wire/k8s/image contracts frozen (§13) ⇒ `:main`
 floats back to a JVM-built github image on the next CI run; operator configs unchanged
 in either direction (`SPRING_PROFILES_ACTIVE` honored by both generations,
 `EXECUTION_MODE` never required). Release tags immutable. Lost on revert (documented
@@ -784,8 +779,7 @@ Findings the umbrella / prior plans did not anticipate, plus reviewer-vetoable c
 5. **Permission-gate message rendering:** the Kotlin message embeds a JVM
    `Map.toString()` (`{actions=read, …}` in JSON order); Go renders sorted
    deterministically. One byte-level delta inside one system message — flagged rather
-   than silently absorbed by §7.11's byte-identical rule. Reviewer may demand
-   JSON-order preservation (then the permissions decode into an ordered slice).
+   than silently absorbed by §7.11's byte-identical rule.
 6. **Completed jobs are re-reported on every poll batch** (`:341-348`) — extra PATCH
    traffic, coordinator-tolerated. Pinned as-is (G-P4); fixing the dedup is a
    post-refactor follow-up, never this PR (D13 discipline).
@@ -815,17 +809,13 @@ Findings the umbrella / prior plans did not anticipate, plus reviewer-vetoable c
     Gradle/CI/Dockerfile items): also `flake.nix` jdk21/ktlint, the `.claude/settings.json`
     ktlint hook, `.gitignore` gradle entries, and minimal README factual edits — all
     layout-forced (§12.2); the README *overhaul* stays phase 7.
-13. **Stdlib-JWT decision. RULED (grill r2): stdlib CONFIRMED** (§4.2) — the App JWT is
-    hand-rolled RS256 via `crypto/rsa` `SignPKCS1v15` over PKCS#1 parsing
-    (`x509.ParsePKCS1PrivateKey`), with **no `golang-jwt/jwt` dependency**. The library
-    only ever *signs* (it never verifies untrusted tokens; the G-P1/G-P2 pins
-    cross-check the claims and the signature), so a claims/validation framework buys
-    nothing. The `golang-jwt/jwt` fallback is withdrawn.
+13. **Stdlib-JWT decision** (§4.2) — the App JWT is hand-rolled RS256 via `crypto/rsa`
+    `SignPKCS1v15` over PKCS#1 parsing (`x509.ParsePKCS1PrivateKey`), with **no
+    `golang-jwt/jwt` dependency**. The library only ever *signs* (it never verifies
+    untrusted tokens; the G-P1/G-P2 pins cross-check the claims and the signature), so a
+    claims/validation framework buys nothing.
 14. **DETECT uses `applyWorkflow`** (`:97-101`) — worth stating because tf treats
     DETECT specially (saved-plan rules); for github it is simply "run the apply
     workflow". Frozen in §13.
 
-**Open questions:** none — every decision branch was walked and resolved from the
-sources; the reviewer-vetoable judgment calls are flags 2, 5, 9 above plus the
-umbrella-level calls they instantiate (§7.4 lean body, §7.9 exit rule, §10.5 baked dev
-key placement).
+**Open questions:** none.

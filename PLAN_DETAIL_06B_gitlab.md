@@ -23,9 +23,9 @@ umbrella §1 verification steps (A1–A12)** — incorporated by reference — p
 
 | # | Assumption | Promised by | Verification step |
 |---|---|---|---|
-| T1 | `meshapi.SourceUpdateDTO`/`StepUpdateDTO` (the marshaled lean PATCH body the adapter produces from the changed steps, all fields `omitempty`) + the unified `report.Reporter{Register(RunStatus) error, Report(RunStatus) (abort bool, err error)}` over a run-scoped `RunPatcher`, stateless, link-based URL construction with `{sourceId}` substitution + missing-placeholder error. Ported handlers call `Report(RunStatus)` with only the changed/new steps present in `RunStatus.Steps` (backend upserts steps by id) and **discard the `abort` return** (**Grill r3 (RunHandler purity):** no Observer/ticker for the ports; the handler still owns its own step dedup — stateless in the no-ticker sense). | 06A §4.3, steps 2 | read `runner/internal/report`; run the Go twins of C-P3–C-P7 |
+| T1 | `meshapi.SourceUpdateDTO`/`StepUpdateDTO` (the marshaled lean PATCH body the adapter produces from the changed steps, all fields `omitempty`) + the unified `report.Reporter{Register(RunStatus) error, Report(RunStatus) (abort bool, err error)}` over a run-scoped `RunPatcher`, stateless, link-based URL construction with `{sourceId}` substitution + missing-placeholder error. Ported handlers call `Report(RunStatus)` with only the changed/new steps present in `RunStatus.Steps` (backend upserts steps by id) and **discard the `abort` return** (no Observer/ticker for the ports; the handler still owns its own step dedup — stateless in the no-ticker sense). | 06A §4.3, steps 2 | read `runner/internal/report`; run the Go twins of C-P3–C-P7 |
 | T2 | `config.SingleRunMode` (`EXECUTION_MODE=single-run` OR `SPRING_PROFILES_ACTIVE` list-contains `kubernetes`, deprecation-logged), `config.BlockRunnerCompat` (incl. `privateKey`/`privateKeyFile` fields), `config.ResolvePrivateKey(log, fileKey, inlineKey)` reproducing `PrivateKeyLoader.kt:8-24` order (env `RUNNER_PRIVATE_KEY_FILE` > yaml file key > `/app/runner-private.pem`; missing file ⇒ inline fallback). | 06A §6.3–6.5 | read `runner/internal/config`; run its table tests. If 06A's reviewer deferred the `ResolvePrivateKey` *implementation* to 06B (06A flag §16.8), implement it here in step 3 against the fixed contract |
-| T3 | **Grill r4 (per-persona binaries):** Shared `ClaimClassifier` (404 ⇒ no-run, 409 ⇒ no-run-logged, other ⇒ no-run-logged + `runner_poll_errors_total`, backoff 0) + persona wiring pattern (`cmd/manual/main.go` + its `cmd/bbrunner` superset registration), `MANAGEMENT_PORT`/`PORT` alias mechanics, R12 single-run exit tail, per-persona `containers/<persona>-block-runner/Dockerfile` pattern (direct entrypoint), `containers/<persona>-block-runner/runner-config.yml` layout, removal recipe, side-by-side comparison procedure + sanctioned-delta allowlist wording. | 06A §7, §8, §11.3, §12 | read `runner/cmd/manual/main.go`, `runner/cmd/bbrunner/main.go`, `containers/manual-block-runner/Dockerfile`; re-read 06A §11.3 evidence in its merged PR |
+| T3 | Shared `ClaimClassifier` (404 ⇒ no-run, 409 ⇒ no-run-logged, other ⇒ no-run-logged + `runner_poll_errors_total`, backoff 0) + persona wiring pattern (`cmd/manual/main.go` + its `cmd/bbrunner` superset registration), `MANAGEMENT_PORT`/`PORT` alias mechanics, R12 single-run exit tail, per-persona `containers/<persona>-block-runner/Dockerfile` pattern (direct entrypoint), `containers/<persona>-block-runner/runner-config.yml` layout, removal recipe, side-by-side comparison procedure + sanctioned-delta allowlist wording. | 06A §7, §8, §11.3, §12 | read `runner/cmd/manual/main.go`, `runner/cmd/bbrunner/main.go`, `containers/manual-block-runner/Dockerfile`; re-read 06A §11.3 evidence in its merged PR |
 | T4 | The block-runner-core wire pins C-P1–C-P7 exist and are green (06B inherits, never re-writes). | 06A §3.3 | `./gradlew :block-runner-core:check`; grep the pin test names |
 | T5 | `dispatch.ClaimedRun.RawJson` carries the claimed run JSON **base64-encoded** (today's controller shape, `runapi.go:59`) and `Details` is the parsed `RunDetailsDTO` with `Links{Self, RegisterSource, UpdateSource, MeshstackBaseUrl}` (`go-meshapi-client/meshapi/dtos.go:19-28`). | Plan 05 §4.1 | read `runner/internal/dispatch`; `grep -n "RawJson" runner/internal/dispatch` |
 | T6 | Handler-visible JSON decoding preserves number fidelity (`json.Decoder.UseNumber` or equivalent) — recorded as a template requirement in 06A §17 precisely because gitlab embeds run JSON in outbound payloads. | 06A §4.2/§17 | read the decode path; run 06A's M-P3 Go twin |
@@ -405,7 +405,7 @@ Every deviation from the 06A artifacts, mapped to an anticipating rule or escala
 | First consumer of `config.ResolvePrivateKey` + `BlockRunnerCompat.privateKey*` | 06A §6.4-6.5, §16.8 | anticipated |
 | External HTTP client with redirect-disable | umbrella §5.3 "external-API HTTP client seam (fakeable)" | anticipated |
 | No poll loop, no `Clock` dep | umbrella §3.1 (gitlab has no polling) | narrower than 06C/06D — fine |
-| `valueString` composite-JSON delta | **not anticipated** — new sanctioned-delta candidate | **RULED (grill r2)** via flag §16.4: compact JSON, no Java-toString fallback |
+| `valueString` composite-JSON delta | **not anticipated** — new sanctioned-delta candidate | ruled via flag §16.4: compact JSON, no Java-toString fallback |
 | k8s plaintext-token embedding limits §7.6 | **umbrella correction** | escalated as flag §16.3 (documentation-level; no shape change) |
 
 **Result: no `RunHandler`/`ClaimedRun`/reporter/config-helper shape change required —
@@ -480,7 +480,7 @@ shipped literals are not carried (umbrella §10.4).
 
 The Kotlin classpath yaml bakes an inline dev private key
 (`gitlab-block-runner/src/main/resources/runner-config.yml:12`) — the local-dev pair
-of meshfed's magic-runner public key. **RULED (grill r2):** the port keeps it
+of meshfed's magic-runner public key. The port keeps it
 **verbatim** but places it in the **shared top-level base** `runner-config.yml`
 (deep-merged under the per-impl `containers/gitlab-block-runner/runner-config.yml`,
 base < per-impl < env) as the flat `privateKey:` value, with a one-line comment marking
@@ -494,10 +494,10 @@ published-image defaults is a **phase-7** ledger item.
 
 ### 7.1 Persona wiring & polling mode (`cmd/gitlab/main.go`, package main — only main wires, D11)
 
-- **Grill r4 (per-persona binaries):** `cmd/gitlab/main.go` is the gitlab runner's own
-  `package main` (links only the gitlab handler + its deps; no persona registry, no
-  argv[0] switch of a shared binary); the same handler is *also* registered in the
-  `cmd/bbrunner` superset (persona by subcommand, 06A §7.1). Persona bootstrap sets
+- `cmd/gitlab/main.go` is the gitlab runner's own `package main` (links only the gitlab
+  handler + its deps; no persona registry, no argv[0] switch of a shared binary); the same
+  handler is *also* registered in the `cmd/bbrunner` superset (persona by subcommand,
+  06A §7.1). Persona bootstrap sets
   `meshapi.Identity{Name: "gitlab-block-runner", Version: build-or-VERSION}` (06A §6.2).
 - `dispatch.NewLoop(LoopConfig{PollInterval: 10s, ClaimBackoff: 0, MaxConcurrent:
   cfg.MaxConcurrentRuns /* default 1 */}, …)` + `dispatch.NewInProcess(map[…]{
@@ -547,8 +547,7 @@ non-zero (the sanctioned delta, baseline pin G-P13).
 
 The 06A §8 template, mechanically repeated:
 
-- **Grill r4 (per-persona binaries):** New per-persona
-  `containers/gitlab-block-runner/Dockerfile` building only the gitlab binary
+- New per-persona `containers/gitlab-block-runner/Dockerfile` building only the gitlab binary
   (`go build ./runner/cmd/gitlab`): same alpine digest pin, `ca-certificates bash` only
   (HTTP-only runner), meshcloud uid 2000, the fit binary at `/app/gitlab-block-runner`
   (its own binary — no shared `bbrunner`, no symlink), `ENV PORT=8080`, `EXPOSE 8080`,
@@ -585,7 +584,7 @@ until step 9.
 | 2 | **`meshapi.DecryptInputs`** (§4.4) + the `Decryptor` empty-string guard (T8) if missing. | `internal/meshapi` | table-driven tests: STRING/CODE/FILE decrypted, other-sensitive-type skip+warn, non-sensitive untouched, impl secret untouched, unknown-field passthrough, `UseNumber` fidelity, NoOp identity; cross-checked against a `MeshCertDecryptionServiceTest` fixture ciphertext (umbrella A9 style); `meshapi` stays ≥90 |
 | 3 | **`internal/gitlab` package:** `ExternalCallError` (§4.5), `sanitizeBaseUrl`, error classification, `valueString`, `buildTriggerForm`, `triggerPipeline`. | `internal/gitlab` | unit tests for the pure functions (sanitize table = `UrlSanitizerServiceTest` port, classification table, stringify table incl. G-P8 rows); fake-GitLab transcript tests for the multipart request (G-P1/G-P2 twins) and response taxonomy (G-P3–G-P5, G-P10 twins) |
 | 4 | **Handler.** `gitlab.Config`, `NewHandler`, `Execute` flow (§4.1). | `internal/gitlab` | Go scenario suite (§10.1): run JSON in → fake meshStack + fake GitLab transcripts out, matching the Kotlin pins |
-| 5 | **Persona wiring, polling (Grill r4 — per-persona binaries).** `cmd/gitlab/main.go` + register the gitlab handler in the `cmd/bbrunner` superset; mgmt on 8103; loop + classifier + metrics; cert decryptor from resolved key. | `runner/cmd/gitlab/main.go`, `runner/cmd/bbrunner/main.go` | loop-wiring scenario (claim→register→trigger→handover→immediate re-claim→404); `cmd/bbrunner` subcommand-dispatch row; alias-precedence test (`MANAGEMENT_PORT`>`PORT`>8103); key-resolution failure = actionable startup error |
+| 5 | **Persona wiring, polling.** `cmd/gitlab/main.go` + register the gitlab handler in the `cmd/bbrunner` superset; mgmt on 8103; loop + classifier + metrics; cert decryptor from resolved key. | `runner/cmd/gitlab/main.go`, `runner/cmd/bbrunner/main.go` | loop-wiring scenario (claim→register→trigger→handover→immediate re-claim→404); `cmd/bbrunner` subcommand-dispatch row; alias-precedence test (`MANAGEMENT_PORT`>`PORT`>8103); key-resolution failure = actionable startup error |
 | 6 | **Single-run mode.** `SingleRunMode` activation, file source, NoOp decryptor, R12 exit tail. | `cmd/gitlab/main.go` (+ glue) | single-run scenario twin of G-P12 (pre-decrypted fixture ⇒ captured wire equal to the Kotlin capture modulo sanctioned deltas); exit-condition tests (G-P13 twins incl. the flagged tightening) |
 | 7 | **Gate + tooling.** `thresholds.txt` += `runner/internal/gitlab 90` (no exclusions); depguard: `gitlab` imports `dispatch`/`meshapi`/`report`/`config` + stdlib only; nothing imports `gitlab` but main. | `tools/coverage/*`, `.golangci.yml` | induced-failure check; `task coverage` green |
 | 8 | **Image.** `containers/gitlab-block-runner/Dockerfile` + `containers/gitlab-block-runner/runner-config.yml` (§8, incl. dev key §6.3). | containers/ | `docker build -f containers/gitlab-block-runner/Dockerfile`; container smoke: healthz `OK` on 8080, boots to claim loop against a stub |
@@ -614,9 +613,8 @@ until step 9.
 | C-P1–C-P7 core wire pins | inherited Go twins from 06A (T1/T4) — verified present, not duplicated | — |
 
 Only G-P13's file-missing case changes asserted behavior — sanctioned by umbrella
-§7.9/§10.3, identical wording to 06A (**RULED (grill r2):** confirmed — fix in phase 6;
-the old exit-0 behavior stays pinned as G-P13 for audit). Everything else ports
-semantically (STOP-B otherwise).
+§7.9/§10.3, identical wording to 06A (fixed in phase 6; the old exit-0 behavior stays
+pinned as G-P13 for audit). Everything else ports semantically (STOP-B otherwise).
 
 ### 10.2 New Go-only tests
 
@@ -790,13 +788,11 @@ Findings the umbrella / 06A / prior plans did not anticipate, plus judgment call
    out of scope, noted for a follow-up.
 4. **Composite/exotic-scalar stringification is a genuine byte delta.** Kotlin
    `value.toString()` renders arrays/maps as Java toString (`[a, b]`/`{k=v}`) and
-   exotic doubles as `1.0E20`; Go emits compact JSON / the literal `json.Number`
-   token (§4.2.1). Scalars (string/int/bool — the realistic cases) are byte-identical
-   and pinned; composites are pinned as baseline (G-P8) and shipped as a flagged delta
-   (Java toString is not parseable; a pipeline relying on it gets strictly better
-   bytes). **RULED (grill r2):** switch to **compact JSON** for composite/exotic values
-   — the pins assert JSON. This **overrides** the earlier Java-toString-compatible
-   formatter fallback; 06C (stringified `templateParameters`) adopts the same
+   exotic doubles as `1.0E20`; Go emits **compact JSON** / the literal `json.Number`
+   token (§4.2.1), and the pins assert JSON. Scalars (string/int/bool — the realistic
+   cases) are byte-identical and pinned; composites are pinned as baseline (G-P8) and
+   shipped as a flagged delta (Java toString is not parseable; a pipeline relying on it
+   gets strictly better bytes). 06C (stringified `templateParameters`) adopts the same
    compact-JSON decision (umbrella §2 resolution rule).
 5. **JSON `null` input values are Kotlin-unrepresentable** (`value: Any` fails the
    claim parse ⇒ run silently stuck until coordinator timeout) but Go-representable.

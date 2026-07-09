@@ -77,15 +77,12 @@ until 2b, or D13 gets a reviewed exception for data races.
   `PlainClone` accepts filesystem paths), which keeps the tests black-box (the URL is just data in
   the run JSON) and makes them hermetic and fast. This contradicts the high-level plan's
   description of the existing suites as "hermetic" (§2, D6) — flagged, not silently deviated from.
-  **PR#51 review refinement:** the CP1 local-repo move is exactly the direction PR#51 asks
-  for (bare git repos in `testdata`, per-testcase branches — the pattern copyable from
-  `terraform-provider-meshstack`). The larger PR#51 steer — replacing the fake
-  `http.RoundTripper` with a reusable `net/http/httptest` meshfed-API **server** mock
-  package shared across runner types — is deliberately **NOT** taken in phase 1 (it is
-  structural churn, and phase 1 must not restructure). Phase 1 keeps the fake transport to
-  pin behavior with minimal diff; the server-mock package is introduced in phase 2/3
-  (plan 03, shared core) and phase-1 fixtures are authored as replayable request/response
-  transcripts so they port onto it without rewriting the scenarios.
+  CP1 uses bare git repos in `testdata` with per-testcase branches (pattern copyable from
+  `terraform-provider-meshstack`). Phase 1 keeps the fake `http.RoundTripper` to pin behavior
+  with minimal diff; replacing it with a reusable `net/http/httptest` meshfed-API **server**
+  mock package shared across runner types is structural churn deferred to phase 2/3 (plan 03,
+  shared core). Phase-1 fixtures are authored as replayable request/response transcripts so
+  they port onto that server mock without rewriting the scenarios.
 - **F2 — D9's "same-origin URL" artifact pin is stale.** Commit `88d67d4` ("fix: revert the
   artifact url same origin check", 2026-07-02) deleted the check from
   `go-meshapi-client/meshapi/client.go` and its tests. Only the 128MiB cap remains
@@ -551,23 +548,20 @@ plan document). If the coverage gate turns out too strict in practice after merg
 - **meshStack/meshfed API:** none — fake transports replay today's observed shapes; no server
   change required or implied.
 
-## 13. Open questions (self-grilled)
+## 13. Design decisions
 
-All resolved during research; recorded with their resolutions so review can veto:
+- **Local-path git URLs vs mocked GitFacade for scenario tests:** local paths (CP1) — zero
+  production change, still black-box, exercises real clone/checkout logic; the mock stays for
+  azure/error-injection cases.
+- **Seam-level tests (CP10 authSsh, CP12 manager, existing tfcmd unit tests):** allowed. The
+  "use-case level only" rule (risk #2) protects against phase-2 churn; `auth` and the manager
+  token protocol are seams phase 2 keeps (D4 ports, engine loop). Anything phase 2 dissolves
+  (e.g. `GenericTfCmd` internals) gets no *new* unit tests.
+- **Pin 16 (k8s single-run) cannot be fully covered:** the env-reading glue is in
+  `package main`; three-part pin in `tfrun` (§5), remainder owned by acceptance tests + later
+  phases.
+- **`-race`:** later (2b) — B6/B10 make `-race` red; A5/STOP-B govern.
+- **90% includes the mock files** (F3, §7) — they are covered anyway; excluding them would
+  misuse the adapter list.
 
-- **Q1: Local-path git URLs vs mocked GitFacade for scenario tests?** Resolved: local paths
-  (CP1) — zero production change, still black-box, exercises real clone/checkout logic. Mock
-  stays for azure/error-injection cases.
-- **Q2: Are seam-level tests (CP10 authSsh, CP12 manager, existing tfcmd unit tests) a violation
-  of the "use-case level only" rule?** Resolved: the rule (risk #2) protects against phase-2
-  churn; `auth` and the manager token protocol are seams that phase 2 keeps (D4 ports, engine
-  loop). Documented per checkpoint; anything phase 2 dissolves (e.g. `GenericTfCmd` internals)
-  gets no *new* unit tests.
-- **Q3: Can pin 16 (k8s single-run) be fully covered?** No — the env-reading glue is in
-  `package main`. Resolved by declaration: three-part pin in `tfrun` (§5), remainder owned by
-  acceptance tests + later phases. Not silently dropped.
-- **Q4: `-race` now or later?** Later (2b) — B6/B10 make `-race` red; A5/STOP-B govern this.
-- **Q5: Does the 90% number include the mock files?** Yes (F3, §7) — they are covered anyway;
-  excluding them would misuse the adapter list.
-
-*(empty otherwise)*
+**Open questions:** none.

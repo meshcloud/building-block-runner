@@ -245,17 +245,11 @@ plumbing (not yet gating)"**. Concretely, only `ci.yml`'s `go-runners-ci` job ch
 - When phase 1 adds the first thresholds line, the already-wired check.sh starts gating —
   no further CI edit needed; that flip is phase 1's documented change.
 
-**Flagged deviation (reviewer decision, §11):** adding `go-meshapi-client` to the
-`go-runners-ci` matrix is strictly a functional CI change, but leaving a whole module's
-tests out of CI defeats a guardrails phase. Recommendation: add the matrix leg in this PR,
-explicitly called out in the PR description.
-
-**RULED (grill r2):** APPROVED for phase 0 — add the `go-meshapi-client` leg to the
-`go-runners-ci` matrix now, despite the minor deviation from D14 ("CI functionally
-untouched until phase 7"). Rationale: phase 1 deliberately places the D9 128MiB
-plan-artifact-cap pin test in `go-meshapi-client/meshapi/client_test.go`; without this leg
-that frozen-contract pin would not be CI-enforced until phase 3. Call it out in the PR
-description as the sanctioned additive exception.
+**`go-meshapi-client` CI matrix leg (§11):** add the `go-meshapi-client` leg to the
+`go-runners-ci` matrix in this PR — a sanctioned additive exception to D14 ("CI
+functionally untouched until phase 7"), called out in the PR description. Phase 1 places
+the D9 128MiB plan-artifact-cap pin test in `go-meshapi-client/meshapi/client_test.go`;
+without this leg that frozen-contract pin would not be CI-enforced until phase 3.
 
 ## 6. Implementation order (always-green checkpoints, one squash commit)
 
@@ -264,8 +258,7 @@ squash-merged, so "always-green" applies to the local sequence and the final PR 
 
 1. **Preflight.** On `main`-based branch `refactor/single-go-binary/phase-0-guardrails`:
    re-run the three coverage commands; confirm numbers match §3 (tooling drift check) and
-   `main` CI is green. *Proves:* baseline reproducible. (This replaces the STOP-marker
-   assumption check of later phases; a mismatch ⇒ update §3, not the code.)
+   `main` CI is green. *Proves:* baseline reproducible; a mismatch ⇒ update §3, not the code.
 2. **Add `Taskfile.yml`** (Makefile still present). *Checkpoint:* `task test`, `task fmt`,
    `task tidy`, `task work-sync` succeed and are behavior-identical to their make
    counterparts; `task --list` shows descriptions. *Test:* run both old and new side by side
@@ -361,13 +354,9 @@ inventory (§8) survives a revert harmlessly (documentation only).
 ## 11. Flags — findings the high-level plan did not anticipate
 
 1. **`go-meshapi-client` is not tested in CI at all** (`ci.yml:150-155` matrix lacks it;
-   only `make test` covers it locally). Adding the matrix leg is technically a functional CI
-   change, colliding with D14's "CI functionally as-is". Recommendation: add it in this PR
-   as a flagged, additive guardrail; alternative (defer to phase 7) leaves a shared module
-   unguarded through the entire refactor. Reviewer decides on the PR.
-   **RULED (grill r2):** APPROVED — add the leg in phase 0 (the phase-1 D9 128MiB pin test
-   lives in `go-meshapi-client/meshapi/client_test.go`, so this leg is what CI-enforces that
-   frozen contract before phase 3). See §5.5.
+   only `make test` covers it locally). The matrix leg is added in this PR as an additive
+   guardrail (see §5.5); deferring to phase 7 would leave a shared module unguarded through
+   the entire refactor.
 2. **231 lint findings** at provider parity — the high-level plan's "adopt golangci-lint v2"
    silently implied a nontrivial cleanup; §5.3's inert-vs-pin rule is new policy this plan
    adds so phase 0 stays behavior-neutral. ~25 production-code findings get *pinned*, not
@@ -408,8 +397,4 @@ Later plans may assume, verbatim:
 
 ## 13. Open questions
 
-None. The two judgment calls this plan could not settle alone are recorded as flagged
-reviewer decisions, not open questions: the `go-meshapi-client` CI matrix leg (§11.1) and
-the inert-vs-pin lint policy (§5.3, reviewable via the PR diff audit).
-**RULED (grill r2):** the `go-meshapi-client` CI matrix leg is now resolved — APPROVED for
-phase 0 (see §5.5/§11.1).
+None.

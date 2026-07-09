@@ -24,7 +24,7 @@ umbrella's STOP-A.
 | B3 | `meshapi.RunClient` supports per-run construction with runToken-only auth and a caller-supplied `RegistrationDTO` (one step, PENDING) via `RegisterSource`, and `PatchStatus(runId, sourceId string, payload any)` accepts an arbitrary marshalable body — i.e. the lean `SourceUpdate` shape (§4.3) needs **no client change**. Claim POST / status PATCH are never retried. | Plan 03 §5.2.4, Plan 05 A4 | read `runner/internal/meshapi/client.go` signatures; `grep -n "payload any" runner/internal/meshapi` |
 | B4 | `RunDetailsDTO` models everything the manual service reads: `Metadata.Uuid`, `Spec.RunToken`, `Spec.BuildingBlock.Spec.Inputs[]{Key, Value, Type, IsSensitive}`, `Links{Self, RegisterSource, UpdateSource, MeshstackBaseUrl}` with `LinkDTO.Templated` (`go-meshapi-client/meshapi/dtos.go:10-72` today, moved by plan 04). | Plan 03/04 moves | read `runner/internal/meshapi/dtos.go` |
 | B5 | `config.Path/LoadFile/Env`, `config.Api` (+`NewAuthProvider`, API-key-wins precedence), `config.ManagementPort(log, def, aliases…)` exist per plans 03/04; `mgmt.NewServer` + `mgmt.RunMetrics` + the plan-05 counters exist and are persona-reusable. | Plan 03 §5.3, Plan 04 §4.3, Plan 05 §10.3 | read `runner/internal/{config,mgmt}`; run the alias-precedence tests |
-| B6 | **Grill r4 (per-persona binaries):** Persona mechanics: adding a persona = `cmd/<name>/main.go` (package main, wiring only — links just that persona's deps) + register its handler in the `cmd/bbrunner` superset + `containers/<name>-block-runner/Dockerfile` with a direct entrypoint + build-matrix leg `./runner/cmd/<name>`; single-run tail implements the 2b-R12 exit rule (non-zero only when no terminal/handover status was reported). | Plan 04 §11, Plan 05 A9 | read `runner/cmd/tf/main.go` (single-run tail), `runner/cmd/bbrunner/main.go` handler registration, a per-persona `containers/*/Dockerfile` |
+| B6 | Persona mechanics: adding a persona = `cmd/<name>/main.go` (package main, wiring only — links just that persona's deps) + register its handler in the `cmd/bbrunner` superset + `containers/<name>-block-runner/Dockerfile` with a direct entrypoint + build-matrix leg `./runner/cmd/<name>`; single-run tail implements the 2b-R12 exit rule (non-zero only when no terminal/handover status was reported). | Plan 04 §11, Plan 05 A9 | read `runner/cmd/tf/main.go` (single-run tail), `runner/cmd/bbrunner/main.go` handler registration, a per-persona `containers/*/Dockerfile` |
 | B7 | The Kotlin manual suite is green as-is: `./gradlew :manual-block-runner:check` and `:block-runner-core:check` pass on the phase-5 branch (the pinning step builds on them). | Current `main` CI | run both gradle tasks once before writing pins |
 | B8 | `report` package has `Progress`/`RunStatus`/`StepStatus`/`ExecutionStatus` and the `Reporter` port; the `Observer` ticker exists but is **not** consumed by this port (umbrella §7.5). | Plan 03 §5.4 | read `runner/internal/report` |
 
@@ -240,16 +240,16 @@ type HandlerDeps struct {
   outcome). Not a separate handler type — Kotlin's subclass override becomes a small
   strategy branch (D15 §5, no inheritance mimicry).
 - Step id/display-name are typed constants (`StepId = "manual"`, umbrella §7.1).
-- **PR#51 review refinement (handler purity — the manual litmus test, plan 05 §4.2).** The
-  manual handler is the proof that a `RunHandler` can be pure "inputs → outputs" logic:
-  its only injected collaborators are a run-scoped reporter (via `ReporterFactory`,
-  runToken-only), `Clock`/`Rand`, and `*slog.Logger` — **no direct `meshapi`/HTTP import**
-  in the handler's own logic, logging excepted. Reading inputs off
-  `run.Details.Spec.BuildingBlock.Spec.Inputs` currently couples the handler to the
-  `meshapi` DTO shape; the §17 fit review must decide whether that stays (thin, acceptable)
-  or whether inputs/outputs are lifted to a small domain type so the handler imports no
-  client package at all. Either way, the reporter stays a port, not a `meshapi.RunClient`
-  the handler builds itself. **STOP-D** already gates this via the fit review.
+- **Handler purity (the manual litmus test, plan 05 §4.2).** The manual handler is the
+  proof that a `RunHandler` can be pure "inputs → outputs" logic: its only injected
+  collaborators are a run-scoped reporter (via `ReporterFactory`, runToken-only),
+  `Clock`/`Rand`, and `*slog.Logger` — **no direct `meshapi`/HTTP import** in the
+  handler's own logic, logging excepted. Reading inputs off
+  `run.Details.Spec.BuildingBlock.Spec.Inputs` couples the handler to the `meshapi` DTO
+  shape; the §17 fit review decides whether that stays (thin, acceptable) or whether
+  inputs/outputs are lifted to a small domain type so the handler imports no client
+  package at all. Either way, the reporter stays a port, not a `meshapi.RunClient` the
+  handler builds itself. **STOP-D** gates this via the fit review.
 
 ### 4.2 Echo semantics (the only decision surface)
 
@@ -289,11 +289,11 @@ type StepUpdateDTO struct {
     Status        string               `json:"status,omitempty"`
 }
 
-// report — the UNIFIED reporter port consumed by ALL five runners (plan 05 §4.2,
-// Grill r3), over a run-scoped meshapi.RunClient. Report sends only the steps present in
-// RunStatus.Steps (changed/new since the last send); the meshfed endpoint upserts steps
-// by id and each included step carries its FULL current message text (backend
-// overwrites, does not append). The lean SourceUpdateDTO above is its wire form.
+// report — the UNIFIED reporter port consumed by ALL five runners (plan 05 §4.2), over a
+// run-scoped meshapi.RunClient. Report sends only the steps present in RunStatus.Steps
+// (changed/new since the last send); the meshfed endpoint upserts steps by id and each
+// included step carries its FULL current message text (backend overwrites, does not
+// append). The lean SourceUpdateDTO above is its wire form.
 type Reporter interface {
     Register(RunStatus) error
     Report(RunStatus) (abort bool, err error)
@@ -301,16 +301,13 @@ type Reporter interface {
 func NewReporter(rc RunPatcher, sourceId string, log *slog.Logger) Reporter // register: one PENDING step, 409 = success; Report: PATCH, response body ignored, abort discarded by non-tf runners
 ```
 
-**Grill r3 (RunHandler purity):** RESOLVED — the earlier bespoke
-`report.SourceReporter` (`Register(stepId, displayName)` + `Update(SourceUpdateDTO)`) is
-**dropped** in favor of the ONE unified `report.Reporter` shown above, the exact port all
-five runners consume (plan 05 §4.2). **Manual is the litmus proof that this unified port
-serves a trivial one-shot runner too:** it builds a **one-step `RunStatus`** (the echoed
-inputs→outputs step, status `SUCCEEDED`), calls `Register(status)` then `Report(status)`,
-and **DISCARDS the `abort` return** — no Observer, no ticker. The handler-purity boundary
-holds: manual MAY read the meshapi DTOs off `run.Details`, and the reporter is injected as
-a use-case-level port (never a raw `meshapi.RunClient` the handler assembles with its own
-HTTP transport/auth).
+The unified `report.Reporter` shown above is the one port all five runners consume (plan
+05 §4.2). **Manual is the litmus proof that this unified port serves a trivial one-shot
+runner too:** it builds a **one-step `RunStatus`** (the echoed inputs→outputs step, status
+`SUCCEEDED`), calls `Register(status)` then `Report(status)`, and **discards the `abort`
+return** — no Observer, no ticker. The handler-purity boundary holds: manual MAY read the
+meshapi DTOs off `run.Details`, and the reporter is injected as a use-case-level port
+(never a raw `meshapi.RunClient` the handler assembles with its own HTTP transport/auth).
 
 - `RunPatcher` is a consumer-side two-method interface satisfied by
   `meshapi.RunClient` (B3) — fakeable without HTTP.
@@ -440,13 +437,13 @@ handling is not touched (umbrella §2 out-scope).
 
 ### 7.1 Persona wiring & polling mode (`cmd/manual/main.go`, package main — only main wires, D11)
 
-- **Grill r4 (per-persona binaries):** `cmd/manual/main.go` is the manual runner's own
-  `package main` — it links only the manual handler and its deps (no persona
-  registry, no argv[0] switch of a shared binary). The same handler is *also* registered
-  in the `cmd/bbrunner` superset (the opt-in all-in-process / local-dev build that links
-  every handler and both dispatchers, persona by subcommand). Persona bootstrap sets
-  `meshapi.Identity{Name: "manual-block-runner", Version: build.Version-or-VERSION}`
-  (§6.2). No legacy alias names exist (the JVM image had no binary path — §8).
+- `cmd/manual/main.go` is the manual runner's own `package main` — it links only the
+  manual handler and its deps (no persona registry, no argv[0] switch of a shared binary).
+  The same handler is *also* registered in the `cmd/bbrunner` superset (the opt-in
+  all-in-process / local-dev build that links every handler and both dispatchers, persona
+  by subcommand). Persona bootstrap sets `meshapi.Identity{Name: "manual-block-runner",
+  Version: build.Version-or-VERSION}` (§6.2). No legacy alias names exist (the JVM image
+  had no binary path — §8).
 - Polling wiring: `dispatch.NewLoop(LoopConfig{PollInterval: 10s, ClaimBackoff: 0,
   MaxConcurrent: cfg.MaxConcurrentRuns /* default 1 */}, …)` +
   `dispatch.NewInProcess(map[…]{meshapi.RunnerTypeManual: handler})`, wake from
@@ -505,8 +502,7 @@ then retries only runs meshStack never heard about (plan 05 §16.3).
 
 The template all of 06B–D copy (umbrella §5.6):
 
-- **Grill r4 (per-persona binaries):** New per-persona
-  `containers/manual-block-runner/Dockerfile` building only the manual binary
+- New per-persona `containers/manual-block-runner/Dockerfile` building only the manual binary
   (`go build ./runner/cmd/manual`): `alpine:3.22.4` (same digest pin as the other runner
   images), `apk add ca-certificates bash` only (HTTP-only runner — no git/tofu/nix),
   meshcloud uid 2000, the fit binary at `/app/manual-block-runner` (its own binary — no
@@ -516,9 +512,9 @@ The template all of 06B–D copy (umbrella §5.6):
   `ENTRYPOINT ["/app/entrypoint.sh", "/app/manual-block-runner"]` (the Go entrypoint's
   CA-import + `exec "$@"` runs the persona binary directly — no argv[0] multiplexing,
   plan 04 §4.4).
-- `containers/manual-block-runner/runner-config.yml`: **RULED (grill r2):** this is a
-  **per-impl** config file that **deep-merges over** a shared top-level base
-  `runner-config.yml` (base < per-impl < env) — the template layering the other three
+- `containers/manual-block-runner/runner-config.yml`: a **per-impl** config file that
+  **deep-merges over** a shared top-level base `runner-config.yml` (base < per-impl < env)
+  — the template layering the other three
   ports reuse (umbrella §5.4/§10.5). It is effect-equivalent to the Kotlin classpath
   defaults (§2.6) in Go-native flat keys — uuid `d943b032-…`, api url
   `http://localhost:8301`, `bb-api`/`guest`, `debugMode: false` — with comments naming
@@ -527,8 +523,8 @@ The template all of 06B–D copy (umbrella §5.6):
 - Published name/tags unchanged: `ghcr.io/meshcloud/manual-block-runner:main` + release
   tags. Deployed controller configs keep working because the image honors their baked
   `SPRING_PROFILES_ACTIVE: kubernetes` (§6.3, umbrella A12).
-- **Grill r4 (per-persona binaries):** CI flip **in the same PR as the module removal**
-  (§12): `ci.yml` — drop the `manual-block-runner` entries from `jvm-runners-ci`
+- CI flip **in the same PR as the module removal** (§12): `ci.yml` — drop the
+  `manual-block-runner` entries from `jvm-runners-ci`
   (`ci.yml:30-31`) and `jvm-runners-image` (`:66-67`), add a `manual-block-runner` leg to
   the `go-runners-image` matrix (`file: containers/manual-block-runner/Dockerfile`) plus a
   `./runner/cmd/manual` leg to the go build matrix; `build-images.yml:32-34` — the manual
@@ -553,7 +549,7 @@ green until step 9. Gradle CI stays green until the removal step (umbrella §5.1
 | 2 | **Wire seam.** `meshapi.SourceUpdateDTO`/`StepUpdateDTO` + the unified `report.Reporter` (§4.3) + the link-based run-scoped client construction (`{sourceId}` substitution, missing-placeholder error). | `internal/meshapi`, `internal/report` | new transcript tests = Go twins of C-P3–C-P7 (fake transport); both packages stay ≥90 |
 | 3 | **Config compat helpers.** `config.SingleRunMode` (§6.3), `config.BlockRunnerCompat` + normalization (§6.4), `config.ResolvePrivateKey` (§6.5). | `internal/config` | table-driven tests: profile-list membership, precedence per §6.4, the full Kotlin key-resolution order incl. missing-file→inline fallback; `config` ≥90 |
 | 4 | **Handler.** `internal/manual`: `Config`, `NewHandler`, echo path incl. `toOutputType` + last-wins + number fidelity, debug path (Clock/Rand injected). | `internal/manual` | Go scenario suite (§10.1): run JSON in → fake meshStack transcript out, matching the Kotlin pins; unit tests for the mapping table |
-| 5 | **Persona wiring, polling (Grill r4 — per-persona binaries).** `cmd/manual/main.go` + register the manual handler in the `cmd/bbrunner` superset; ClaimClassifier (§7.1); mgmt on 8104 + metrics; loop wiring. | `runner/cmd/manual/main.go`, `runner/cmd/bbrunner/main.go` | loop-wiring scenario: claim 200→register→update→immediate re-claim→404; classifier table tests; `cmd/bbrunner` subcommand-dispatch test row; alias-precedence test (`MANAGEMENT_PORT`>`PORT`>8104) |
+| 5 | **Persona wiring, polling.** `cmd/manual/main.go` + register the manual handler in the `cmd/bbrunner` superset; ClaimClassifier (§7.1); mgmt on 8104 + metrics; loop wiring. | `runner/cmd/manual/main.go`, `runner/cmd/bbrunner/main.go` | loop-wiring scenario: claim 200→register→update→immediate re-claim→404; classifier table tests; `cmd/bbrunner` subcommand-dispatch test row; alias-precedence test (`MANAGEMENT_PORT`>`PORT`>8104) |
 | 6 | **Single-run mode.** `SingleRunMode` activation, file source, R12 exit tail. | `cmd/manual/main.go` (+ small `manual` glue) | single-run scenario: the `ManualRunnerKubernetesStartupScenario` fixture JSON (§3.1) driven through the persona path produces the pinned register/update wire; exit-condition tests for M-P6/M-P7 twins (§10.1) |
 | 7 | **Gate + tooling.** `thresholds.txt` gains `runner/internal/manual 90` (no exclusions); depguard: `manual` may import `dispatch`/`meshapi`/`report`/`config` + stdlib only, nothing imports `manual` but main. | `tools/coverage/*`, `.golangci.yml` | induced-failure check on the new line; `task coverage` green |
 | 8 | **Image.** `containers/manual-block-runner/Dockerfile` + `containers/manual-block-runner/runner-config.yml` (§8). | containers/ | `docker build -f containers/manual-block-runner/Dockerfile` + container smoke: healthz `OK` on 8080, boots to claim loop against a stub |
@@ -753,8 +749,7 @@ Findings the umbrella / prior plans did not anticipate, plus judgment calls for 
    B–D copy.
 10. **M-P7 exit-code delta** (§7.3): the one place a pinned Kotlin behavior is
     deliberately not preserved — umbrella §7.9/§10.3 sanction it; the pin documents
-    the baseline. **RULED (grill r2):** confirmed — fix in phase 6; the old exit-0
-    behavior stays pinned (M-P7 is the pin) for audit.
+    the baseline. Fixed in phase 6; the old exit-0 behavior stays pinned (M-P7) for audit.
 
 **Open questions:** none — every decision branch was walked and resolved from the
 sources; the reviewer-vetoable judgment calls are flags 5, 6, 8, 10 above and the

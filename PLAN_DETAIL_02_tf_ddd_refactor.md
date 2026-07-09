@@ -238,7 +238,7 @@ phase-4 move into the `runner` module is a mechanical `git mv` + import-path rew
 | tf domain + application engine + ports + meshapi/config adapters | `tf-block-runner/internal/tf` (package `tf`) | `runner/internal/tf` |
 | git source acquisition (GitSource, auth, go-git/exec adapter) | `tf-block-runner/internal/gitsource` | `runner/internal/gitsource` |
 | terraform/tofu binary install + tfexec + mock facade | `tf-block-runner/internal/tofu` | `runner/internal/tofu` |
-| entrypoint | `tf-block-runner/main.go` (unchanged location — keeps meshfed-release `go run .` working, D10) | `runner/cmd/tf/main.go` (per-persona binary, D2 grill r4) + the `cmd/bbrunner` superset |
+| entrypoint | `tf-block-runner/main.go` (unchanged location — keeps meshfed-release `go run .` working, D10) | `runner/cmd/tf/main.go` (per-persona binary, D2) + the `cmd/bbrunner` superset |
 | reporting facility seed (`progress`, `runLog`) | files inside `internal/tf` | extracted to `runner/internal/report` in **phase 3** (D4: runner-agnostic) |
 | config loading | file inside `internal/tf` (tf-specific keys) | generalized into `runner/internal/config` in **phase 3** (D7) |
 | meshapi client, crypto | `go-meshapi-client` module, unchanged | `runner/internal/meshapi`, `internal/crypto` (phase 3/4) |
@@ -345,12 +345,12 @@ type StatusReporter interface {
     Register(RunStatus) error
     Report(RunStatus) (abort bool, err error)
 }
-// **Grill r3 (RunHandler purity):** this is the tf-side view of the shared `report.Reporter`
-// (same signature: Register(RunStatus) error; Report(RunStatus) (abort, err)). In phase 2 its
-// wire send stays a FULL snapshot (behavior-preserving — no HTTP transcript change; the
-// phase-1 pins are untouched). The reduction to lean changed-steps-only diffs is deferred to
-// phase 3 (plan 03), where it is a flagged, backend-result-identical wire change (endpoint
-// upserts steps by id) and only the tf transcript pins move.
+// This is the tf-side view of the shared `report.Reporter` (same signature:
+// Register(RunStatus) error; Report(RunStatus) (abort, err)). In phase 2 its wire send stays
+// a FULL snapshot (behavior-preserving — no HTTP transcript change; the phase-1 pins are
+// untouched). The reduction to lean changed-steps-only diffs is deferred to phase 3 (plan 03),
+// where it is a flagged, backend-result-identical wire change (endpoint upserts steps by id)
+// and only the tf transcript pins move.
 
 // ArtifactSource streams a predecessor plan artifact (runapi.go:51-53); consumed only by
 // the APPLY saved-plan step.
@@ -373,7 +373,8 @@ type TfProvider interface {
 // TfFacade moves unchanged (tffacade.go:15-31) — it is already the consumer-side seam;
 // tofu's concrete types (*tfexec.Terraform, *MockedTfFacade) satisfy it structurally.
 //
-// PR#51 review refinement (validate when the seams are cut, STOP if it fights the pins):
+// Design refinement to weigh against churn (validate when the seams are cut, STOP if it
+// fights the pins), not a mandate to rewrite the pinned seam in one step:
 //   - git side: the gitsource package should center on a cohesive `git.LocalRepo` value
 //     type (package `gitsource`/`git`) whose repo path is a field and whose repo-management
 //     operations are methods on it — clone/checkout and e.g. WalkFiles(callback) for the
@@ -382,9 +383,7 @@ type TfProvider interface {
 //   - tf side: challenge "TfFacade moves unchanged" — the tf domain's vocabulary is
 //     Init/Plan/Apply/Destroy; prefer the domain owning those operations (the step table
 //     already names them) over threading a generic tfexec handle through call sites. Keep
-//     the facade only as the thin adapter over `*tfexec.Terraform`. This is a design
-//     refinement to weigh against churn, not a mandate to rewrite the pinned seam in one
-//     step.
+//     the facade only as the thin adapter over `*tfexec.Terraform`.
 
 // Source materializes run sources into the working dir; kills the setLog late-mutation
 // (gitsource.go:28-31) by passing the log sink as a parameter (P3/P4).
@@ -461,16 +460,13 @@ unrepresentable**. Likewise the manager's `shutdownCalled` becomes `atomic.Bool`
    which fails on the old code and passes on the new — the verification exists, it just
    lives one PR later because A7 keeps `-race` off until the inventory PR.
 
+This structural elimination of B6/B10 is the **only** sanctioned in-phase-2 behavior
+change — all other inventory bugs wait for 2b.
+
 **STOP-D (for review):** this exception is called out in the phase-2 PR description; if
 review rejects it, the fallback is mechanical (keep the shallow-copy publication and the
 bare bool behind the same tracker API, flip both in 2b) — isolated to two types, no
 sequence change.
-
-**RULED (grill r2):** GRANTED. B6 (mutable `progress` struct) and B10 (abort flag) are
-fixed structurally here in phase 2 (mutex-snapshot + `atomic.Bool`), **not** carried
-verbatim to 2b. `go test -race` turns ON in phase 2 and stays on; 2b's ledger merely records
-the `-race` flip as verification. This is the **only** sanctioned in-phase-2 behavior change
-— all other inventory bugs still wait for 2b.
 
 **All other inventory bugs are preserved verbatim in phase 2** (with their
 `// FIXME(bug):` comments moved alongside the code):
@@ -553,8 +549,8 @@ keeps every intermediate diff reviewable and the gate arithmetic stable.
 duplicated worker halves both numerator and denominator — projected net-positive since
 the duplicate was fully covered by then).
 
-**RULED (grill r2) — phase-2 runtime smokes (added to the step-12 exit criteria):** two
-manual runtime smokes are now **required** before the phase-2 PR merges:
+**Phase-2 runtime smokes (step-12 exit criteria):** two manual runtime smokes are required
+before the phase-2 PR merges:
 1. a local-dev-stack acceptance run in **polling mode** (per plan 00 §6 step 9);
 2. a **single-run** smoke — run the binary with `EXECUTION_MODE=single-run` +
    `RUN_JSON_FILE_PATH` pointing at a fixture run JSON, and confirm it executes and reports.
@@ -583,7 +579,7 @@ fixes cluster by area. "Moot" = structurally eliminated in phase 2.
 | R9 | B13 (init hint missing for APPLY) | hint for all three behaviors (delete the phase-2 parametrization) | flip the CP6 asymmetry pin: APPLY logs `HINT_INIT_FAILED` too | low (message-only) |
 | R10 | B9 (`*g.path` nil deref) | guard the nil in the log statement | new unit test in `gitsource` (was inventory-only) | none |
 | R11 | B8 (`context.Background()` in tofu download) | pass the caller's ctx | none required (gate-excluded file); optional opt-in e2e note | none |
-| R12 | B11 (single-run failure exits 0) | exit non-zero **only when no terminal status was successfully reported** (init-class failures); keep exit 0 after a reported FAILED | new `main`-adjacent test where feasible; otherwise documented decision + acceptance-suite check | **high-care**: the controller's Job template uses `BackoffLimit: 1` + `RestartPolicy: Never` (`run-controller/controller/kubernetes.go:135,151`), so a blanket non-zero exit would make k8s **re-run a failed terraform run once** — double execution. The conditional fix avoids that; the full solution (BackoffLimit alignment) is a controller change → phase 5 note. **STOP-for-review** on the exact condition before implementing. **RULED (grill r2):** narrow scope confirmed — the single-run pod exits **non-zero ONLY for failures BEFORE the first potentially state-mutating step** (workdir setup / run-JSON parse / registration — i.e. before `tofu init`/`apply` begins). Once a run has begun applying it keeps **exit 0** even if the final terminal-status PATCH fails (today's hung-run behavior): re-triggering stateful terraform is a user action, never an automatic k8s Job re-run. The meshapi client has retry/backoff, so a lost final PATCH is unlikely in practice. This **narrows** the broader "no terminal status reported" framing in `PLAN_DETAIL_05` §16.3 — a failed final PATCH on an already-applying run does **not** force non-zero exit. |
+| R12 | B11 (single-run failure exits 0) | exit non-zero **only for failures before the first potentially state-mutating step** (workdir setup / run-JSON parse / registration — before `tofu init`/`apply` begins); once a run has begun applying, keep **exit 0** even if the final terminal-status PATCH fails (today's hung-run behavior) | new `main`-adjacent test where feasible; otherwise documented decision + acceptance-suite check | **high-care**: the controller's Job template uses `BackoffLimit: 1` + `RestartPolicy: Never` (`run-controller/controller/kubernetes.go:135,151`), so a blanket non-zero exit would make k8s **re-run a failed terraform run once** — double execution. The scoped condition avoids that: re-triggering stateful terraform is a user action, never an automatic k8s Job re-run, and the meshapi client's retry/backoff makes a lost final PATCH unlikely. The full solution (BackoffLimit alignment) is a controller change → phase 5 note. This is narrower than the "no terminal status reported" framing in `PLAN_DETAIL_05` §16.3 — a failed final PATCH on an already-applying run does **not** force non-zero exit. |
 | R13 | Cleanup | delete the remaining behavioral `.golangci.yml` `tfrun`-successor exclusions (errcheck-class production pins, plan 00 §5.3 category 2) fixing each site; remove all `FIXME(bug)` markers; confirm `grep -c "FIXME(bug)"` = 0 | lint green with the block gone | low; each errcheck fix is reviewed as its own hunk |
 
 Exit: inventory empty, `-race` on, no `FIXME(bug)` markers (D13/phase-2b exit criteria).
@@ -652,19 +648,15 @@ commit; `go.work` keeps the modules in lock-step, and no published tag of
    justification (§3.1 item 3) — phase 3's plan must pick it up.
 5. **The D13 exception for data races** (B6/B10, §5.5) is new policy this plan adds:
    "pin everything" cannot pin a race, and "preserve behavior" cannot preserve undefined
-   behavior. Needs explicit reviewer sign-off (STOP-D).
-   **RULED (grill r2):** GRANTED — B6/B10 are fixed structurally in phase 2 (the only
-   sanctioned in-phase-2 behavior change); `-race` flips on in phase 2 and 2b just records
-   the verification. See §5.5.
+   behavior. B6/B10 are fixed structurally in phase 2 (the only sanctioned in-phase-2
+   behavior change), called out in the PR (STOP-D). See §5.5.
 6. **The timeout-message quirk** (`tfcmd.go:116` prints `TfCommandTimeoutMins` while the
    engine's actual timeout is a separately-plumbed duration) becomes *visible* once
    config is injected — preserved verbatim (the message keeps printing the config value);
    recorded so nobody "fixes" it silently during step 4.
 
-## 12. Open questions (self-grilled)
+## 12. Open questions
 
-All decision branches were walked and resolved from the codebase; the three judgment
-calls that could not be settled unilaterally are encoded as reviewable STOPs rather than
-questions: the B6/B10 structural-fix exception (STOP-D, §5.5), the B11 exit-code
-condition (R12, §7), and the `crypto.Crypto` cross-module deletion (§10). *(empty
-otherwise)*
+None open. Three judgment calls are recorded as reviewable STOPs at their decision sites:
+the B6/B10 structural-fix exception (STOP-D, §5.5), the B11 exit-code condition (R12, §7),
+and the `crypto.Crypto` cross-module deletion (§10).

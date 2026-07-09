@@ -26,7 +26,7 @@ reviewed, then resume.
 
 | # | Assumption | Promised by | Verification step |
 |---|---|---|---|
-| A1 | Phase-4 promise set holds: module `./runner`, no go.work, personas as **per-persona binaries** (**Grill r4 (per-persona binaries):** the fit binaries `runner/cmd/tf/main.go` + the four runner mains (`manual`/`gitlab`/`github`/`azdevops`) — each linking only its persona's deps — plus the `runner/cmd/bbrunner` superset binary that links all handlers + both dispatchers; **no** `runner/main.go` argv[0] multiplexing / persona registry) (**Grill r4 (controller ≡ superset):** there is **no** separate `runner/cmd/controller` binary — `cmd/bbrunner` **is** both the controller and the superset (= the `run-controller` image) and auto-detects its dispatcher at startup (`rest.InClusterConfig()`/`KUBERNETES_SERVICE_HOST` ⇒ k8sjob; else ⇒ InProcess; `RUNNER_DISPATCHER` overrides)); packages `runner/internal/{tf,gitsource,tofu,meshapi,crypto,config,report,mgmt,controller,build}`; task targets `test`/`lint`/`coverage`/`fmt`/`tidy`/`start:*`. | Plan 04 §11 | `git checkout refactor/single-go-binary/phase-4-single-binary && ls runner/internal && task test && task lint && task coverage` |
+| A1 | Phase-4 promise set holds: module `./runner`, no go.work, personas as **per-persona binaries** (the fit binaries `runner/cmd/tf/main.go` + the four runner mains `manual`/`gitlab`/`github`/`azdevops` — each linking only its persona's deps — plus the `runner/cmd/bbrunner` superset binary that links all handlers + both dispatchers; no argv[0] multiplexing / persona registry; no separate `runner/cmd/controller` — `cmd/bbrunner` **is** both the controller and the superset (= the `run-controller` image) and auto-detects its dispatcher at startup (`rest.InClusterConfig()`/`KUBERNETES_SERVICE_HOST` ⇒ k8sjob; else ⇒ InProcess; `RUNNER_DISPATCHER` overrides)); packages `runner/internal/{tf,gitsource,tofu,meshapi,crypto,config,report,mgmt,controller,build}`; task targets `test`/`lint`/`coverage`/`fmt`/`tidy`/`start:*`. | Plan 04 §11 | `git checkout refactor/single-go-binary/phase-4-single-binary && ls runner/internal && task test && task lint && task coverage` |
 | A2 | `runner/internal/controller` is the verbatim post-phase-3 controller code (drain loop `drainRuns`/`availableCapacity`/`processNextRun`/`reportRunFailure`, `JobManager` seam, `KubernetesClient`, de-globaled config/metrics), moved not rewritten, and declared transitional for this phase. | Plan 04 §5 step 1, §10.3 | `git diff --find-renames phase-3..phase-4 -- '**/controller/'` shows moves; read `runner/internal/controller/controller.go` against §3.1 |
 | A3 | Controller wire-characterization tests + k8s Job manifest goldens (fake clientset) exist and are green: claim transcript incl. node-id `run-controller-<uuid>`, registration PUT + v1-preview media type + WIF golden, `StatusUpdateDTO` PATCH shape, Job/Secret/SA goldens incl. `/var/run/secrets/meshstack` mount, `RUN_JSON_FILE_PATH`/`RUNNER_UUID`/`RUNNER_API_URL` env, no `EXECUTION_MODE`, `CountActiveJobs` finished-job filtering. | Plan 03 §6 step 1 | run the controller test files; `grep -rn "golden" runner/internal/controller` |
 | A4 | tf code has the plan-02/03 shape: one `tf.Engine.Execute(ctx, run)`; ports `StatusReporter`(→`report.Reporter`)/`ArtifactSource`/`Decryptor`(shared in `meshapi`)/`TfProvider`/`Source`/`Clock`; `Manager` polling loop with token protocol `work/done/norun/failed/stop/stopped`, delays 10s/60s, `atomic.Bool` shutdown; `handleFetchRunError` semantics verbatim incl. the chunked-transport string match. | Plan 02 §5.3/§5.4, Plan 03 §5.2.5 | `grep -rn "func (e Engine) Execute\|norun\|chunked" runner/internal/tf` |
@@ -215,10 +215,9 @@ constructor-injected deps cannot carry — §4.3 shows the fit runner by runner.
 
 ## 4. Interface designs (illustrative signatures only, P3/P8)
 
-**RULED (grill r2 — slog-native):** the dispatcher packages (`dispatch`, `k8sjob`, and
-the per-run handler loggers) are slog-native (`log/slog`) **from the start** — no
-`*log.Logger` seam and no `slog.NewLogLogger` bridge (consistent with plans 03/04).
-Every logger parameter below is a `*slog.Logger`.
+**slog-native:** the dispatcher packages (`dispatch`, `k8sjob`, and the per-run handler
+loggers) use `log/slog` from the start — no `*log.Logger` seam and no `slog.NewLogLogger`
+bridge (consistent with plans 03/04). Every logger parameter below is a `*slog.Logger`.
 
 ### 4.1 `dispatch.Loop`, `Dispatcher`, `ClaimedRun`
 
@@ -227,13 +226,12 @@ what is generic (ticker, capacity math, claim, type extraction, fail-fast report
 dispatchers own what is backend-specific (routing to a template/handler, decryption
 placement, in-flight tracking).
 
-**PR#51 review refinement (capacity guard is k8s-independent):** this is the shape PR#51
-asks for — the capacity guard is NOT a k8s concept. Capacity math (`MaxConcurrent`,
-available-slot computation, back-to-back claim-until-full) lives on the generic `Loop`;
-each dispatcher only reports its `InFlight()` count. So the `InProcessDispatcher`
-(go-func mode) is capacity-guarded by the same code path as k8s — `maxConcurrentRuns`
-mirrors `maxConcurrentJobs` (§ intro), and a standalone polling runner honors it too. No
-k8s-only capacity logic remains.
+**Capacity guard is k8s-independent.** Capacity math (`MaxConcurrent`, available-slot
+computation, back-to-back claim-until-full) lives on the generic `Loop`; each dispatcher
+only reports its `InFlight()` count. So the `InProcessDispatcher` (go-func mode) is
+capacity-guarded by the same code path as k8s — `maxConcurrentRuns` mirrors
+`maxConcurrentJobs` (§ intro), and a standalone polling runner honors it too. No k8s-only
+capacity logic remains.
 
 ```go
 type RunId string   // typed: cannot be swapped with source ids / uuids (P8)
@@ -306,43 +304,37 @@ type RunHandler interface {
 func NewInProcess(handlers map[meshapi.RunnerImplementationType]RunHandler, log *slog.Logger, m HandlerMetrics) *InProcess
 func (d *InProcess) Dispatch(run ClaimedRun) error // UnhandledTypeError if no handler; increments in-flight *before* spawning (§6)
 func (d *InProcess) InFlight() (int, error)        // never errors; satisfies Dispatcher
-// Grill r4 (per-persona binaries): InProcess + this registry are SHARED internal/dispatch
-// code, not a binary. Which handlers a process can run is fixed at LINK TIME by which
-// handler packages its binary imports: cmd/tf registers its one handler (single type);
-// the cmd/bbrunner SUPERSET links every handler + both dispatchers and is the only build
-// that registers ALL / runs every run type in one process. k8sjob.KubernetesJobDispatcher
-// is likewise shared code. **Grill r4 (controller ≡ superset):** it is linked ONLY by
-// cmd/bbrunner (= the run-controller image, the superset) — the sole binary that pulls in
-// k8s; there is no separate cmd/controller. internal/dispatch.InProcess is linked by
-// every persona binary AND by cmd/bbrunner.
+// InProcess + this registry are SHARED internal/dispatch code, not a binary. Which
+// handlers a process can run is fixed at LINK TIME by which handler packages its binary
+// imports: cmd/tf registers its one handler (single type); the cmd/bbrunner SUPERSET
+// links every handler + both dispatchers and is the only build that registers ALL / runs
+// every run type in one process. k8sjob.KubernetesJobDispatcher is likewise shared code,
+// linked ONLY by cmd/bbrunner (= the run-controller image, the superset) — the sole
+// binary that pulls in k8s. internal/dispatch.InProcess is linked by every persona
+// binary AND by cmd/bbrunner.
 func (d *InProcess) Done() <-chan struct{}         // signaled on each run completion (loop wake)
 func (d *InProcess) Wait()                         // shutdown: drain in-flight within the configurable grace period, then cancel remaining sync-polling runs → ABORTED (§7 H7)
 ```
 
-**PR#51 review refinement (handler purity — no shared/`core` module, clean interfaces):**
-D11 already forbids a `core`/`shared` package; PR#51 sharpens the intent for handlers.
-A `RunHandler` should be as close to *pure domain logic over an injected run context* as
-its runner allows — the framework (loop + dispatcher + reporting facility) owns claim,
-decryption placement, run-token wiring and HTTP; the handler implements only its behavior.
-The **manual** handler is the litmus test: it must be expressible as "copy inputs →
-outputs" against injected ports (a run-scoped reporter, decrypted inputs, `*slog.Logger`)
-with **no direct import of `meshapi`/HTTP or any other shared client package** (logging
-excepted). Concretely: prefer handing the handler an already-run-scoped reporter/output
-sink over having it build its own `meshapi.RunClient`. The tf and async (gitlab/azdevops/
-github) handlers legitimately need more (streaming step logs, external-pipeline calls,
-async handover), so the interface still permits injected clients — but the default is
-minimalism, and 06A must prove the manual handler stays HTTP-free. **Validate this against
-the async-handover fit-check (§4.3) when 06A cuts the template; STOP and revise the port
-set if a run-scoped reporter port cannot cover both manual and async needs.**
+**Handler purity — no shared/`core` module, clean interfaces.** D11 forbids a
+`core`/`shared` package. A `RunHandler` is as close to *pure domain logic over an injected
+run context* as its runner allows — the framework (loop + dispatcher + reporting facility)
+owns claim, decryption placement, run-token wiring and HTTP; the handler implements only
+its behavior. The **manual** handler is the litmus test: it must be expressible as "copy
+inputs → outputs" against injected ports (a run-scoped reporter, decrypted inputs,
+`*slog.Logger`) with **no direct import of `meshapi`/HTTP or any other shared client
+package** (logging excepted) — prefer handing the handler an already-run-scoped
+reporter/output sink over having it build its own `meshapi.RunClient`. The tf and async
+(gitlab/azdevops/github) handlers legitimately need more (streaming step logs,
+external-pipeline calls, async handover), so the interface still permits injected clients,
+but the default is minimalism; 06A must prove the manual handler stays HTTP-free.
 
-**Grill r3 (RunHandler purity):** RESOLVED — and this SETTLES the open "STOP-D fit
-review" question above about whether one reporter port covers manual + async: **it does.**
-The purity boundary: a `RunHandler` MAY read the meshapi client's DTOs
-(`RunDetailsDTO`, inputs, links) and consume its use-case/domain API (potentially a
-wrapper around the tf-provider client one day); purity means it **NEVER assembles its own
-HTTP transport/auth**. The reporter is injected as a **use-case-level port**, not a raw
-client the handler builds — and that port is ONE unified interface consumed by all five
-runners:
+The purity boundary: a `RunHandler` MAY read the meshapi client's DTOs (`RunDetailsDTO`,
+inputs, links) and consume its use-case/domain API (potentially a wrapper around the
+tf-provider client one day); purity means it **NEVER assembles its own HTTP
+transport/auth**. The reporter is injected as a **use-case-level port**, not a raw client
+the handler builds — and that port is ONE unified interface consumed by all five runners
+(covering both manual and async needs):
 
 ```go
 type Reporter interface {
@@ -411,15 +403,13 @@ Plan 04 §10.3 moved the controller verbatim into a transitional package and han
 fate to this phase. Decision: **dissolve into `internal/dispatch` + `internal/k8sjob`**,
 exactly the D11 names — justified per file:
 
-**Grill r4 (per-persona binaries):** the destinations below are **shared `internal/*`
-packages**; the *binaries* that link them are `runner/cmd/<persona>/main.go` (one per
-persona) plus the `runner/cmd/bbrunner` superset. Wherever a row (or a §11 migration step
-— "persona_controller re-wired", "persona_tf.go") says wiring goes to `persona_<name>.go`,
-read `runner/cmd/<persona>/main.go`. **Grill r4 (controller ≡ superset):** `internal/k8sjob`
-(`KubernetesJobDispatcher`) is linked **only** by `cmd/bbrunner` (= the `run-controller`
-image, the superset — there is no separate `cmd/controller`); `internal/dispatch.InProcess`
-by every persona binary and by `cmd/bbrunner`. There is no argv[0]-multiplexed
-`runner/main.go`.
+The destinations below are **shared `internal/*` packages**; the *binaries* that link them
+are `runner/cmd/<persona>/main.go` (one per persona) plus the `runner/cmd/bbrunner`
+superset. Wherever a row (or a §11 migration step — "persona_controller re-wired",
+"persona_tf.go") says wiring goes to `persona_<name>.go`, read
+`runner/cmd/<persona>/main.go`. `internal/k8sjob` (`KubernetesJobDispatcher`) is linked
+**only** by `cmd/bbrunner` (= the `run-controller` image, the superset);
+`internal/dispatch.InProcess` by every persona binary and by `cmd/bbrunner`.
 
 | Today (`internal/controller/…`) | Destination | Why |
 |---|---|---|
@@ -459,7 +449,7 @@ claim-before-dispatch up to it — `controller.go:122-165`).
 | Refetch after completion | none — next tick re-counts (today's behavior, unchanged) | `Done()` wake channel: the loop drains again immediately, reproducing today's `done ⇒ handoutWorkerToken(0)` immediate refetch (`manager.go:93-95`) |
 | No-run cadence | next tick (10s `pollingIntervalSeconds`) | next tick (10s `PollInterval` = heir of `NORUN_WORKER_DELAY`, `manager.go:13-14`) |
 | Claim-error cadence | next tick (10s); non-404 logged + `runsFetchErrors` metric (`runapi.go:51-57`) | 60s `ClaimBackoff` (heir of `FAILED_WORKER_DELAY`); classification per `handleFetchRunError` incl. 409⇒no-run-logged and the chunked-transport quirk (`worker.go:66-91`) — injected `ClaimClassifier`, both policies preserved verbatim |
-| Shutdown | stop claiming; loop exits after current cycle; Jobs continue out-of-process (unchanged) | **RULED (grill r2 — AMENDMENT):** stop claiming; persona main drains a **configurable grace period (default 120s; new additive knob)** via `InProcess.Wait()` — short in-flight runs finish and report their own terminal status; **sync-polling runs still active at grace expiry get their run context cancelled** and MUST report a **terminal** `ABORTED` status (fallback `FAILED`, **never** `SUCCEEDED`) so the coordinator never sees a stale `IN_PROGRESS`; logs flushed during shutdown. This deliberately **diverges** from today's unbounded manager/worker drain: k8s/docker grace periods make a ~30-min poll drain illusory (Kotlin parity — a JVM SIGKILL mid-`Thread.sleep` orphaned the run identically). SIGKILL semantics unchanged |
+| Shutdown | stop claiming; loop exits after current cycle; Jobs continue out-of-process (unchanged) | stop claiming; persona main drains a **configurable grace period (default 120s; new additive knob)** via `InProcess.Wait()` — short in-flight runs finish and report their own terminal status; **sync-polling runs still active at grace expiry get their run context cancelled** and MUST report a **terminal** `ABORTED` status (fallback `FAILED`, **never** `SUCCEEDED`) so the coordinator never sees a stale `IN_PROGRESS`; logs flushed during shutdown. This deliberately **diverges** from today's unbounded manager/worker drain: k8s/docker grace periods make a ~30-min poll drain illusory (Kotlin parity — a JVM SIGKILL mid-`Thread.sleep` orphaned the run identically). SIGKILL semantics unchanged |
 
 **Claim-rate consequence:** with `maxConcurrentRuns = 1` the standalone tf persona claims
 at most one run at a time and refetches immediately after completion — byte-for-byte the
@@ -485,7 +475,7 @@ concurrent scenario tests drive **two+ simultaneous runs end-to-end** through
 | H4 | Status-struct sharing: observer of run A marshaling structs run B mutates | plan 02 §5.5 already made `report.Progress` per-run with deep-copy `Snapshot()` (B10 unrepresentable) — **verify the engine instantiates one `Progress` per `Execute`**, no handler-lifetime status state | `Test_InProcess_ConcurrentRuns_StatusUpdatesDoNotInterleave` — concurrent APPLY+DETECT; every captured PATCH body contains only its own run's id/steps |
 | H5 | Run-token sharing: the single `runApiAuth.runToken` slot (§3.2 finding) races and cross-authenticates concurrent runs | structurally eliminated: claim client carries base auth **only**, each run gets its own `RunClient` with runToken-only auth (§8); `SetRunToken`/`ClearRunToken` deleted | `Test_InProcess_ConcurrentRuns_UseOwnRunTokens` — fake transport asserts every register/PATCH/artifact request of run X carries `Bearer <tokenX>`, claims carry base auth, no request ever mixes |
 | H6 | Claim-loop vs in-flight accounting: loop claims run N+1 while run N's completion decrement is in flight, oversubscribing `maxConcurrentRuns` | increment inside `Dispatch` on the loop goroutine (§6); decrement+wake on completion; capacity re-read per drain iteration is monotone-safe | `Test_Loop_NeverExceedsMaxConcurrentRuns` — slow fake handler, queue of 5 claims, `MaxConcurrent=2`: peak in-flight ≤ 2, 3rd claim only after a completion wake; plus `Test_InProcess_InFlightCountsSynchronously` (Dispatch returns ⇒ `InFlight` already incremented) |
-| H7 | Graceful shutdown vs in-flight runs: process exit while N runs report status | **RULED (grill r2 — AMENDMENT):** `Loop.Stop()` stops claiming; shutdown drains a **configurable grace period (default 120s; new additive knob)** during which `InProcess.Wait()` lets in-flight runs finish. Short in-process handlers drain normally; **sync-polling handlers (which may block up to ~30 min polling an external pipeline) DO get their run context cancelled** at grace expiry — k8s/docker grace periods make a 30-min drain illusory (Kotlin parity: a JVM SIGKILL mid-`Thread.sleep` orphaned the run identically). A cancelled run MUST report a **terminal** status so the coordinator never sees a stale `IN_PROGRESS`: report **`ABORTED`** (added to `report.ExecutionStatus`; meshStack's status source already defines it as terminal), falling back to `FAILED` if the endpoint rejects `ABORTED`, **never `SUCCEEDED`**; logs are cleared/flushed while shutdown is in progress. **VERIFIED (PR#51 follow-up):** the meshfed runner-facing `PATCH …/status/source/{sourceId}` endpoint accepts inbound `ABORTED` and persists it terminal via the coordinator; the accepted transition is `IN_PROGRESS → ABORTED` (a cancelled in-flight run is IN_PROGRESS, so this holds), and an already-aborted run returns `409 {runAborted:true}` which the shutdown reporter treats as success/no-op (same abort channel D9 pins) — so the `FAILED` fallback is belt-and-suspenders, not the expected path. | `Test_Loop_ShutdownWaitsForInFlightRuns` — Stop during 2 in-flight runs: no further claims; short handlers drain and report their own terminal status within the grace period; a long/sync handler still running at grace-period expiry has its context cancelled and reports `ABORTED` (or `FAILED` on endpoint rejection, never `SUCCEEDED`); a `409 {runAborted:true}` on the `ABORTED` PATCH is treated as success; `Wait` returns; loop goroutine exits |
+| H7 | Graceful shutdown vs in-flight runs: process exit while N runs report status | `Loop.Stop()` stops claiming; shutdown drains a **configurable grace period (default 120s; new additive knob)** during which `InProcess.Wait()` lets in-flight runs finish. Short in-process handlers drain normally; **sync-polling handlers (which may block up to ~30 min polling an external pipeline) DO get their run context cancelled** at grace expiry — k8s/docker grace periods make a 30-min drain illusory (Kotlin parity: a JVM SIGKILL mid-`Thread.sleep` orphaned the run identically). A cancelled run MUST report a **terminal** status so the coordinator never sees a stale `IN_PROGRESS`: report **`ABORTED`** (added to `report.ExecutionStatus`; meshStack's status source already defines it as terminal), falling back to `FAILED` if the endpoint rejects `ABORTED`, **never `SUCCEEDED`**; logs are cleared/flushed while shutdown is in progress. The meshfed runner-facing `PATCH …/status/source/{sourceId}` endpoint accepts inbound `ABORTED` and persists it terminal via the coordinator; the accepted transition is `IN_PROGRESS → ABORTED` (a cancelled in-flight run is IN_PROGRESS, so this holds), and an already-aborted run returns `409 {runAborted:true}` which the shutdown reporter treats as success/no-op (same abort channel D9 pins) — so the `FAILED` fallback is belt-and-suspenders, not the expected path. | `Test_Loop_ShutdownWaitsForInFlightRuns` — Stop during 2 in-flight runs: no further claims; short handlers drain and report their own terminal status within the grace period; a long/sync handler still running at grace-period expiry has its context cancelled and reports `ABORTED` (or `FAILED` on endpoint rejection, never `SUCCEEDED`); a `409 {runAborted:true}` on the `ABORTED` PATCH is treated as success; `Wait` returns; loop goroutine exits |
 | H8 | Wake-channel vs ticker vs Stop races in the loop select | single loop goroutine; `Done()` is a buffered/coalescing signal channel; Stop via context/atomic per plan-02 house pattern | `Test_Loop_WakeAndTickerRace` — hammer completions + ticks + Stop under `-race`; loop neither deadlocks nor claims after Stop |
 
 Non-hazards, recorded so nobody "fixes" them: `http.Client`/`meshapi` clients are
@@ -504,7 +494,7 @@ The trust model mirrors the k8s Secret handover as closely as one process can:
 | Decryption | controller decrypts once per run before handover (`controller.go:180`, now inside `k8sjob.Dispatch`) | **per-run decrypt inside the handler goroutine**: the tf handler maps DTO→`Run` with the cert `Decryptor` exactly as the polling worker does today — plaintext exists only in that run's structures and working dir. (High-level phase-5 line "per-run decrypt then runToken-only reporting" ✓; the loop never sees plaintext.) |
 | Run-scoped reporting | Job pod uses runToken-only auth (`main.go:141-143` + `runapi.go:73-75`; no base creds in the pod) | per-run `meshapi.RunClient` constructed with `run.Details.Spec.RunToken` and **no base-auth fallback** — the runner's main credentials are never used for run-scoped register/PATCH/artifact calls (H5 test) |
 | Token lifetime | pod lifetime | run lifetime: the run-scoped client is unreachable after `Execute` returns (garbage-collected); nothing to "clear" — `SetRunToken`/`ClearRunToken` and their single mutable slot are deleted (declared retarget §11.2.4) |
-| Fail-fast reporting (no handler/template) | controller reports with **process credentials** (`reportRunFailure` → `RunApiClient` with config auth) | **RULED (grill r2):** process credentials — the fail-fast FAILED report uses the runner's **process** credentials (controller parity), **not** the claimed run's runToken. Fail-fast happens before any handler owns the run; using that run's token would carve an exception into the "runToken = executing handler only" invariant (risk #5). Identical to the controller pattern (D5) |
+| Fail-fast reporting (no handler/template) | controller reports with **process credentials** (`reportRunFailure` → `RunApiClient` with config auth) | process credentials — the fail-fast FAILED report uses the runner's **process** credentials (controller parity), **not** the claimed run's runToken. Fail-fast happens before any handler owns the run; using that run's token would carve an exception into the "runToken = executing handler only" invariant (risk #5). Identical to the controller pattern (D5) |
 | Plaintext at rest | Secret object (namespace-scoped, owner-ref GC, `kubernetes.go:452-480`) | run working dir (tfvars/backend files), removed on completion (`worker.go:109` semantics preserved); log files likewise per-run |
 | Residual risk | pod isolation | decrypted values of N runs coexist in one address space — the documented, accepted delta vs k8s isolation (high-level risk #5: "as closely as a single process can"); no cross-run references exist by construction (H2–H5) |
 
@@ -541,17 +531,16 @@ actionable message of §10.1 — operators who don't accept that keep/configure 
 capability. The `capability` value never gates claiming or dispatching locally (§4.4);
 it only shapes the registration DTO.
 
-**Grill r4 (per-persona binaries):** "a standalone runner registers `ALL` / one container
-runs every run type in-process" is now specifically the **`cmd/bbrunner` superset** build
-(the only binary that links all handlers). A default per-persona binary (`cmd/tf`) links
-only its own handler, so it can in-process-dispatch only its own type no matter what
-capability its runner object carries — a `cmd/tf` whose runner object was flipped to `ALL`
-fails fast (§10.1) on every non-TERRAFORM claim. Registering `ALL` and actually serving
-all five types in one process requires the superset, not a per-persona binary.
-**Grill r4 (controller ≡ superset):** that superset build IS the `run-controller` image
-and IS the controller — `cmd/bbrunner` links BOTH dispatchers (`KubernetesJobDispatcher` +
-`InProcess`) and auto-detects the in-cluster k8s API at startup (in-cluster ⇒ k8sjob; else
-⇒ InProcess; `RUNNER_DISPATCHER` overrides). There is no separate `cmd/controller`.
+"A standalone runner registers `ALL` / one container runs every run type in-process" is
+specifically the **`cmd/bbrunner` superset** build (the only binary that links all
+handlers). A default per-persona binary (`cmd/tf`) links only its own handler, so it can
+in-process-dispatch only its own type no matter what capability its runner object carries —
+a `cmd/tf` whose runner object was flipped to `ALL` fails fast (§10.1) on every
+non-TERRAFORM claim. Registering `ALL` and serving all five types in one process requires
+the superset. That superset build IS the `run-controller` image and IS the controller —
+`cmd/bbrunner` links BOTH dispatchers (`KubernetesJobDispatcher` + `InProcess`) and
+auto-detects the in-cluster k8s API at startup (in-cluster ⇒ k8sjob; else ⇒ InProcess;
+`RUNNER_DISPATCHER` overrides).
 
 ---
 
@@ -575,15 +564,14 @@ The **message** is dispatcher-authored:
 One error type, two messages: unifying the string would change controller-visible bytes
 (forbidden) or ship the frozen-but-vague text to new users (defeats D5). Flagged §16.4.
 
-**Grill r4 (controller ≡ superset):** D5 fail-fast now also has a **compile-time
-dimension**. A fit per-persona binary literally **cannot** dispatch a type whose handler it
-did not link, so the runtime unhandled-type path is reachable only in a binary that
-registered a capability it can serve none/only-some of — i.e. the `cmd/bbrunner` superset
-(= the `run-controller` image; it may register `ALL`, or a k8s template it lacks a
-handler/template for). The runtime fail-fast (claim → register → `FAILED` with **process**
-credentials) applies to `cmd/bbrunner`; the compile-time dimension is what covers the fit
-binaries (`cmd/tf` + the four runner mains). The `ALL` capability is meaningful only for a
-binary that links all handlers (the superset).
+D5 fail-fast also has a **compile-time dimension**. A fit per-persona binary literally
+cannot dispatch a type whose handler it did not link, so the runtime unhandled-type path
+is reachable only in a binary that registered a capability it can serve none/only-some of
+— i.e. the `cmd/bbrunner` superset (= the `run-controller` image; it may register `ALL`,
+or a k8s template it lacks a handler/template for). The runtime fail-fast (claim →
+register → `FAILED` with **process** credentials) applies to `cmd/bbrunner`; the
+compile-time dimension covers the fit binaries (`cmd/tf` + the four runner mains). The
+`ALL` capability is meaningful only for a binary that links all handlers (the superset).
 
 ### 10.2 Full loop taxonomy (behavior column is normative)
 
@@ -788,8 +776,8 @@ No cross-repo edits exist to co-revert (§15).
 5. **The tf claim node-id `<uuid>-worker-1` is vestigial** once workers die, but it is
    an observable frozen header (D9) — kept as a constant `NodeId`, documented as
    historical.
-6. **RULED (grill r2): fail-fast reporting uses process credentials** on both personas
-   (controller parity). Even though the claimed run's token is available in the DTO, it
+6. **Fail-fast reporting uses process credentials** on both personas (controller parity).
+   Even though the claimed run's token is available in the DTO, it
    is **not** used: fail-fast fires before any handler owns the run, so using that token
    would carve an exception into the "runToken = executing handler only" invariant
    (risk #5). Process-cred parity with the controller is confirmed.
@@ -837,7 +825,7 @@ No cross-repo edits exist to co-revert (§15).
 
 ---
 
-## 18. Open questions (self-grilled)
+## 18. Open questions
 
 All decision branches were walked and resolved from the codebase; the judgment calls a
 reviewer may veto are encoded as flags/STOPs, not questions: mixed-dispatch deferral

@@ -33,7 +33,7 @@ reviewed, then resume.
 | A6 | `.golangci.yml` still carries the **temporary `controller` and `meshapi` exclusion blocks** whose removal plan 00 assigned to phase 3 (errcheck-class production pins: `meshapi/client.go`×4, `meshapi/auth.go`×1, controller errcheck×2 / staticcheck×3 / unparam×1). | Plan 00 §5.3, §12 | Read `.golangci.yml` exclusion comments; confirm the removal-owner notes name phase 3. |
 | A7 | `run-controller/` production code is untouched since `main` except plan-00 category-1 lint fixes (comments/format/mechanical). No behavior drift to re-research. | Plans 00–02 scope | `git diff main..refactor/single-go-binary/phase-2b-bugfixes -- run-controller/ ':!*_test.go'` — only inert hunks. |
 | A8 | `go-meshapi-client` is tested in CI (`go-runners-ci` matrix leg), per plan 00 §11.1's flagged recommendation. | Plan 00 §5.5 | grep `go-meshapi-client` in `.github/workflows/ci.yml`. **If the reviewer rejected that leg**, phase 3 adds it here — a shared-core module cannot stay CI-untested once it gates (STOP only if review again refuses). |
-| A9 | Phase-1 pin tests exist in `go-meshapi-client/meshapi/client_test.go` beyond today's two `TestDownloadArtifact_*` (at minimum the 128MiB-cap pin, plan 01 CP4). (Correction: plan 01's cited `TestRegister_409Conflict_ReturnsNil` exists on `main` in `tf-block-runner/tfrun/runapi_status_test.go:83` — the citation is correct; see Open questions item 8.) | Plan 01 CP4/§5 | `grep -n "func Test" go-meshapi-client/meshapi/client_test.go` |
+| A9 | Phase-1 pin tests exist in `go-meshapi-client/meshapi/client_test.go` beyond today's two `TestDownloadArtifact_*` (at minimum the 128MiB-cap pin, plan 01 CP4). (`TestRegister_409Conflict_ReturnsNil` lives in `tf-block-runner/tfrun/runapi_status_test.go:83`, not here — see flag §12.8.) | Plan 01 CP4/§5 | `grep -n "func Test" go-meshapi-client/meshapi/client_test.go` |
 | A10 | Bug fixes from 2b are in (no `FIXME(bug)` markers); in particular B12 (`ExecutionStatus.str` no longer panics the process via `Behavior`; stringers are move-safe) and B10/B6 (value-typed `Steps []StepStatus`, snapshot-under-lock) — the shapes this phase relocates. | Plan 02 §7 | `grep -rc "FIXME(bug)" tf-block-runner/ \| grep -v ':0'` (empty). |
 
 **STOP-A (before any coding):** any of A1–A10 materially false ⇒ update this plan first.
@@ -89,7 +89,7 @@ the retry policy is then wrong; replan the policy, do not weaken the pin.
 - Capability-config registration API, claim-and-fail-fast → **phase 5** (D5).
 - Any DTO unification of the two PATCH body shapes (`StatusUpdateDTO` vs
   `RunStatusUpdateDTO`) — both are frozen wire shapes (§8).
-- Module consolidation, `runner/` module, per-persona `cmd/<persona>` mains + `cmd/bbrunner` superset (D2 grill r4) → **phase 4**.
+- Module consolidation, `runner/` module, per-persona `cmd/<persona>` mains + `cmd/bbrunner` superset (D2) → **phase 4**.
 - k8s dispatch restructuring (`kubernetes.go` stays a monolithic adapter; only its
   `AppConfig` reads become parameters) → **phase 5** (`KubernetesJobDispatcher`).
 - Cross-repo SDK extraction (explicitly out per high-level §8).
@@ -202,12 +202,10 @@ tests + acceptance checks, §6/§9); shared packages join the D6 gate at ≥90.
 
 ## 5. Target design
 
-**RULED (grill r2 — slog-native):** the shared-core packages (`meshapi`, `crypto`,
-`config`, `report`) are authored slog-native (`log/slog`) **from the start**. There is
-**no** `*log.Logger` seam and **no** `slog.NewLogLogger` bridge for shared core; every
-logger parameter below is a `*slog.Logger`. The whole-repo two-logging-style interim and
-the standalone phase-7 logging migration are dropped — only the `tf`/`tfrun` package
-still migrates to slog in phase 7 (its phase-1/2 pins predate this ruling).
+**Logging (slog-native):** the shared-core packages (`meshapi`, `crypto`, `config`,
+`report`) are authored slog-native (`log/slog`) from the start: no `*log.Logger` seam, no
+`slog.NewLogLogger` bridge; every logger parameter below is a `*slog.Logger`. The
+`tf`/`tfrun` package migrates to slog in phase 7 (its phase-1/2 pins predate this).
 
 ### 5.1 Module decision: shared packages live in `go-meshapi-client` during this phase
 
@@ -356,12 +354,11 @@ Persona config **structs stay in their persona packages** (`internal/tf` keeps i
 `controller` keeps `ControllerConfig` incl. the file-only `implementations` map — D7).
 The shared package owns the mechanics and the genuinely shared sections.
 
-**RULED (grill r2 — config deep-merge):** the loader deep-merges **two** YAML file
-layers — a shared top-level base `runner-config.yml` (common keys) overlaid by an
-optional per-impl/per-persona `runner-config.yml` (overrides) — instead of reading a
-single file. Effective precedence: **compiled-in defaults < base YAML < per-impl YAML <
-env**. The merge is key-wise: a key present in the per-impl layer wins over the base;
-absent keys inherit the base value.
+**Config deep-merge:** the loader deep-merges **two** YAML file layers — a shared
+top-level base `runner-config.yml` (common keys) overlaid by an optional
+per-impl/per-persona `runner-config.yml` (overrides). Effective precedence: **compiled-in
+defaults < base YAML < per-impl YAML < env**. The merge is key-wise: a key present in the
+per-impl layer wins over the base; absent keys inherit the base value.
 
 ```go
 // Path resolves a config file path: primary env var RUNNER_CONFIG_FILE, then
@@ -425,13 +422,13 @@ second consumer is named (P3):
 
 ```go
 type ExecutionStatus int // PENDING, IN_PROGRESS, SUCCEEDED, FAILED, ABORTED — moved as-is
-// ABORTED (terminal): added per the grill-r2 D9 graceful-shutdown ruling / plan-05 H7
-// amendment — reported when an in-flight run is cancelled on shutdown so the coordinator
-// never sees a stale IN_PROGRESS. VERIFIED against meshfed-release (PR#51 follow-up): the
-// runner-facing PATCH .../status/source/{sourceId} endpoint accepts inbound ABORTED and
-// persists it terminal (block-runner-core ExecutionStatus.ABORTED); accepted transition is
-// IN_PROGRESS->ABORTED, and an already-aborted run returns 409 {runAborted:true} (treat as
-// success). The tf runner never emitted ABORTED before.
+// ABORTED (terminal): reported when an in-flight run is cancelled on shutdown so the
+// coordinator never sees a stale IN_PROGRESS (D9 graceful-shutdown, plan-05 H7). Verified
+// against meshfed-release: the runner-facing PATCH .../status/source/{sourceId} endpoint
+// accepts inbound ABORTED and persists it terminal (block-runner-core
+// ExecutionStatus.ABORTED); accepted transition is IN_PROGRESS->ABORTED, and an
+// already-aborted run returns 409 {runAborted:true} (treat as success). The tf runner never
+// emitted ABORTED before.
 type RunStatus struct {
     RunId            string
     Status           ExecutionStatus
@@ -463,7 +460,7 @@ func NewRunLog(logger *slog.Logger, path string) *RunLog
 // here. The tf meshapi adapter, the phase-6 handlers, and phase-5's dispatcher all
 // implement/consume this SAME interface: there is no separate "event-driven" reporter
 // for the ports — they use this Reporter, simply passing changed steps and discarding
-// the abort return (Grill r3 below).
+// the abort return (see the Reporter rules below).
 type Reporter interface {
     Register(RunStatus) error
     Report(RunStatus) (abort bool, err error)
@@ -484,15 +481,7 @@ func (o Observer) Run(ctx context.Context, cancel context.CancelFunc, p *Progres
 func ToStatusUpdate(s RunStatus, source string, t meshapi.RunType) (meshapi.RunStatusUpdateDTO, error)
 ```
 
-**Grill r3 (RunHandler purity):** there is exactly ONE unified `Reporter`, consumed by
-all five runners:
-
-```go
-type Reporter interface {
-    Register(RunStatus) error
-    Report(RunStatus) (abort bool, err error)
-}
-```
+**Unified `Reporter`** — one interface (declared above), consumed by all five runners:
 
 - `Report(RunStatus)` transmits **only the steps present** in `RunStatus.Steps` (the
   changed/new steps since the last send). The meshfed runner-facing status endpoint
@@ -517,7 +506,7 @@ type Reporter interface {
 Second consumers, named from the high-level plan: **phase 6** `manual`/`gitlab`/
 `azdevops`/`github` handlers ("plugged into the engine + reporting facility (async
 handover semantics from D9)", §5 phase 6) need `Progress`+`Reporter`+`ToStatusUpdate`
-(but **no** `Observer` — they call `Report` on state changes per Grill r3); **phase 5**
+(but **no** `Observer` — they call `Report` on state changes); **phase 5**
 `InProcessDispatcher` needs per-run `Progress`/`RunLog` isolation (risk #4). What does **not** move (single consumer, tf): step tables and
 `StepId` constants, `TfOutput` collection (tf maps into `report.Output` at the boundary),
 log-segment *content* rules tied to tf steps, `EP_State`, run-token lifecycle, the
@@ -728,19 +717,16 @@ working against any meshfed throughout (D10) because the wire is frozen.
 7. **Retry must exclude the claim POST and the status PATCH** (§5.2.3) — D3's
    "retry/backoff with 503-riding budget" applied naively would double-claim runs and
    delay abort detection. The policy, not the mechanism, is the real design work.
-8. ~~Plan-01 erratum~~ **Retracted after re-verification:** `TestRegister_409Conflict_ReturnsNil`
-   *does* exist on `main` — in `tf-block-runner/tfrun/runapi_status_test.go:83`, not in
-   `go-meshapi-client/meshapi/client_test.go` where this plan first looked. Plan 01's
-   citation is correct; A9's residual value is verifying what phase 1 adds to the
-   `go-meshapi-client` test files this phase inherits.
+8. **`TestRegister_409Conflict_ReturnsNil` lives in
+   `tf-block-runner/tfrun/runapi_status_test.go:83`** (not in
+   `go-meshapi-client/meshapi/client_test.go`); plan 01's citation is correct. A9 verifies
+   what phase 1 adds to the `go-meshapi-client` test files this phase inherits.
 9. **Metric names are a de-facto public surface** (operator dashboards scrape
    `run_controller_*` on :2112) — frozen here; D12's phase-4 work must treat renames
    like env-var renames (alias/deprecation thinking), which D12 does not currently say.
 
-## 13. Open questions (self-grilled)
+## 13. Open questions
 
-All decision branches were walked and resolved from the codebase; the judgment calls a
-reviewer may veto are encoded as reviewable decisions, not questions: the retry budget
-and whitelist (§5.2.3, STOP-D), the `controller`-not-gated interpretation (§9, flag
-§12.4), the `UseTestClient` deletion (§12.2), and the D12 split (§5.6). *(empty
-otherwise)*
+None open. Reviewable decisions are recorded at their sites: the retry budget and
+whitelist (§5.2.3, STOP-D), the `controller`-not-gated interpretation (§9, flag §12.4),
+the `UseTestClient` deletion (§12.2), and the D12 split (§5.6).

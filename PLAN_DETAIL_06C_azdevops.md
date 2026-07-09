@@ -4,8 +4,7 @@
 `refactor/single-go-binary/phase-6b-gitlab`) · **Delivery:** one single-commit PR ·
 **Binding:** umbrella `PLAN_DETAIL_06_kotlin_ports_umbrella.md` (§5 template contract,
 §7 consistency rules, §8 frozen contracts) + `PLAN_HIGH_LEVEL.md` §3 P1–P8, D5, D6
-(Kotlin corollary), D7, D9, D11 (`internal/azdevops`), D12 (port 8101), D15, D16 —
-authored in parallel with 06B/06D against umbrella + 06A per the umbrella §6 protocol.
+(Kotlin corollary), D7, D9, D11 (`internal/azdevops`), D12 (port 8101), D15, D16.
 
 Kotlin references are `main` @ `c3fce61`; Go references marked *post-N* are shapes
 promised by plan N or template artifacts promised by 06A/06B. This runner carries the
@@ -23,7 +22,7 @@ plus the 06C-specific ones below. Any material failure is a **STOP** per umbrell
 | C1 | The azure-devops module and block-runner-core are byte-identical to `main` @ `c3fce61` (all §2 file:line citations hold). | Plans 00–06B scope (umbrella A10) | `git diff main..phase-6b-gitlab -- azure-devops-block-runner/ block-runner-core/` — empty |
 | C2 | 06A template artifacts exist: the unified `report.Reporter{Register(RunStatus) error; Report(RunStatus) (abort bool, err error)}` (stateless, link-based run-scoped client, `{sourceId}` substitution; handlers call `Report(RunStatus)` with only changed/new steps and **discard the abort return**) marshaling the lean `meshapi.SourceUpdateDTO`/`StepUpdateDTO` PATCH body (both fields `omitempty`) as the wire body, the shared `ClaimClassifier` (404/409/other ⇒ no-run, backoff 0), `config.SingleRunMode`, `config.BlockRunnerCompat` (+`privateKey`/`privateKeyFile` fields), `config.ResolvePrivateKey`, the Dockerfile final-stage pattern, the R12 single-run exit tail, `UseNumber` decode on the claim/file path. | 06A §4.3, §6.3–6.5, §7, §8 | read `runner/internal/{meshapi,report,config}`; run 06A's transcript + alias tests; `grep -rn "UseNumber" runner/internal` |
 | C3 | block-runner-core wire pins C-P1–C-P7 exist and are green (claim/register/update transcripts) — 06C verifies, never re-writes (umbrella §3.3 last row). | 06A §3.3 | `./gradlew :block-runner-core:check`; grep the pin test names |
-| C4 | 06B shipped `ExternalCallError{UserMessage, SystemMessage, StatusCode, RequestUrl, ResponseBody}` (the `MeshHttpException` twin, 06A §4.4: "specified in 06A, implemented in 06B with its first consumer") and `meshapi.DecryptInputs` (input-only decryption: sensitive STRING/CODE/FILE decrypted, other sensitive types logged + left as-is, impl secrets untouched — umbrella §4 row 8). | 06A §4.4/§17; umbrella §4 rows 8+14 | read the 06B-added types in `runner/internal/{meshapi,gitlab-shared location per 06B}`; run their tests. **STOP-C4:** if 06B did not land them (e.g. 06B descoped), 06C ships both to the 06A-specified contracts and flags the ownership move — an umbrella §4 row-8/14 owner correction, reviewed, not a silent fork |
+| C4 | 06B shipped `ExternalCallError{UserMessage, SystemMessage, StatusCode, RequestUrl, ResponseBody}` (the `MeshHttpException` twin, 06A §4.4) and `meshapi.DecryptInputs` (input-only decryption: sensitive STRING/CODE/FILE decrypted, other sensitive types logged + left as-is, impl secrets untouched — umbrella §4 row 8). | 06A §4.4/§17; umbrella §4 rows 8+14 | read the 06B-added types in `runner/internal/{meshapi,gitlab-shared location per 06B}`; run their tests. **STOP-C4:** if 06B did not land them (e.g. 06B descoped), 06C ships both to the 06A-specified contracts and flags the ownership move — an umbrella §4 row-8/14 owner correction, reviewed, not a silent fork |
 | C5 | `meshapi.AzureDevOpsImplementation` models everything the Kotlin service reads: `AzureDevOpsBaseUrl`, `Organization`, `Project`, `PipelineId`, `PersonalAccessToken`, `Async bool`, `RefName *string` (`go-meshapi-client/meshapi/dtos.go:155-164`, moved by plan 04) — cross-checked §2.6. | Plan 03/04 moves | read `runner/internal/meshapi/dtos.go` |
 | C6 | `dispatch.RunHandler`/`ClaimedRun` per plan 05 §4.2 incl. "the handler owns its execution timeout" — the 30-min poll bound lives inside `Execute`, no loop-level timeout exists (reconciliation §4.4). | Plan 05 §4.2/§17 | read `runner/internal/dispatch`; confirm no deadline is imposed on `Execute` by loop or dispatcher |
 | C7 | The Kotlin azdevops suite is green as-is: `./gradlew :azure-devops-block-runner:check` passes on the phase-6b branch (pinning builds on it). | Current `main` CI | run the gradle task once before writing pins |
@@ -345,9 +344,9 @@ func (c adoClient) GetTimeline(ctx, id int64) ([]timelineRecord, error)
   byte-twin of the Jackson NON_NULL shape (frozen wire, umbrella §8). Parameter
   stringification via a package-local `renderValue` (§16.6): decoded with `UseNumber`
   (C2), strings verbatim, `json.Number` literal, bools `true`/`false`, arrays/objects
-  rendered as **compact JSON** (**RULED (grill r2):** composite/exotic values emit JSON,
-  not Kotlin collection-`toString` `[a, b]` / `{k=v}` — a deliberate flagged byte change,
-  see §16.6) — pinned by the A-P4 table.
+  rendered as **compact JSON** (composite/exotic values emit JSON, not Kotlin
+  collection-`toString` `[a, b]` / `{k=v}` — a deliberate flagged byte change, see §16.6)
+  — pinned by the A-P4 table.
 - `PipelineRun`/`Timeline` DTOs are **package-local** (umbrella §10.11): typed string
   states/results (`runState("completed")` etc.) with two rendering helpers — wire value
   and Kotlin-enum-NAME (for the U-P7 final message). Unknown strings are representable
@@ -371,9 +370,9 @@ func (c adoClient) GetTimeline(ctx, id int64) ([]timelineRecord, error)
   `Report(RunStatus)` (abort discarded) as the changed/new steps in `RunStatus.Steps`.
   The `reportedStages map[string]bool` and `lastReportedState` live in the **poll loop**
   (caller-side dedup — exactly the stateless unified-`report.Reporter` altitude 06A §17
-  verified against this runner, the heaviest dedup consumer). **Grill r3 (RunHandler
-  purity):** no Observer/ticker runs; the handler owns dedup and feeds only changed steps
-  into `Report`, the backend upserts by id.
+  verified against this runner, the heaviest dedup consumer). No Observer/ticker runs;
+  the handler owns dedup and feeds only changed steps into `Report`, the backend upserts
+  by id.
 
 ### 4.4 The poller (06C-local design, umbrella §6 "gaps deliberately left to owners")
 
@@ -398,17 +397,15 @@ func (h Handler) pollCompletion(ctx context.Context, c adoClient, rep runReporte
   failed-update attempt (P-P5); if that PATCH also fails, `pollCompletion` returns the
   error and `Execute` propagates it (non-nil = infrastructure, A1) — the Go twin of
   Kotlin's outer-catch + propagation.
-- **ctx cancellation (new, D15). RULED (grill r2 — plan-05 H7 amendment, not a
-  06C-local fork):** `ctx.Done()` during a wait ⇒ the poller reports the in-flight run
-  with a **terminal** status before returning `ctx.Err()` wrapped — it emits `ABORTED`
-  (now added to the Go `ExecutionStatus` enum; meshStack's status source defines
-  `ABORTED` as terminal), falling back to `FAILED` if the endpoint rejects it, **never
-  `SUCCEEDED`**. This supersedes the earlier "no further PATCH / stays IN_PROGRESS"
-  design so the coordinator never sees a stale IN_PROGRESS until its long timeout.
-  Consequence: graceful shutdown (`Loop.Stop` + `InProcess.Wait`) drains a
-  **configurable grace period (default 120s)** and does not wait out a 30-min poll —
-  the run context is cancelled, the terminal report is sent, and clear logs are emitted
-  throughout. Wiring recorded in §7.1; flag 11 resolved (§16.11).
+- **ctx cancellation (new, D15; plan-05 H7 amendment):** `ctx.Done()` during a wait ⇒
+  the poller reports the in-flight run with a **terminal** status before returning
+  `ctx.Err()` wrapped — it emits `ABORTED` (in the Go `ExecutionStatus` enum; meshStack's
+  status source defines `ABORTED` as terminal), falling back to `FAILED` if the endpoint
+  rejects it, **never `SUCCEEDED`**, so the coordinator never sees a stale IN_PROGRESS
+  until its long timeout. Consequence: graceful shutdown (`Loop.Stop` + `InProcess.Wait`)
+  drains a **configurable grace period (default 120s)** and does not wait out a 30-min
+  poll — the run context is cancelled, the terminal report is sent, and clear logs are
+  emitted throughout. Wiring recorded in §7.1; §16.11.
 - **Timeout reconciliation (C6):** A1's "handler owns its timeout" is satisfied by the
   30-min budget being *inside* `Execute`; no `LoopConfig` deadline exists or is added.
   With `maxConcurrentRuns` default 1, a sync poll blocks further claims for up to
@@ -502,11 +499,11 @@ the shipped literals are not carried (umbrella §10.4).
 
 ### 7.1 Wiring & polling mode (`cmd/azdevops/main.go`, package main — only main wires, D11)
 
-**Grill r4 (per-persona binaries):** the azure-devops persona is its own binary
-`./runner/cmd/azdevops/main.go`, linking only its handler + the polling dispatcher; the
-handler is also registered in the `./runner/cmd/bbrunner` superset (all handlers + both
-dispatchers, persona by subcommand — the opt-in all-in-process build, not a default
-published image). No argv[0] multiplexing of a shared binary, no persona registry.
+The azure-devops persona is its own binary `./runner/cmd/azdevops/main.go`, linking only
+its handler + the polling dispatcher; the handler is also registered in the
+`./runner/cmd/bbrunner` superset (all handlers + both dispatchers, persona by subcommand —
+the opt-in all-in-process build, not a default published image). No argv[0] multiplexing
+of a shared binary, no persona registry.
 
 - Identity `meshapi.Identity{Name: "azure-devops-block-runner", Version: …}` (06A §6.2
   rule). The directory name `cmd/azdevops` matches the package/branch token; the
@@ -518,10 +515,9 @@ published image). No argv[0] multiplexing of a shared binary, no persona registr
   §7.12); wake from `Done()`; the shared `ClaimClassifier` (06A §7.1) verbatim.
 - Shutdown: `Loop.Stop()` → cancel the run context → `InProcess.Wait()`, draining a
   **configurable grace period (default 120s)**. The cancel makes a mid-poll sync run
-  return promptly (§4.4 ctx rule) instead of holding shutdown for ≤30 min.
-  **RULED (grill r2):** the cancelled in-flight run is reported with a terminal status
-  (`ABORTED`, fallback `FAILED`, never `SUCCEEDED`) and clear shutdown logs are emitted;
-  this is a **reviewed amendment to plan 05's H7**, not a 06C-local fork (§16.11).
+  return promptly (§4.4 ctx rule) instead of holding shutdown for ≤30 min. The cancelled
+  in-flight run is reported with a terminal status (`ABORTED`, fallback `FAILED`, never
+  `SUCCEEDED`) and clear shutdown logs are emitted (plan-05 H7 amendment, §4.4/§16.11).
 - Decryptor wiring: `crypto.MeshCertBasedCrypto` from `cfg.PrivateKey` (polling);
   node id = plain runner uuid; headers = shared-client set (umbrella §7.7 delta).
 - `mgmt.NewServer` on `config.ManagementPort(log, 8101, PORT-alias)` + `mgmt.RunMetrics`
@@ -540,10 +536,9 @@ R12 exit tail (umbrella §7.9): exit 0 iff a terminal **or handover** status was
 reported — async handover exits 0; sync exits 0 after the final/failure update
 (including the pinned timeout failure); register/PATCH transport failure exits non-zero
 (Kotlin exit-1 parity); pre-report fetch/parse failure exits non-zero (the sanctioned
-K-P2 delta). **RULED (grill r2):** the exit-code tightening is CONFIRMED for phase 6 —
-Go single-run pods exit non-zero on pre-report fetch/parse failures where Kotlin exited 0;
-the old exit-0 swallow stays PINNED (K-P2) for audit. A sync run may hold the Job pod for
-up to 30 min — unchanged from Kotlin.
+K-P2 delta): Go single-run pods exit non-zero on pre-report fetch/parse failures where
+Kotlin exited 0; the old exit-0 swallow stays pinned (K-P2) for audit. A sync run may
+hold the Job pod for up to 30 min — unchanged from Kotlin.
 
 ### 7.3 Modes × behavior summary
 
@@ -560,8 +555,8 @@ up to 30 min — unchanged from Kotlin.
 
 The 06A §8 template stage repeated (umbrella §5.6):
 
-- **Grill r4 (per-persona binaries):** `containers/azure-devops-block-runner/Dockerfile`
-  builds `./runner/cmd/azdevops` as its own image: same alpine digest pin,
+- `containers/azure-devops-block-runner/Dockerfile` builds `./runner/cmd/azdevops` as its
+  own image: same alpine digest pin,
   `ca-certificates bash` only (HTTP-only), uid 2000, the persona binary at
   `/app/azure-devops-block-runner`, `ENV PORT=8080`, `EXPOSE 8080`, **direct entrypoint**
   `ENTRYPOINT ["/app/azure-devops-block-runner"]` (no symlink, no argv[0] `entrypoint.sh`).
@@ -576,11 +571,11 @@ The 06A §8 template stage repeated (umbrella §5.6):
   `SPRING_PROFILES_ACTIVE: kubernetes` (§7.2, umbrella A12).
 - CI flip in the same PR as module removal (§12): `ci.yml` — drop the
   `azure-devops-block-runner` entries from `jvm-runners-ci` (`ci.yml:36-37`) and
-  `jvm-runners-image` (`:72-73`), add the go image leg. **Grill r4 (per-persona
-  binaries):** the leg builds `./runner/cmd/azdevops` via
-  `containers/azure-devops-block-runner/Dockerfile`; `build-images.yml:41-43` — the leg
-  becomes `dockerfile: containers/azure-devops-block-runner/Dockerfile` (no `target:`,
-  drop `runner-module:`), paired with a `go build ./runner/cmd/...` build-matrix leg
+  `jvm-runners-image` (`:72-73`), add the go image leg. The leg builds
+  `./runner/cmd/azdevops` via `containers/azure-devops-block-runner/Dockerfile`;
+  `build-images.yml:41-43` — the leg becomes
+  `dockerfile: containers/azure-devops-block-runner/Dockerfile` (no `target:`, drop
+  `runner-module:`), paired with a `go build ./runner/cmd/...` build-matrix leg
   `./runner/cmd/azdevops`.
 - JVM `command:`-override non-goal restated per 06A §16.9 wording (umbrella §5.6).
 
@@ -596,8 +591,8 @@ until step 8.
 | 1 | **Kotlin pins (tests only).** §3.2: S-P1–6, U-P1–8, P-P1–5, A-P1–6, K-P1–2, F-P1 in `azure-devops-block-runner`; verify C-P1–7 exist (C3). | Kotlin test files only | `./gradlew :azure-devops-block-runner:check` green; `git diff -- ':!*Test*' ':!*Scenario*'` empty; the 2 slow poller tests tagged |
 | 2 | **Mapper + client.** `internal/azdevops`: status-mapping pure functions; `adoClient` + package-local DTOs + `renderValue`; payload struct. | `internal/azdevops` | Go twins of S-P1–6 (tables), A-P4–6 (fake-transport transcripts incl. leak + redirect pins) |
 | 3 | **Handler + poller.** `Config`, `NewHandler`, `Execute` skeleton, failure ladder, update builders, `pollCompletion` (fake clock). | `internal/azdevops` | scenario suite §10.1: async handover, sync happy, timeout, dedup/re-emission, fallback, resilience, PATCH-failure — fake meshStack + fake ADO transcripts matching the pins |
-| 4 | **Persona wiring, polling.** **Grill r4 (per-persona binaries):** `cmd/azdevops/main.go` + register the handler in the `cmd/bbrunner` superset; mgmt on 8101; loop + shutdown-cancel wiring. | `runner/cmd/azdevops/main.go`, `runner/cmd/bbrunner` | loop-wiring scenario (claim→execute→re-drain); `bbrunner azure-devops-block-runner` subcommand-dispatch row; alias test (`MANAGEMENT_PORT`>`PORT`>8101); ctx-cancel shutdown test |
-| 5 | **Single-run mode.** `SingleRunMode` + file source + NoOp decryptor + R12 tail. | **Grill r4 (per-persona binaries):** `runner/cmd/azdevops/main.go` (+ glue) | K-P1 twin (captured wire equal modulo sanctioned deltas); exit-condition tests (K-P2 twin asserting the R12 delta) |
+| 4 | **Persona wiring, polling.** `cmd/azdevops/main.go` + register the handler in the `cmd/bbrunner` superset; mgmt on 8101; loop + shutdown-cancel wiring. | `runner/cmd/azdevops/main.go`, `runner/cmd/bbrunner` | loop-wiring scenario (claim→execute→re-drain); `bbrunner azure-devops-block-runner` subcommand-dispatch row; alias test (`MANAGEMENT_PORT`>`PORT`>8101); ctx-cancel shutdown test |
+| 5 | **Single-run mode.** `SingleRunMode` + file source + NoOp decryptor + R12 tail. | `runner/cmd/azdevops/main.go` (+ glue) | K-P1 twin (captured wire equal modulo sanctioned deltas); exit-condition tests (K-P2 twin asserting the R12 delta) |
 | 6 | **Gate + tooling.** `thresholds.txt` += `runner/internal/azdevops 90` (no exclusions); depguard: `azdevops` imports `dispatch`/`meshapi`/`report`/`config`/`crypto` + stdlib only. | `tools/coverage/*`, `.golangci.yml` | induced-failure check; `task coverage` green |
 | 7 | **Image.** Dockerfile stage + `containers/azure-devops-block-runner/runner-config.yml`. | containers/ | `docker build --target azure-devops-block-runner`; container smoke: healthz on 8080, claim loop against a stub |
 | 8 | **Acceptance gate (§11).** Side-by-side transcripts + manual smoke + outer net. | — | STOP-E; evidence in PR description |
@@ -627,8 +622,8 @@ are K-P2 (umbrella §7.9) and the §4.5 tolerant-parse rows — flagged, not STO
 ### 10.2 New Go-only tests
 
 `renderValue` table (incl. `json.Number` literals + the §16.6 edge documentation),
-ctx-cancel mid-poll, shutdown-cancel wiring, alias precedence, **Grill r4 (per-persona
-binaries):** `bbrunner azure-devops-block-runner` subcommand-dispatch row (superset),
+ctx-cancel mid-poll, shutdown-cancel wiring, alias precedence,
+`bbrunner azure-devops-block-runner` subcommand-dispatch row (superset),
 unknown-state tolerance rows (§4.5), leak test (payload never contains PAT in either
 form — the §7.6 pin).
 
@@ -673,9 +668,9 @@ Umbrella §5.8 recipe instantiated (last commits, after §11):
 2. `settings.gradle`: drop `include 'azure-devops-block-runner'` (`settings.gradle:7`).
 3. `.github/workflows/ci.yml`: drop the `jvm-runners-ci` entry (`:36-37`) and the
    `jvm-runners-image` entry (`:72-73`); add the go image leg (§8).
-4. `.github/workflows/build-images.yml`: **Grill r4 (per-persona binaries):** the leg
-   (`:41-43`) → `dockerfile: containers/azure-devops-block-runner/Dockerfile`, build-matrix
-   leg `./runner/cmd/azdevops` (no `target:`, drop `runner-module:`).
+4. `.github/workflows/build-images.yml`: the leg (`:41-43`) →
+   `dockerfile: containers/azure-devops-block-runner/Dockerfile`, build-matrix leg
+   `./runner/cmd/azdevops` (no `target:`, drop `runner-module:`).
 5. Cross-repo doc-truth check edits if any (§15) ride the lock-step PR.
 6. Grep gate: `grep -rn "azure-devops-block-runner" --exclude-dir=.git` — remaining
    hits must be image/persona *names* (workflows, containers/, run-controller sample,
@@ -717,9 +712,9 @@ rows (§16.9/§16.12); ctx-cancel poll abort (§16.11); explicit HTTP timeouts (
 
 One squash commit ⇒ one `git revert` restores the Kotlin module, its
 `settings.gradle` include, both CI matrix entries and the JVM image leg, and deletes
-`internal/azdevops`, **Grill r4 (per-persona binaries):** `cmd/azdevops/` + its
-`cmd/bbrunner` registration, `containers/azure-devops-block-runner/` (Dockerfile +
-config), the thresholds line and depguard rules.
+`internal/azdevops`, `cmd/azdevops/` + its `cmd/bbrunner` registration,
+`containers/azure-devops-block-runner/` (Dockerfile + config), the thresholds line and
+depguard rules.
 Shared helpers are **not** deleted on revert — unlike 06A's, they have other consumers
 (06B's gitlab port precedes this PR; `report.Reporter`/`SingleRunMode`/compat block stay).
 Image name + wire/k8s contracts frozen (§13) ⇒ `:main` floats back to the JVM build on
@@ -773,10 +768,10 @@ Findings the umbrella / prior plans did not anticipate, plus judgment calls for 
 5. **Mapper else-holes:** `completed+succeededWithIssues` and `completed+null` map to
    IN_PROGRESS (such a stage step never turns terminal); `completed+canceled/abandoned`
    user message renders `"<name>: completed"` (S-P4/S-P5). Pinned as-is per D13
-   discipline; reviewer may commission a post-port fix.
-6. **templateParameters stringification. RULED (grill r2):** for composite/exotic
-   `templateParameters` values (arrays, objects, exotic numeric literals) the Go
-   `renderValue` emits **compact JSON** rather than reproducing Kotlin/Java `toString`
+   discipline; a fix is a post-port follow-up.
+6. **templateParameters stringification:** for composite/exotic `templateParameters`
+   values (arrays, objects, exotic numeric literals) the Go `renderValue` emits
+   **compact JSON** rather than reproducing Kotlin/Java `toString`
    (`[a, b]` / `{k=v}` / Java-style doubles). This is a **deliberate, flagged byte
    change** — recorded in the migration/release notes; the A-P4 pins assert the JSON
    rendering, not the Kotlin `toString` bytes. Plain scalar literals (strings verbatim,
@@ -793,27 +788,25 @@ Findings the umbrella / prior plans did not anticipate, plus judgment calls for 
     `async` (or the impl shape) doesn't parse ⇒ swallowed no-run ⇒ coordinator
     timeout; Go has already claimed and registered when it unmarshals the impl, so it
     reports run FAILED with an actionable message instead (§4.5) — strictly better UX,
-    sanctioned in the §7.9 spirit; reviewer may veto toward… there is no faithful
-    alternative (un-claiming is impossible), the realistic veto is message wording.
+    sanctioned in the §7.9 spirit; the only realistic alternative is message wording
+    (un-claiming is impossible).
 10. **OkHttp's default 10 s connect/read timeouts are load-bearing** for the poll
     budget: Go's zero-value `http.Client` never times out, so the port sets explicit
     equivalents — without them a hung ADO read could stall a "30-min" poll forever
     (§4.2). No prior plan mentions external-HTTP timeout parity.
-11. **ctx cancellation of the poll loop. RULED (grill r2):** the contradiction with
-    plan 05's shutdown ("Wait until in-flight == 0", which assumed short handlers) is
-    resolved **in favor of CANCEL** for sync-polling handlers, as a **reviewed amendment
-    to plan 05's H7** (not a 06C-local fork). On `ctx.Done()` the Go poller no longer
-    leaves the run IN_PROGRESS: it reports a **terminal** status (`ABORTED` — now in the
-    Go `ExecutionStatus` enum, defined terminal by meshStack's status source — falling
-    back to `FAILED` if the endpoint rejects it, **never `SUCCEEDED`**) so the
-    coordinator never waits out its long timeout. Persona graceful shutdown cancels run
-    contexts, drains a **configurable grace period (default 120s)**, and emits clear
-    shutdown logs so `InProcess.Wait()` is not held for ≤30 min (§4.4/§7.1).
+11. **ctx cancellation of the poll loop (plan-05 H7 amendment):** plan 05's shutdown
+    ("Wait until in-flight == 0") assumed short handlers; for sync-polling handlers it is
+    resolved **in favor of CANCEL**. On `ctx.Done()` the Go poller no longer leaves the
+    run IN_PROGRESS: it reports a **terminal** status (`ABORTED` — in the Go
+    `ExecutionStatus` enum, defined terminal by meshStack's status source — falling back
+    to `FAILED` if the endpoint rejects it, **never `SUCCEEDED`**) so the coordinator
+    never waits out its long timeout. Persona graceful shutdown cancels run contexts,
+    drains a **configurable grace period (default 120s)**, and emits clear shutdown logs
+    so `InProcess.Wait()` is not held for ≤30 min (§4.4/§7.1).
 12. **Timeline parse tolerance** (§4.5 row 3): Kotlin degrades to state-only fallback
     when ADO introduces an unknown timeline state/result string; Go keeps emitting
     stage steps via the mapper's else branches. 06A flag-5 precedent (tolerant-parse
-    over invented failure); reviewer may prefer strict-parse-to-fallback for byte
-    equivalence under future ADO API drift.
+    over invented failure).
 13. **Kotlin poller pins need two real-sleep tests** (~10 s each): `Thread.sleep` is
     not injectable and the pinning step is tests-only (§3.2). Accepted cost, tagged
     slow; the Go twins are sleep-free.
@@ -822,6 +815,4 @@ Findings the umbrella / prior plans did not anticipate, plus judgment calls for 
     them, STOP-C4 moves implementation here with an umbrella owner-row correction —
     recorded so parallel authoring of 06B/06C cannot silently double-implement.
 
-**Open questions:** none — every decision branch was walked and resolved from the
-sources; the reviewer-vetoable judgment calls are flags 2, 5, 9, 12 above plus the
-umbrella-level calls they instantiate (§7.4 lean body, §7.9 exit rule, §7.7 headers).
+**Open questions:** none.

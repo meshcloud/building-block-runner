@@ -458,17 +458,23 @@ func (p *Progress) Snapshot() RunStatus
 // RunLog: file-backed live log with size tracking + segment reads (phase-2 shape).
 func NewRunLog(logger *slog.Logger, path string) *RunLog
 
-// Reporter is the status backchannel port (identical to plan 02's StatusReporter —
-// it relocates together with its consumer, the Observer; the tf meshapi adapter and
-// the phase-6 handlers implement it).
+// Reporter is the ONE unified status backchannel port, consumed by ALL five runners
+// (tf plus the four phase-6 ports) — identical to plan 02's StatusReporter, relocated
+// here. The tf meshapi adapter, the phase-6 handlers, and phase-5's dispatcher all
+// implement/consume this SAME interface: there is no separate "event-driven" reporter
+// for the ports — they use this Reporter, simply passing changed steps and discarding
+// the abort return (Grill r3 below).
 type Reporter interface {
     Register(RunStatus) error
     Report(RunStatus) (abort bool, err error)
 }
 
-// Observer runs the status ticker for one run: every Interval, Report(Snapshot());
-// abort response cancels the run context; on completion sends the final update with
-// the async mapping (SUCCEEDED => IN_PROGRESS) and skips it when ctx is cancelled.
+// Observer runs the status ticker for one run — TF-ONLY (the four ports run no Observer).
+// Every Interval it computes the per-send diff (the running step whose log grew, plus any
+// steps that changed status; the fail-not-finished-steps event includes the current step
+// plus all later steps) and Report()s ONLY those changed steps; the abort response cancels
+// the run context; on completion it sends the final update with the async mapping
+// (SUCCEEDED => IN_PROGRESS) and skips it when ctx is cancelled.
 // D9 pins: 10s ticker, abort-cancel, async IN_PROGRESS, no-final-after-cancel.
 type Observer struct { Interval time.Duration; Reporter Reporter; Async bool; Log *slog.Logger }
 func (o Observer) Run(ctx context.Context, cancel context.CancelFunc, p *Progress)
@@ -478,11 +484,41 @@ func (o Observer) Run(ctx context.Context, cancel context.CancelFunc, p *Progres
 func ToStatusUpdate(s RunStatus, source string, t meshapi.RunType) (meshapi.RunStatusUpdateDTO, error)
 ```
 
+**Grill r3 (RunHandler purity):** there is exactly ONE unified `Reporter`, consumed by
+all five runners:
+
+```go
+type Reporter interface {
+    Register(RunStatus) error
+    Report(RunStatus) (abort bool, err error)
+}
+```
+
+- `Report(RunStatus)` transmits **only the steps present** in `RunStatus.Steps` (the
+  changed/new steps since the last send). The meshfed runner-facing status endpoint
+  **UPSERTS steps by id** (verified: `BlockRunSourceUpdateService` merges by id, never
+  replaces the collection), so sending a subset is safe — it is exactly how the ported
+  runners already report (ado `ado-stage-*`, github `gh-workflow-job-*`).
+- Messages are **cumulative-replace**: each step included in a `Report` carries its FULL
+  current message text, and the backend overwrites `step.userMessage`/`systemMessage` by
+  **assignment (not append)**. So a diff never sends incremental log chunks — it sends the
+  changed step(s) with full current message. (Switching to append-deltas would require a
+  coordinated backend change and is explicitly out of scope.)
+- **tf is the only consumer of the `Progress`+`Observer` 10s ticker:** the Observer
+  computes the per-send diff (§5.4 above) and honors the returned `abort` flag. The four
+  ported runners run **no Observer** — they call `Report` on state changes only, own their
+  dedup, and **discard** the abort return.
+- **Phase-3 sequencing:** the unified interface lands in this phase (§6 step 9). tf is
+  reduced from full-snapshot sends to changed-steps-only (diff) sends **in phase 3 too** —
+  a deliberate, **flagged** wire change that is backend-result-identical (upsert +
+  cumulative-replace make the subset send persist the same state), so the acceptance suite
+  stays green while tf's phase-1 transcript pins are updated for the diff shape.
+
 Second consumers, named from the high-level plan: **phase 6** `manual`/`gitlab`/
 `azdevops`/`github` handlers ("plugged into the engine + reporting facility (async
-handover semantics from D9)", §5 phase 6) need `Progress`+`Observer`+`Reporter`+
-`ToStatusUpdate`; **phase 5** `InProcessDispatcher` needs per-run `Progress`/`RunLog`
-isolation (risk #4). What does **not** move (single consumer, tf): step tables and
+handover semantics from D9)", §5 phase 6) need `Progress`+`Reporter`+`ToStatusUpdate`
+(but **no** `Observer` — they call `Report` on state changes per Grill r3); **phase 5**
+`InProcessDispatcher` needs per-run `Progress`/`RunLog` isolation (risk #4). What does **not** move (single consumer, tf): step tables and
 `StepId` constants, `TfOutput` collection (tf maps into `report.Output` at the boundary),
 log-segment *content* rules tied to tf steps, `EP_State`, run-token lifecycle, the
 engine and manager. The controller's `reportRunFailure` (single `validation` step,

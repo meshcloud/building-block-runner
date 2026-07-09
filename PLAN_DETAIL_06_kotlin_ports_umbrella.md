@@ -527,11 +527,32 @@ reviewed together so 06A's interfaces are checked against real needs, not guesse
    all optional/omitempty). Adopting the tf superset is a reviewer option, but it must
    then be verified against the coordinator's update operation and flagged in every
    sub-plan — bytes-preserving is the default (D10).
+   **Grill r3 (RunHandler purity):** this lean partial body is exactly what the unified
+   `Reporter.Report(RunStatus)` emits when `RunStatus` carries only the changed/new
+   steps — it is **no longer a *separate* body shape from tf's**. tf joins this same
+   changed-steps-only send in phase 3 (reduced from full-snapshot to only-what-changed),
+   a deliberate flagged wire change that is backend-result-identical: the meshfed
+   endpoint **upserts steps by id** (verified), so sending only the present steps yields
+   the same coordinator state as a full snapshot. Each included step still carries its
+   **FULL current message text** (the backend overwrites by assignment, not append).
+   The body stays lean/partial for all five runners; the shared rule is only *what*
+   fills `Steps` — the changed/new steps since the last send — matching the partial-step
+   pattern the ports already use (ado `ado-stage-*`, github `gh-workflow-job-*`, gitlab
+   trigger step).
 5. **No ticker, no abort.** Ported handlers never run the 10s `report.Observer` ticker
    and never honor the abort flag (`HttpBlockRunClient.kt:62-66` ignores it today) —
    event-driven updates only. Introducing abort support is a post-refactor feature,
    not part of a truthful port. The D9 pin "async runs report IN_PROGRESS on successful
    handover" applies as inventoried per runner (§3.1 row "Async semantics").
+   **Grill r3 (RunHandler purity):** the ports consume the **SAME** unified interface as
+   tf — `type Reporter interface { Register(RunStatus) error; Report(RunStatus) (abort
+   bool, err error) }` — they only *use* it differently: they call `Report` on state
+   changes only (sending the changed steps only, §7.4), own their own step dedup (ado
+   `ado-stage-*`, github `gh-workflow-job-*`, gitlab trigger step), run no `Observer`,
+   and **DISCARD the abort return** (matching Kotlin, which never honored abort). tf is
+   the only consumer that drives the `Progress`+`Observer` 10s ticker and honors the
+   abort flag. So "no ticker, no abort" describes **how the ports use the shared
+   `Reporter`**, not a second/bespoke interface.
 6. **Secret hygiene of outbound payloads.** Whatever leaves the runner toward the
    external system must reproduce the Kotlin asymmetry: inputs decrypted, impl secrets
    **not** embedded — gitlab's `MESHSTACK_RUN` keeps `pipelineTriggerToken` encrypted

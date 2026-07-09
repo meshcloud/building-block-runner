@@ -135,6 +135,19 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
   no-op — kills the `meshcrypto.Crypto` global and `ToInternalWithoutDecryption` fork),
   `StatusReporter`, `GitPort`, `TfPort`, clock. The observer loop + `logwrap` +
   `RunStatus`/`StepStatus` generalize into the **shared reporting facility** (runner-agnostic).
+  **Grill r3 (RunHandler purity):** the shared reporting facility exposes exactly ONE
+  unified interface consumed by all five runners —
+  `type Reporter interface { Register(RunStatus) error; Report(RunStatus) (abort bool, err error) }`.
+  `Report` transmits only the steps present in `RunStatus.Steps` (changed/new since the last
+  send); the meshfed endpoint upserts steps by id, so a subset is safe, and each included
+  step carries its FULL current message text (backend overwrites by assignment, never
+  appends) — never incremental chunks. `tf` is the **only** runner using the Progress+Observer
+  10s ticker: its Observer computes the per-send diff and honors the returned `abort` flag.
+  The four ported runners (manual/gitlab/azdevops/github) run **no** Observer, call `Report`
+  on state changes only, own their own step dedup, and **discard** the `abort` return. Handler
+  purity boundary: a `RunHandler` may read the meshapi client's DTOs and consume its
+  use-case/domain API — purity means it never assembles its own HTTP transport/auth; the
+  `Reporter` is injected as a use-case-level port.
 - **D5 — dispatcher = capability registry; claim-and-fail-fast for unhandled types.**
   The controller loop depends on a `Dispatcher` interface. The registered capability is
   **explicit config** (one concrete type or `ALL` — the backend's
@@ -399,6 +412,11 @@ polling/claim engine, crypto, registration, retry/backoff (adopted from the prov
 client's design, D3). Re-base run-controller onto them (its `runapi.go` duplication
 disappears; `controller.AppConfig` global goes). **Exit:** tf runner and controller share
 client, config, reporting; behavior unchanged (controller tests + acceptance suite).
+**Grill r3 (RunHandler purity):** phase 3 now carries exactly ONE deliberate, flagged wire
+change — tf's status send goes full-snapshot → changed-steps-only (diff). It is
+backend-result-identical (the endpoint upserts steps by id), so the acceptance suite stays
+green; only tf's phase-1 HTTP transcript pins are updated in this phase to match the
+reduced request bodies.
 → `PLAN_DETAIL_03_shared_core.md`
 
 ### Phase 4 — Single binary & argv[0] personas

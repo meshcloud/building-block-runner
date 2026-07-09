@@ -326,6 +326,31 @@ minimalism, and 06A must prove the manual handler stays HTTP-free. **Validate th
 the async-handover fit-check (§4.3) when 06A cuts the template; STOP and revise the port
 set if a run-scoped reporter port cannot cover both manual and async needs.**
 
+**Grill r3 (RunHandler purity):** RESOLVED — and this SETTLES the open "STOP-D fit
+review" question above about whether one reporter port covers manual + async: **it does.**
+The purity boundary: a `RunHandler` MAY read the meshapi client's DTOs
+(`RunDetailsDTO`, inputs, links) and consume its use-case/domain API (potentially a
+wrapper around the tf-provider client one day); purity means it **NEVER assembles its own
+HTTP transport/auth**. The reporter is injected as a **use-case-level port**, not a raw
+client the handler builds — and that port is ONE unified interface consumed by all five
+runners:
+
+```go
+type Reporter interface {
+    Register(RunStatus) error
+    Report(RunStatus) (abort bool, err error)
+}
+```
+
+`Report(RunStatus)` sends only the steps present in `RunStatus.Steps` (changed/new since
+the last send); the meshfed endpoint **upserts steps by id**, and each included step
+carries its **FULL current message text** (the backend overwrites, does not append). The
+four ported runners (manual/gitlab/azdevops/github) consume this same `Reporter`, call
+`Report` on state changes only, run **NO Observer/ticker**, own their own step dedup, and
+**DISCARD the `abort` return**. **tf is the only Observer/ticker/abort consumer** (it
+keeps `report.Progress` + `report.Observer`). One unified `Reporter`; ports discard abort
+and run no Observer; tf alone uses Progress+Observer.
+
 The tf handler lives in `runner/internal/tf` and implements `dispatch.RunHandler`
 directly (imports `dispatch` for the parameter types — the same
 consumer-declares/adapter-imports relationship `JobManager` has today; depguard §5.3):

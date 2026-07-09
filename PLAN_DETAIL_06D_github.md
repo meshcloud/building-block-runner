@@ -20,7 +20,7 @@ Plans 00–05 and 06A–C are **not implemented yet**. Implementation begins by 
 | # | Assumption | Promised by | Verification step |
 |---|---|---|---|
 | D1 | The github module and block-runner-core are byte-identical to `main` @ `c3fce61` (all §2 file:line citations hold). | Plans 00–06C scope (umbrella A10) | `git diff main..phase-6c-azdevops -- github-block-runner/ block-runner-core/` — only the 06A C-pin test additions (§3.3 there) appear |
-| D2 | 06A template artifacts exist and are consumed by 06B/06C already: `meshapi.SourceUpdateDTO`/`StepUpdateDTO`, `report.SourceReporter` (stateless, link-based run-scoped client, `{sourceId}` substitution), `config.SingleRunMode`, `config.BlockRunnerCompat`, `config.ResolvePrivateKey`, the shared `ClaimClassifier`, the R12 single-run exit tail, the Dockerfile final-stage pattern + `containers/<persona>/runner-config.yml` layout, the removal recipe + CI-flip mechanics, the side-by-side transcript procedure + delta allowlist wording. | 06A §4.3/§6.3–6.5/§7/§8/§11.3 | read `runner/internal/{report,config}`; `grep -rn "SourceReporter\|SingleRunMode\|ResolvePrivateKey" runner/` |
+| D2 | 06A template artifacts exist and are consumed by 06B/06C already: the unified `report.Reporter{Register(RunStatus) error; Report(RunStatus) (abort bool, err error)}` (abort discarded here; stateless, link-based run-scoped client, `{sourceId}` substitution) whose marshaled lean PATCH body stays `meshapi.SourceUpdateDTO`/`StepUpdateDTO`, `config.SingleRunMode`, `config.BlockRunnerCompat`, `config.ResolvePrivateKey`, the shared `ClaimClassifier`, the R12 single-run exit tail, the Dockerfile final-stage pattern + `containers/<persona>/runner-config.yml` layout, the removal recipe + CI-flip mechanics, the side-by-side transcript procedure + delta allowlist wording. | 06A §4.3/§6.3–6.5/§7/§8/§11.3 | read `runner/internal/{report,config}`; `grep -rn "report.Reporter\|SingleRunMode\|ResolvePrivateKey" runner/` |
 | D3 | 06B artifacts exist: `ExternalCallError{UserMessage, SystemMessage, StatusCode, RequestUrl, ResponseBody}` (the `MeshHttpException` twin, 06A §4.4 contract) and `meshapi.DecryptInputs` (input-only decryption: sensitive STRING/CODE/FILE decrypted, other types logged + left as-is, impl secrets untouched — umbrella §4 row 8, signature reviewed against 06D's needs). | 06B (first consumer), umbrella §4 rows 8/14 | `grep -rn "ExternalCallError\|DecryptInputs" runner/internal` and read both contracts |
 | D4 | 06C established the in-handler sync-poll pattern (ctx-cancelable clock waits, 10s/30min constants as constructor defaults, poll-error-resilience shape) that 06D mirrors; poll-loop helpers are deliberately **local** per runner (06A §17 "gaps left to owners" — different step semantics), so no shared poller is expected. | 06C, 06A §17 | read `runner/internal/azdevops` poller; confirm no shared `poll` package exists |
 | D5 | `dispatch.RunHandler`/`ClaimedRun` per plan 05 §4 (A1): handler owns its timeout, decrypts per run, runToken-only run-scoped reporting, run-level FAILED reported by the handler then `nil` returned. | Plan 05 §4/§17 | read `runner/internal/dispatch` |
@@ -402,9 +402,10 @@ speculative, P3):
 
 ```go
 // pollWorkflow: find the dispatched run (≤12×10s, created_at > trigger−30s among the
-// 5 newest), then poll run+jobs every 10s ≤30min; emits job-step batches via the
-// SourceReporter and the terminal update from the run conclusion (§2.5).
-func (h Handler) pollWorkflow(ctx context.Context, r report.SourceReporter, gc githubClient, impl meshapi.GithubImplementation, workflow string, triggerTime time.Time) error
+// 5 newest), then poll run+jobs every 10s ≤30min; feeds changed job steps into
+// report.Report(RunStatus) (abort discarded) and the terminal update from the run
+// conclusion (§2.5). No Observer/ticker; the handler owns job-step dedup.
+func (h Handler) pollWorkflow(ctx context.Context, r report.Reporter, gc githubClient, impl meshapi.GithubImplementation, workflow string, triggerTime time.Time) error
 ```
 
 - `seenJobs map[int64]bool` is local per invocation — no handler state (P4; plan-05 H
@@ -426,7 +427,7 @@ func (h Handler) pollWorkflow(ctx context.Context, r report.SourceReporter, gc g
 |---|---|---|
 | `RunHandler`/`ClaimedRun` (plan 05 §4) | impl JSON from `Details`, `AppPem` via Decryptor, dual input modes and both poll loops inside `Execute` | **fits; no new `Execute` parameter** (confirms 06A §17 row 1) |
 | `HandlerDeps` pattern | + `Decryptor`, `HTTP`, `Clock` — constructor-grown, shape unchanged | fits |
-| `SourceReporter` stateless seam | job-step batches + trigger-step-in-first-batch + terminal update — caller-side dedup exactly as 06A §17 anticipated | fits |
+| `report.Reporter` (no Observer) | **Grill r3 (RunHandler purity):** job-step batches + trigger-step-in-first-batch + terminal update fed through `Report(RunStatus)` (abort discarded) — caller-side dedup exactly as 06A §17 anticipated | fits |
 | Lean `SourceUpdateDTO` | needs per-step `displayName`/`userMessage`/`systemMessage`/`status`, run-status-bearing batches — all present | fits |
 | `ExternalCallError` (06B) | `MeshHttpException` twin for installation calls; needs `ResponseBody` + `RequestUrl` for the §2.6 message — present per 06A §4.4 contract | fits |
 | `meshapi.DecryptInputs` (06B) | Mode A/B payloads; impl-secret asymmetry preserved (G-P10) | fits (signature was reviewed against 06D per umbrella §4 row 8) |

@@ -217,16 +217,17 @@ func NewHandler(cfg Config, deps HandlerDeps) Handler        // value type (P4)
 func (h Handler) Execute(ctx context.Context, run dispatch.ClaimedRun) error
 
 type HandlerDeps struct {
-    Reporters ReporterFactory // per-run source reporter, runToken-only (§4.3)
+    Reporters ReporterFactory // per-run report.Reporter, runToken-only (§4.3)
     Clock     Clock           // debug-mode waits; fake in tests
     Rand      func() float64  // debug-mode outcome; injectable (Kotlin Math.random)
     Log       *slog.Logger    // D15; per-run via Log.With("run", run.Id)
 }
 ```
 
-- `Execute` skeleton = the Kotlin skeleton: build per-run reporter from
-  `run.Details.Links` + `run.Details.Spec.RunToken` → `Register("manual",
-  "Manual Block Run")` → one `Update` (echo outputs, `SUCCEEDED`) → return nil.
+- `Execute` skeleton = the Kotlin skeleton: build the per-run `report.Reporter` from
+  `run.Details.Links` + `run.Details.Spec.RunToken` → assemble a one-step `RunStatus`
+  (step `manual` / "Manual Block Run", echoed outputs, `SUCCEEDED`) → `Register(status)`
+  then `Report(status)` (**the `abort` return is discarded**) → return nil.
   Transport errors from register/update return a non-nil error (A1 contract:
   infrastructure failure; the run stays unreported exactly as in Kotlin, §2.5) —
   manual never reports run-level FAILED because no execution can fail.
@@ -268,9 +269,10 @@ type HandlerDeps struct {
 
 ### 4.3 The event-driven reporting seam (template artifact, umbrella §6 item 2)
 
-The ports never use `report.Observer` (no ticker, no abort — umbrella §7.5) and PATCH
-the **lean** `SourceUpdate` shape (umbrella §7.4). 06A adds, designed against 06B–D's
-needs (multi-step updates, partial updates, dedup-by-caller, IN_PROGRESS handover):
+The ports never use `report.Observer` (no ticker; the `abort` return is **discarded** —
+umbrella §7.5) and PATCH the **lean** `SourceUpdate` shape (umbrella §7.4). 06A adds,
+designed against 06B–D's needs (multi-step updates, partial updates, dedup-by-caller,
+IN_PROGRESS handover):
 
 ```go
 // meshapi (wire DTO home — the third PATCH shape, alongside the tf and controller DTOs):
@@ -287,11 +289,28 @@ type StepUpdateDTO struct {
     Status        string               `json:"status,omitempty"`
 }
 
-// report — the stateless per-run seam over a run-scoped meshapi.RunClient:
-func NewSourceReporter(rc RunPatcher, sourceId string, log *slog.Logger) SourceReporter
-func (r SourceReporter) Register(stepId, displayName string) error // one PENDING step; 409 = success
-func (r SourceReporter) Update(u meshapi.SourceUpdateDTO) error    // PATCH; response body ignored
+// report — the UNIFIED reporter port consumed by ALL five runners (plan 05 §4.2,
+// Grill r3), over a run-scoped meshapi.RunClient. Report sends only the steps present in
+// RunStatus.Steps (changed/new since the last send); the meshfed endpoint upserts steps
+// by id and each included step carries its FULL current message text (backend
+// overwrites, does not append). The lean SourceUpdateDTO above is its wire form.
+type Reporter interface {
+    Register(RunStatus) error
+    Report(RunStatus) (abort bool, err error)
+}
+func NewReporter(rc RunPatcher, sourceId string, log *slog.Logger) Reporter // register: one PENDING step, 409 = success; Report: PATCH, response body ignored, abort discarded by non-tf runners
 ```
+
+**Grill r3 (RunHandler purity):** RESOLVED — the earlier bespoke
+`report.SourceReporter` (`Register(stepId, displayName)` + `Update(SourceUpdateDTO)`) is
+**dropped** in favor of the ONE unified `report.Reporter` shown above, the exact port all
+five runners consume (plan 05 §4.2). **Manual is the litmus proof that this unified port
+serves a trivial one-shot runner too:** it builds a **one-step `RunStatus`** (the echoed
+inputs→outputs step, status `SUCCEEDED`), calls `Register(status)` then `Report(status)`,
+and **DISCARDS the `abort` return** — no Observer, no ticker. The handler-purity boundary
+holds: manual MAY read the meshapi DTOs off `run.Details`, and the reporter is injected as
+a use-case-level port (never a raw `meshapi.RunClient` the handler assembles with its own
+HTTP transport/auth).
 
 - `RunPatcher` is a consumer-side two-method interface satisfied by
   `meshapi.RunClient` (B3) — fakeable without HTTP.
@@ -299,7 +318,8 @@ func (r SourceReporter) Update(u meshapi.SourceUpdateDTO) error    // PATCH; res
   only what changed (ado stage dedup, github job batches live in the *handlers*), so
   state here would be speculative (P3). Callers own dedup — verified against 06C/06D
   inventories in §17.
-- `ReporterFactory` (in `manual`/consumer packages): builds the run-scoped client from
+- `ReporterFactory` (in `manual`/consumer packages): builds the run-scoped
+  `report.Reporter` (runToken-only client underneath) from
   base-URL-independent HAL links + runToken. **Link-based URLs, not EP templates**
   (umbrella §4 row 5 decision); C-P5/C-P7 pin `{sourceId}` substitution + the
   missing-placeholder error, reproduced in the Go client construction.
@@ -523,7 +543,7 @@ green until step 9. Gradle CI stays green until the removal step (umbrella §5.1
 |---|---|---|---|
 | 0 | **Preflight.** Run umbrella A1–A12 + B1–B8 verifications on the phase-5 branch; branch `phase-6a-manual`. Record: the A7/plan-05 metric classification, the R12 exit condition, whether DTO decoding already uses `UseNumber` (§4.2), whether `config.Api.NewAuthProvider` blanks empty API-key creds (§6.2). Run the §17 fit review and record its outcome in the PR. | nothing | STOP-A / STOP-D gate |
 | 1 | **Kotlin pins (tests only).** §3.2 M-P1–M-P8 in `manual-block-runner`, §3.3 C-P1–C-P7 in `block-runner-core`. | Kotlin test files only | `./gradlew :manual-block-runner:check :block-runner-core:check` green; `git diff -- ':!*test*'` empty |
-| 2 | **Wire seam.** `meshapi.SourceUpdateDTO`/`StepUpdateDTO` + `report.SourceReporter` (§4.3) + the link-based run-scoped client construction (`{sourceId}` substitution, missing-placeholder error). | `internal/meshapi`, `internal/report` | new transcript tests = Go twins of C-P3–C-P7 (fake transport); both packages stay ≥90 |
+| 2 | **Wire seam.** `meshapi.SourceUpdateDTO`/`StepUpdateDTO` + the unified `report.Reporter` (§4.3) + the link-based run-scoped client construction (`{sourceId}` substitution, missing-placeholder error). | `internal/meshapi`, `internal/report` | new transcript tests = Go twins of C-P3–C-P7 (fake transport); both packages stay ≥90 |
 | 3 | **Config compat helpers.** `config.SingleRunMode` (§6.3), `config.BlockRunnerCompat` + normalization (§6.4), `config.ResolvePrivateKey` (§6.5). | `internal/config` | table-driven tests: profile-list membership, precedence per §6.4, the full Kotlin key-resolution order incl. missing-file→inline fallback; `config` ≥90 |
 | 4 | **Handler.** `internal/manual`: `Config`, `NewHandler`, echo path incl. `toOutputType` + last-wins + number fidelity, debug path (Clock/Rand injected). | `internal/manual` | Go scenario suite (§10.1): run JSON in → fake meshStack transcript out, matching the Kotlin pins; unit tests for the mapping table |
 | 5 | **Persona wiring, polling.** `persona_manual.go` + registry entry; ClaimClassifier (§7.1); mgmt on 8104 + metrics; loop wiring. | `runner/main.go`, `persona_manual.go` | loop-wiring scenario: claim 200→register→update→immediate re-claim→404; classifier table tests; `resolvePersona` test row; alias-precedence test (`MANAGEMENT_PORT`>`PORT`>8104) |
@@ -547,7 +567,7 @@ green until step 9. Gradle CI stays green until the removal step (umbrella §5.1
 | `ManualRunnerKubernetesStartupScenario` | `Scenario_Manual_SingleRun_FileSource`: same fixture JSON, captured wire equal to the Kotlin capture (modulo §16.4 null-equivalence + §7.7 headers) | scenario |
 | M-P6 exit-1-on-report-failure | single-run exit test: PATCH 500 ⇒ error ⇒ non-zero condition | scenario |
 | M-P7 exit-0-on-fetch-failure | **deliberate non-port**: Go asserts non-zero (the §7.9 delta); the test comment cites M-P7 as the measured baseline | flagged delta, not STOP-B |
-| C-P1–C-P7 core wire pins | Go twins in `meshapi`/`report` tests (claim shape lives with the plan-05 claim adapter tests; register/update with `SourceReporter`) | scenario/transcript |
+| C-P1–C-P7 core wire pins | Go twins in `meshapi`/`report` tests (claim shape lives with the plan-05 claim adapter tests; register/update via the unified `report.Reporter`) | scenario/transcript |
 | `ImmediateRetryDecoratorTest` | loop wake test (claim→run→`Done()`→immediate re-claim) — already the plan-05 loop suite's shape, re-asserted for this persona's wiring | scenario |
 | `ManualRunnerStartupScenario`, Spring auth/config scenarios | persona boot smoke (`go run . manual-block-runner` to config-read stage) + existing `config`/`meshapi` auth tests | existing + smoke |
 
@@ -742,7 +762,7 @@ Executed now at plan level; re-run mechanically at §9 step 0 before coding.
 |---|---|---|---|---|
 | `dispatch.RunHandler`/`ClaimedRun` (plan 05 §4) | needs impl JSON (`ClaimedRun.Details…Implementation` raw), decrypted trigger token, HAL links for callback vars — all in `Details`/deps | needs impl + PAT + `async` flag + poll loop inside `Execute` (ctx-cancelable, own 30-min bound — A1 "handler owns its timeout") | needs impl + `AppPem` + dual input modes + find-run/poll loops | **fits; no new `Execute` parameter** (confirms plan 05 §4.3) |
 | `HandlerDeps` pattern (§4.1) | + `meshapi.Decryptor` + external HTTP seam | same + `Clock` for 10s/30-min polling | same + JWT signer inputs (all constructor-injected) | fits — deps grow per runner, shape unchanged (flag §16.1) |
-| `SourceReporter` stateless seam (§4.3) | 2 updates max (trigger step FAILED/SUCCEEDED; final = **IN_PROGRESS handover**, status field carries it — lean DTO covers) | many partial updates: stage steps `ado-stage-<id>` re-reported only when new/COMPLETED — caller-side dedup, stateless seam suffices; `displayName`/messages per step covered by `StepUpdateDTO` | job-step batches `gh-workflow-job-<id>`, trigger step only in first batch — again caller-side | fits — statelessness confirmed as the right altitude; **no ticker/abort** holds for all three (umbrella §7.5) |
+| Unified `report.Reporter` seam (§4.3) | 2 updates max (trigger step FAILED/SUCCEEDED; final = **IN_PROGRESS handover**, status field carries it — lean DTO covers) | many partial updates: stage steps `ado-stage-<id>` re-reported only when new/COMPLETED — caller-side dedup, stateless seam suffices; `displayName`/messages per step covered by `StepUpdateDTO` | job-step batches `gh-workflow-job-<id>`, trigger step only in first batch — again caller-side | fits — statelessness confirmed as the right altitude; **no ticker/abort** holds for all three (umbrella §7.5) |
 | Lean `SourceUpdateDTO` (§4.3) | needs status-only and steps-only updates ⇒ both fields `omitempty` ✓ | needs step updates without run status ✓ | same ✓ | fits |
 | Register = one PENDING step (§4.3) | `gl-trigger` | `azure-devops-trigger` | `gh-trigger` | fits (all four register exactly one step) |
 | ClaimClassifier policy (§7.1) | identical catch-all (`GitLabBlockRunnerService` twin of §2.1.1) | identical | identical | fits — one shared classifier, defined here |

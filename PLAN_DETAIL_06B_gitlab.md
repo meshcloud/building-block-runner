@@ -23,7 +23,7 @@ umbrella §1 verification steps (A1–A12)** — incorporated by reference — p
 
 | # | Assumption | Promised by | Verification step |
 |---|---|---|---|
-| T1 | `meshapi.SourceUpdateDTO`/`StepUpdateDTO` (lean PATCH body, all fields `omitempty`) + `report.SourceReporter{Register(stepId, displayName), Update(SourceUpdateDTO)}` over a run-scoped `RunPatcher`, stateless, link-based URL construction with `{sourceId}` substitution + missing-placeholder error. | 06A §4.3, steps 2 | read `runner/internal/report`; run the Go twins of C-P3–C-P7 |
+| T1 | `meshapi.SourceUpdateDTO`/`StepUpdateDTO` (the marshaled lean PATCH body the adapter produces from the changed steps, all fields `omitempty`) + the unified `report.Reporter{Register(RunStatus) error, Report(RunStatus) (abort bool, err error)}` over a run-scoped `RunPatcher`, stateless, link-based URL construction with `{sourceId}` substitution + missing-placeholder error. Ported handlers call `Report(RunStatus)` with only the changed/new steps present in `RunStatus.Steps` (backend upserts steps by id) and **discard the `abort` return** (**Grill r3 (RunHandler purity):** no Observer/ticker for the ports; the handler still owns its own step dedup — stateless in the no-ticker sense). | 06A §4.3, steps 2 | read `runner/internal/report`; run the Go twins of C-P3–C-P7 |
 | T2 | `config.SingleRunMode` (`EXECUTION_MODE=single-run` OR `SPRING_PROFILES_ACTIVE` list-contains `kubernetes`, deprecation-logged), `config.BlockRunnerCompat` (incl. `privateKey`/`privateKeyFile` fields), `config.ResolvePrivateKey(log, fileKey, inlineKey)` reproducing `PrivateKeyLoader.kt:8-24` order (env `RUNNER_PRIVATE_KEY_FILE` > yaml file key > `/app/runner-private.pem`; missing file ⇒ inline fallback). | 06A §6.3–6.5 | read `runner/internal/config`; run its table tests. If 06A's reviewer deferred the `ResolvePrivateKey` *implementation* to 06B (06A flag §16.8), implement it here in step 3 against the fixed contract |
 | T3 | Shared `ClaimClassifier` (404 ⇒ no-run, 409 ⇒ no-run-logged, other ⇒ no-run-logged + `runner_poll_errors_total`, backoff 0) + persona wiring pattern (`persona_manual.go`), `MANAGEMENT_PORT`/`PORT` alias mechanics, R12 single-run exit tail, Dockerfile final-stage pattern, `containers/<persona>/runner-config.yml` layout, removal recipe, side-by-side comparison procedure + sanctioned-delta allowlist wording. | 06A §7, §8, §11.3, §12 | read `persona_manual.go`, `containers/runner.Dockerfile`; re-read 06A §11.3 evidence in its merged PR |
 | T4 | The block-runner-core wire pins C-P1–C-P7 exist and are green (06B inherits, never re-writes). | 06A §3.3 | `./gradlew :block-runner-core:check`; grep the pin test names |
@@ -257,7 +257,7 @@ func NewHandler(cfg Config, deps HandlerDeps) Handler        // value type (P4)
 func (h Handler) Execute(ctx context.Context, run dispatch.ClaimedRun) error
 
 type HandlerDeps struct {
-    Reporters ReporterFactory   // per-run SourceReporter, runToken-only (06A §4.3)
+    Reporters ReporterFactory   // per-run report.Reporter, runToken-only (06A §4.3)
     Decryptor meshapi.Decryptor // cert-based in polling mode, NoOp in single-run mode
     HTTP      *http.Client      // external seam; redirects disabled at construction (§4.3)
     Log       *slog.Logger      // D15; per-run via Log.With("run", run.Id)
@@ -399,7 +399,7 @@ Every deviation from the 06A artifacts, mapped to an anticipating rule or escala
 | `HandlerDeps` gains `Decryptor` + `HTTP` | 06A §16.1 (manual-specific narrowing) + umbrella §5.3 | anticipated — shape unchanged |
 | Handler reports run-level FAILED (manual never does) | A1 contract; umbrella §5.3 skeleton | anticipated |
 | Always-async handover: final `IN_PROGRESS`, `Execute` returns nil ⇒ metrics **succeeded** | umbrella §7.2 rule, §10.10 | anticipated |
-| `SourceReporter` used for 2 updates max (register + one PATCH) | 06A §17 row 3 (gitlab column) | anticipated |
+| `report.Reporter`: `Register` + one `Report(RunStatus)` (the trigger step), `abort` discarded | 06A §17 row 3 (gitlab column) | anticipated |
 | New shared code in `meshapi` (`DecryptInputs`) | umbrella §4 row 8 names 06B owner | assigned, not a deviation |
 | `ExternalCallError` ships here | 06A §4.4 + §17 gap list | assigned |
 | First consumer of `config.ResolvePrivateKey` + `BlockRunnerCompat.privateKey*` | 06A §6.4-6.5, §16.8 | anticipated |

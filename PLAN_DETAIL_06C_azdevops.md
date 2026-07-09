@@ -21,7 +21,7 @@ plus the 06C-specific ones below. Any material failure is a **STOP** per umbrell
 | # | Assumption | Promised by | Verification step |
 |---|---|---|---|
 | C1 | The azure-devops module and block-runner-core are byte-identical to `main` @ `c3fce61` (all §2 file:line citations hold). | Plans 00–06B scope (umbrella A10) | `git diff main..phase-6b-gitlab -- azure-devops-block-runner/ block-runner-core/` — empty |
-| C2 | 06A template artifacts exist: `meshapi.SourceUpdateDTO`/`StepUpdateDTO` (lean PATCH body, both fields `omitempty`), `report.SourceReporter{Register, Update}` (stateless, link-based run-scoped client, `{sourceId}` substitution), the shared `ClaimClassifier` (404/409/other ⇒ no-run, backoff 0), `config.SingleRunMode`, `config.BlockRunnerCompat` (+`privateKey`/`privateKeyFile` fields), `config.ResolvePrivateKey`, the Dockerfile final-stage pattern, the R12 single-run exit tail, `UseNumber` decode on the claim/file path. | 06A §4.3, §6.3–6.5, §7, §8 | read `runner/internal/{meshapi,report,config}`; run 06A's transcript + alias tests; `grep -rn "UseNumber" runner/internal` |
+| C2 | 06A template artifacts exist: the unified `report.Reporter{Register(RunStatus) error; Report(RunStatus) (abort bool, err error)}` (stateless, link-based run-scoped client, `{sourceId}` substitution; handlers call `Report(RunStatus)` with only changed/new steps and **discard the abort return**) marshaling the lean `meshapi.SourceUpdateDTO`/`StepUpdateDTO` PATCH body (both fields `omitempty`) as the wire body, the shared `ClaimClassifier` (404/409/other ⇒ no-run, backoff 0), `config.SingleRunMode`, `config.BlockRunnerCompat` (+`privateKey`/`privateKeyFile` fields), `config.ResolvePrivateKey`, the Dockerfile final-stage pattern, the R12 single-run exit tail, `UseNumber` decode on the claim/file path. | 06A §4.3, §6.3–6.5, §7, §8 | read `runner/internal/{meshapi,report,config}`; run 06A's transcript + alias tests; `grep -rn "UseNumber" runner/internal` |
 | C3 | block-runner-core wire pins C-P1–C-P7 exist and are green (claim/register/update transcripts) — 06C verifies, never re-writes (umbrella §3.3 last row). | 06A §3.3 | `./gradlew :block-runner-core:check`; grep the pin test names |
 | C4 | 06B shipped `ExternalCallError{UserMessage, SystemMessage, StatusCode, RequestUrl, ResponseBody}` (the `MeshHttpException` twin, 06A §4.4: "specified in 06A, implemented in 06B with its first consumer") and `meshapi.DecryptInputs` (input-only decryption: sensitive STRING/CODE/FILE decrypted, other sensitive types logged + left as-is, impl secrets untouched — umbrella §4 row 8). | 06A §4.4/§17; umbrella §4 rows 8+14 | read the 06B-added types in `runner/internal/{meshapi,gitlab-shared location per 06B}`; run their tests. **STOP-C4:** if 06B did not land them (e.g. 06B descoped), 06C ships both to the 06A-specified contracts and flags the ownership move — an umbrella §4 row-8/14 owner correction, reviewed, not a silent fork |
 | C5 | `meshapi.AzureDevOpsImplementation` models everything the Kotlin service reads: `AzureDevOpsBaseUrl`, `Organization`, `Project`, `PipelineId`, `PersonalAccessToken`, `Async bool`, `RefName *string` (`go-meshapi-client/meshapi/dtos.go:155-164`, moved by plan 04) — cross-checked §2.6. | Plan 03/04 moves | read `runner/internal/meshapi/dtos.go` |
@@ -298,7 +298,7 @@ unsanitized base URL, the K-P2 exit-0 swallow. All listed in §16.
 Package `runner/internal/azdevops` (D11). Illustrative signatures only; the umbrella
 §5.3 shape instantiated. The Kotlin class trio does **not** map 1:1 (D15/§7.13): the
 mapper becomes pure functions, the updater dissolves into update-builder functions over
-`report.SourceReporter`, the poller becomes one ctx-aware loop function — three small
+the unified `report.Reporter`, the poller becomes one ctx-aware loop function — three small
 files (`handler.go`, `client.go`, `poll.go`) in one cohesive package (D11: no sibling
 split; the seams are not real package seams).
 
@@ -311,7 +311,7 @@ func NewHandler(cfg Config, deps HandlerDeps) Handler        // value type (P4)
 func (h Handler) Execute(ctx context.Context, run dispatch.ClaimedRun) error
 
 type HandlerDeps struct {
-    Reporters ReporterFactory   // per-run SourceReporter, runToken-only (06A §4.3)
+    Reporters ReporterFactory   // per-run report.Reporter, runToken-only (06A §4.3)
     Decryptor meshapi.Decryptor // cert-based (polling) | NoOp (single-run)
     HTTP      *http.Client      // external-API seam; fake transport in tests (§4.3)
     Clock     Clock             // poll waits + timeout budget; fake in tests
@@ -367,9 +367,13 @@ func (c adoClient) GetTimeline(ctx, id int64) ([]timelineRecord, error)
   else-hole and S-P5 else branch (quirk-preserving; fixes are post-port follow-ups).
 - Update builders produce `meshapi.SourceUpdateDTO` values (lean shape, 06A §4.3) for:
   trigger-success (sync/async variants), state-only polling, stage batch (trigger step
-  first + stage rows), final, failed. The `reportedStages map[string]bool` and
-  `lastReportedState` live in the **poll loop** (caller-side dedup — exactly the
-  stateless-`SourceReporter` altitude 06A §17 verified against this runner).
+  first + stage rows), final, failed — each fed into the unified `report.Reporter`'s
+  `Report(RunStatus)` (abort discarded) as the changed/new steps in `RunStatus.Steps`.
+  The `reportedStages map[string]bool` and `lastReportedState` live in the **poll loop**
+  (caller-side dedup — exactly the stateless unified-`report.Reporter` altitude 06A §17
+  verified against this runner, the heaviest dedup consumer). **Grill r3 (RunHandler
+  purity):** no Observer/ticker runs; the handler owns dedup and feeds only changed steps
+  into `Report`, the backend upserts by id.
 
 ### 4.4 The poller (06C-local design, umbrella §6 "gaps deliberately left to owners")
 
@@ -425,7 +429,7 @@ func (h Handler) pollCompletion(ctx context.Context, c adoClient, rep runReporte
 |---|---|---|
 | `RunHandler.Execute(ctx, ClaimedRun) error` (A1) | impl JSON from `Details`, PAT via `Decryptor`, poll loop inside `Execute` with own timeout | fits — no new parameter (confirms 06A §17 row 1) |
 | `HandlerDeps` pattern (06A §4.1) | + `Decryptor`, `HTTP`, `Clock` — constructor-grown, shape unchanged | fits (06A §16.1 narrowing reversed as anticipated) |
-| stateless `SourceReporter` (06A §4.3) | many partial updates; dedup state lives in the poll loop | fits — statelessness confirmed at this, the heaviest consumer |
+| stateless unified `report.Reporter` (06A §4.3) | many partial updates via `Report(RunStatus)` (abort discarded); handler-side dedup feeds changed steps, no ticker/Observer | fits — statelessness confirmed for the unified `report.Reporter` at this, the heaviest consumer |
 | lean `SourceUpdateDTO` (`status` + `steps` `omitempty`) | intermediate updates always carry status IN_PROGRESS + steps; final carries both | fits |
 | `ExternalCallError` (06B, C4) | ADO non-2xx surface → U-P8 messages; needs `ResponseBody` + `RequestUrl` ✓ | fits; **inherited, not redefined** (STOP-C4 otherwise) |
 | `meshapi.DecryptInputs` (06B, C4) | templateParameters need decrypted inputs, impl PAT stays out of payload | fits — the §7.6 asymmetry is structural |
@@ -445,7 +449,7 @@ where the translation is not mechanical.
 | catch-all around fetch (`AzureDevOpsBlockRunnerService.kt:19-24`) | the shared `ClaimClassifier` (06A §7.1): every claim error ⇒ no-run-logged, backoff 0 | same observable; handler never sees claim errors |
 | exception-typed failure fan-out (`updateFailedBlockStatusWithMeshException` vs `…WithException`, §2.1.3) | `errors.As` on `ExternalCallError` selects the U-P8 system-message form; all other errors take the internal-error form; message strings byte-identical (§7.11) | plumbing changes, bytes don't |
 | `object` singletons `AzureDevOpsPipelinePoller`/`AzureDevOpsStatusMapper` (`AzureDevOpsPipelinePoller.kt:14`, `AzureDevOpsStatusMapper.kt:9`) | package-level pure functions + a `Handler` method for the loop — no singleton state (P3) | S-/P-pins |
-| class `AzureDevOpsStatusUpdater` holding client + uuid (`AzureDevOpsStatusUpdater.kt:14-17`) | update-builder functions over the per-run `SourceReporter`; run id is a slog attr, not struct state | U-pins; no 1:1 class mirror (§7.13 review rule) |
+| class `AzureDevOpsStatusUpdater` holding client + uuid (`AzureDevOpsStatusUpdater.kt:14-17`) | update-builder functions over the per-run unified `report.Reporter`; run id is a slog attr, not struct state | U-pins; no 1:1 class mirror (§7.13 review rule) |
 | `Thread.sleep(10_000)` loop + `Clock` param only for timeout (`AzureDevOpsPipelinePoller.kt:24,43`) | `select` on injected `Clock.After(10s)` / `ctx.Done()`; one `Clock` governs wait **and** budget | Go tests are sleep-free where Kotlin pins needed 2 slow tests (§3.2) |
 | mutable `reportedStages: MutableSet<String>` threaded through calls (`:33,52`) | loop-local `map[string]bool` owned by `pollCompletion` | U-P5 dedup semantics identical |
 | `MeshHttpException` (`MeshHttpException.kt:5-13`) | `ExternalCallError` (06B, C4) | fields 1:1 (06A §17) |
@@ -705,7 +709,7 @@ One squash commit ⇒ one `git revert` restores the Kotlin module, its
 `internal/azdevops`, `persona_azdevops.go` + registry entry, the Dockerfile stage,
 `containers/azure-devops-block-runner/`, the thresholds line and depguard rules.
 Shared helpers are **not** deleted on revert — unlike 06A's, they have other consumers
-(06B's gitlab port precedes this PR; `SourceReporter`/`SingleRunMode`/compat block stay).
+(06B's gitlab port precedes this PR; `report.Reporter`/`SingleRunMode`/compat block stay).
 Image name + wire/k8s contracts frozen (§13) ⇒ `:main` floats back to the JVM build on
 the next CI run; deployed operator configs need no change in either direction
 (`SPRING_PROFILES_ACTIVE` honored by both generations, `EXECUTION_MODE` never

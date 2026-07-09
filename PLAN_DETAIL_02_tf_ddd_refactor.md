@@ -345,6 +345,12 @@ type StatusReporter interface {
     Register(RunStatus) error
     Report(RunStatus) (abort bool, err error)
 }
+// **Grill r3 (RunHandler purity):** this is the tf-side view of the shared `report.Reporter`
+// (same signature: Register(RunStatus) error; Report(RunStatus) (abort, err)). In phase 2 its
+// wire send stays a FULL snapshot (behavior-preserving — no HTTP transcript change; the
+// phase-1 pins are untouched). The reduction to lean changed-steps-only diffs is deferred to
+// phase 3 (plan 03), where it is a flagged, backend-result-identical wire change (endpoint
+// upserts steps by id) and only the tf transcript pins move.
 
 // ArtifactSource streams a predecessor plan artifact (runapi.go:51-53); consumed only by
 // the APPLY saved-plan step.

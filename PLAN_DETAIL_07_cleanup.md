@@ -493,9 +493,15 @@ bridges.
 
 ### 8.1 Target shape
 
-- One `slog.Logger` constructed in `main`: `slog.New(slog.NewTextHandler(os.Stderr,
-  nil))` — the D15 default, no handler ceremony, no level machinery beyond default
-  (nothing in the codebase logs Debug today).
+- One `slog.Logger` constructed in `main`:
+  `slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: config.LogLevel(bootLog)}))`
+  — the D15 text-handler default, its level from `LOG_LEVEL` (`debug|info|warn|error`,
+  default `info`; plan 03 §5.3, wired since plan 04 §4). At `debug` the shared `meshapi`
+  transport (fed a `meshapi.SlogLogger` adapter — the provider-copied `Logger` seam, plan 03
+  §5.2.6/§7) logs full HTTP request/response bodies **unredacted**, and the
+  now-slog `tf`/`tfrun` package emits its Debug lines; at the default `info` both are inert.
+  The sensitive-body exposure at `debug` is the deliberate, documented trade-off (opt-in
+  diagnostic; artifact-download bodies excepted).
 - Persona identity as an attribute: `logger.With("persona", string(persona))` replaces
   the `[TF RUNNER]` / `[RUN CONTROLLER]` prefixes (plan 04 §4.1). **Operator-visible
   log-format change** — sanctioned by the umbrella §8 precedent (phase-6 personas

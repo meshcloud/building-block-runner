@@ -173,6 +173,13 @@ entirely with its own `http.Client`:
   `IsConflict`/`IsForbidden`.
 - **Client layout** (`client/client.go:20-44`): one aggregate struct of per-resource
   clients, each thin over one shared `HttpClient`.
+- **Logging** (`client/internal/logging.go` + `http_client.go:88,128`): a small pluggable
+  `Logger` interface (`Debug/Info/Warn(ctx, msg, args ...any)`, `noopLogger` default) with
+  request/response Debug logging (sorted headers + pretty-JSON body via lazy `fmt.Stringer`
+  wrappers). **Copied verbatim** into `meshapi` (§5.2.6) — interface + `loggedHeaders`/
+  `loggedBody`/`bytesToPrettyJson` — so the SDK merge has no logging-seam delta (§7); sole
+  deviation is dropping the `Authorization` `[REDACTED]` (our `LOG_LEVEL=debug` = full,
+  unobfuscated bodies).
 - Deliberately **not** adopted (alignment notes §7): `MinMeshStackVersion` startup check,
   the 5-minute whole-client timeout (`http_client.go:18` — would kill legitimate 128MiB
   artifact streams), generic `DoRequest[R]`/`RequestOption` machinery (P2: our four
@@ -207,8 +214,11 @@ tests + acceptance checks, §6/§9); shared packages join the D6 gate at ≥90.
 
 **Logging (slog-native):** the shared-core packages (`meshapi`, `crypto`, `config`,
 `report`) are authored slog-native (`log/slog`) from the start: no `*log.Logger` seam, no
-`slog.NewLogLogger` bridge; every logger parameter below is a `*slog.Logger`. The
-`tf`/`tfrun` package migrates to slog in phase 7 (its phase-1/2 pins predate this).
+`slog.NewLogLogger` bridge; every logger parameter below is a `*slog.Logger` — **except the
+`meshapi` client's public `Logger` seam** (§5.2.6), which is the provider-copied pluggable
+interface fed by a `*slog.Logger` adapter, so the app is slog-native while the SDK-bound
+client stays portable (§7). The `tf`/`tfrun` package migrates to slog in phase 7 (its
+phase-1/2 pins predate this).
 
 ### 5.1 Module decision: shared packages live in `go-meshapi-client` during this phase
 
@@ -312,7 +322,9 @@ Policy (constructor default, one place):
 
 ```go
 // RunClient: the runner-facing run endpoints, media type BlockRunMediaTypeV1.
-func NewRunClient(baseURL string, nodeId NodeId, id Identity, auth AuthProvider) RunClient
+// log is the pluggable meshapi.Logger (§5.2.6, copied from the provider) — DEBUG ⇒ full
+// req/resp wire logging; main passes a *slog.Logger adapter.
+func NewRunClient(baseURL string, nodeId NodeId, id Identity, auth AuthProvider, log Logger) RunClient
 func (c RunClient) FetchRun(runnerUuid string) (*RunDetailsDTO, []byte, error)
 func (c RunClient) RegisterSource(runId string, reg RegistrationDTO) error
 func (c RunClient) PatchStatus(runId, sourceId string, payload any) ([]byte, error)
@@ -321,7 +333,7 @@ func (c RunClient) DownloadArtifact(url string, w io.Writer) error
 // RunnerClient: the meshBuildingBlockRunner meshObject endpoint,
 // media type MeshBuildingBlockRunnerMediaTypeV1Preview (moved verbatim from
 // run-controller/controller/registration.go:15-17).
-func NewRunnerClient(baseURL string, id Identity, auth AuthProvider) RunnerClient
+func NewRunnerClient(baseURL string, id Identity, auth AuthProvider, log Logger) RunnerClient
 // Update PUTs the registration; the runner must already exist (404 => HttpError,
 // caller maps it to the actionable "create it via the meshStack UI" message).
 func (c RunnerClient) Update(uuid string, dto MeshBuildingBlockRunnerDTO) error
@@ -352,6 +364,46 @@ tests. Justified consumers: controller (now) and phase 5's `InProcessDispatcher`
 speculative second consumer. `crypto.MeshCertBasedCrypto` gets a small
 `Decrypt(string) (string, error)` method delegating to `DecryptMeshCertBased` so it
 satisfies the port without renaming the existing API.
+
+**5.2.6 HTTP wire logging (`LOG_LEVEL`) — copied from the provider client (D3, §7).** The
+provider already implements exactly this (`terraform-provider-meshstack/client/internal/{logging.go,http_client.go}`):
+a small **pluggable `Logger` interface** plus request/response Debug logging with headers +
+pretty-JSON body. We **copy it verbatim** so the future shared `meshstack-go-sdk` (D3) has
+no logging-seam delta:
+
+```go
+// meshapi.Logger — identical to the provider's internal.Logger (ctx-first, slog-shaped),
+// default noopLogger. The client logs the request ("url","method","headers","body") and
+// response ("status","body") at Debug; headers/body are lazy fmt.Stringer wrappers
+// (loggedHeaders/loggedBody + bytesToPrettyJson) copied from logging.go, so they cost
+// nothing unless the handler renders them.
+type Logger interface {
+    Debug(ctx context.Context, msg string, args ...any)
+    Info(ctx context.Context, msg string, args ...any)
+    Warn(ctx context.Context, msg string, args ...any)
+}
+// SlogLogger adapts the app's slog logger to Logger (Debug→DebugContext, …); the
+// interface signature already matches slog, so the adapter is trivial. main (slog-native)
+// injects SlogLogger(processLogger); tests use the noop default.
+func SlogLogger(l *slog.Logger) Logger
+```
+
+- **One deliberate deviation from the copied code:** the provider redacts the
+  `Authorization` header (`[REDACTED]`, `logging.go:47-50`). We **drop that redaction** — at
+  `LOG_LEVEL=debug` the full request/response headers and bodies are logged **including
+  sensitive values** (runToken bearer, claim payloads, decrypted inputs echoed in status,
+  PATCH messages), **unobfuscated by design** (as specified; opt-in diagnostic, non-default;
+  §8 records the trade-off). This is a one-line policy difference, not a structural one.
+- **Level gating via `LOG_LEVEL`:** the slog handler level (set in `main` from
+  `config.LogLevel`, §5.3; wired plan 04 §4 / plan 07 §8.1) decides whether the adapter's
+  `Debug` emits — no separate `Enabled()` check needed. Because the `meshapi` client is
+  shared, **every persona's HTTP is covered** at DEBUG, including tf before its own slog
+  migration (phase 7).
+- **Artifact-stream exception:** `loggedBody` only stringifies a buffered `*bytes.Buffer`
+  (the JSON payloads); `DownloadArtifact` streams up to 128MiB to an `io.Writer` and is
+  **never routed through the body logger** — at most metadata (URL, status,
+  `Content-Length`) is logged, so DEBUG cannot exhaust memory on a large artifact (the
+  provider client, being JSON-only, never faced this — our addition).
 
 ### 5.3 `config` — one shared loader (D7)
 
@@ -400,6 +452,12 @@ func (a Api) NewAuthProvider(fallbackURL string) meshapi.AuthProvider
 // Validate reproduces the per-field error messages of controller/config.go:212-235,
 // with a mode flag for the tf single-run exemption (tfrun/config.go:190-213).
 func (a Api) Validate(context string, required bool) error
+
+// LogLevel resolves LOG_LEVEL (debug|info|warn|error, case-insensitive; default info)
+// to a slog.Level; an unrecognized value logs a warning and falls back to info. main
+// builds the process slog handler at this level (plan 04 §4 / plan 07 §8.1); debug turns
+// on meshapi wire-body logging (§5.2.6).
+func LogLevel(log *slog.Logger) slog.Level
 ```
 
 **Compatibility alias table (every existing env var and yaml key keeps working):**
@@ -414,6 +472,12 @@ func (a Api) Validate(context string, required bool) error
 | `PORT` (tf healthz 8100) | tf | untouched this phase (D12 → phase 4) |
 | yaml `api.user` vs `api.username` | both | both accepted via the `Api` alias, normalized after load |
 | all other yaml keys (`timeoutMins`, `namespace`, `implementations`, …) | both | unchanged, persona-side |
+
+**New additive env (not a compat alias):** `LOG_LEVEL` (`debug|info|warn|error`,
+case-insensitive, default `info`) — resolved by `config.LogLevel` and applied to the
+process slog handler in `main` (wired plan 04 §4). `debug` turns on the `meshapi`
+request/response wire-body logging of §5.2.6. The `config.LogLevel` **helper** ships this
+phase; the `main` handler-level wiring lands with the unified bootstrap (plan 04 §4).
 
 The controller gains nothing new (no new env overrides beyond aliases): env-first
 *growth* (e.g. `RUNNER_UUID` for the controller) is deferred to phase 4 where the persona
@@ -630,6 +694,7 @@ tests are planned, STOP-C guards the residue).
 | Retry | `retryRoundTripper` + `RetryOptions{MaxRetries, Backoff, WhitelistedPaths}` | same design, unexported, smaller budget, `WhitelistedPosts` | trivial (merge = keep provider's, port budget) |
 | Auth | `Authorization.Header(ctx, c) (string, error)` | `AuthProvider.AuthHeader() string` kept (phase-1 pins cover the empty-header branch; changing the failure surface is not behavior-preserving) | small; adapter or signature migration at merge time — recorded delta |
 | Client layout | aggregate of per-resource clients over one `HttpClient` | `RunClient`/`RunnerClient` over one `http.Client` | naming maps 1:1 (`RunnerClient` ≈ `MeshBuildingBlockRunnerClient`) |
+| Logging | `internal.Logger` (Debug/Info/Warn, ctx-first) + request/response Debug logging (headers+pretty-JSON body), `Authorization` redacted | **same interface + helpers copied verbatim** (§5.2.6), fed by a `*slog.Logger` adapter so the app stays slog-native; redaction dropped per the `LOG_LEVEL=debug` full-body requirement | **none** — identical seam; the redaction difference is a one-line policy toggle |
 | Media types | computed `application/vnd.meshcloud.api.<kind>.<version>.hal+json` (`mesh_object_client.go:72-74`) | constants (two endpoints) | mechanical |
 | Request plumbing | generic `DoRequest[R]` + `RequestOption` | hand-rolled per endpoint (4 endpoints; P2 — generics don't pay yet) | isolated to method bodies |
 | Version check | `MinMeshStackVersion` at startup | deliberately absent (wrong for runners, D3) | n/a |
@@ -658,6 +723,11 @@ idempotent + whitelisted calls (high-level phase-3 mandate, D3; §5.2.3 policy; 
 guards transcript neutrality everywhere else). Old-controller/new-runner and
 new-controller/old-runner mixes (D10) are unaffected: the wire shapes are identical and
 retries are invisible to the peer beyond duplicate idempotent requests.
+
+Also additive: the `LOG_LEVEL` env + `meshapi` DEBUG wire-body logging (§5.2.6). Inert at
+the default `info` level (no wire or log change); at `debug` it logs full request/response
+bodies **including sensitive values, unredacted by design** — an opt-in operator
+diagnostic, never on by default. No frozen contract is touched.
 
 ---
 

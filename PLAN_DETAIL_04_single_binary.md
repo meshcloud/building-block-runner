@@ -134,7 +134,8 @@ the new layout — D10's outer safety net; diagnose/replan before merging.
   → **phase 7** (D14).
 - Gating `internal/controller` coverage (plan 03 §9 decision stands) → **phase 5**.
 - Config-surface growth (e.g. `RUNNER_UUID` env for the controller persona) — this phase
-  adds exactly one new env var, `MANAGEMENT_PORT` (D12); everything else unchanged.
+  adds exactly two new env vars, `MANAGEMENT_PORT` (D12) and `LOG_LEVEL` (§4 — `main`
+  wires the `config.LogLevel` helper shipped in plan 03 §5.3); everything else unchanged.
 - README/docs beyond minimal truthful path+port updates → **phase 7**.
 
 ---
@@ -272,7 +273,12 @@ mode it only dispatches Jobs — the dispatched-Job images stay lean.
 **slog-native:** the single-go-module and persona-wiring packages (`main`, `mgmt`,
 `config`) use `log/slog` from the start — no `*log.Logger` seam and no `slog.NewLogLogger`
 bridge (consistent with plan 03's shared-core ruling). Every logger parameter below is a
-`*slog.Logger`.
+`*slog.Logger`. Each persona's `main` constructs the one process logger as
+`slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: config.LogLevel(bootLog)}))`,
+resolving `LOG_LEVEL` (`debug|info|warn|error`, default `info`; plan 03 §5.3) — and injects
+a `meshapi.SlogLogger(logger)` adapter (the provider-shaped pluggable `Logger` seam, plan 03
+§5.2.6/§7) into the `meshapi` clients, so `LOG_LEVEL=debug` turns on full HTTP
+request/response wire-body logging (unredacted, artifact-stream excepted) for every persona.
 
 ### 4.1 Fit per-persona entrypoints & the `bbrunner` controller/superset (D1, D2, D8, D11)
 

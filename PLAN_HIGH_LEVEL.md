@@ -372,7 +372,14 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
   single-binary packages — plans 03/04/05 — are authored **slog-native from the start**.
   Only the `tf`/`tfrun` package, whose phase-1/2 characterization pins predate this
   decision, migrates to slog in phase 7 (see umbrella §10.12) so those pins aren't disturbed
-  mid-refactor. New phase-6 packages use slog natively, run id as attribute); Spring
+  mid-refactor. New phase-6 packages use slog natively, run id as attribute). A `LOG_LEVEL` env
+  (`debug|info|warn|error`, default `info`) sets the slog handler level for every persona;
+  at `debug` the shared `meshapi` HTTP transport logs full request/response headers **and
+  bodies including sensitive values — deliberately unredacted** (opt-in diagnostic;
+  artifact-download bodies excepted, metadata only). The client's pluggable `Logger` seam is
+  copied from the terraform-provider-meshstack client (interface + body/header helpers, a
+  slog adapter) so the future shared meshfed-api go-client merges with no logging delta (D3).
+  See plan 03 §5.2.6 / §5.3 / §7; Spring
   DI/annotations/properties →
   constructor injection (P3) + the shared config package (D7); Jackson DTOs → plain
   structs with `encoding/json` (existing `meshapi` house style); OkHttp interceptors →

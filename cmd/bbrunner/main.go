@@ -32,7 +32,7 @@ const (
 	personaManual   persona = "manual"   // fit manual-block-runner persona (phase 6a)
 	personaGitlab   persona = "gitlab"   // fit gitlab-block-runner persona (phase 6b)
 	personaAzdevops persona = "azdevops" // fit azure-devops-block-runner persona (phase 6c)
-	// phase 6: personaGithub.
+	personaGithub   persona = "github"   // fit github-block-runner persona (phase 6d)
 )
 
 func main() {
@@ -60,6 +60,7 @@ func newDispatcher() dispatcher {
 			personaManual:   runManualPolling,
 			personaGitlab:   runGitlabPolling,
 			personaAzdevops: runAzdevopsPolling,
+			personaGithub:   runGithubPolling,
 		},
 		usage: os.Stderr,
 	}

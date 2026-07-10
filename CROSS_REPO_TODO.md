@@ -236,3 +236,39 @@ the parsed `[]BuildingBlockInputSpecDTO` and decrypts it directly. Both apply th
 STRING/CODE/FILE branch rule. 06C's `internal/crypto` `normalizePEM` single-line-PEM tolerance
 and 06B's multi-line re-wrap of the shared dev key coexist (the normalize pass is a no-op on
 already-valid multi-line PEM); both survive.
+
+## Phase 6d (github Kotlin→Go port, PLAN_DETAIL_06D_github.md §9 step 10-11 / §12 / §15)
+
+This slice landed the **Go github persona additively** (new `internal/github`, `cmd/github`,
+`cmd/bbrunner/github.go` registration, the per-persona Dockerfile/runner-config.yml,
+`internal/github 90` coverage gate, the `github` depguard group). It did **not** delete the
+Kotlin `github-block-runner`/`block-runner-core` modules, flip its CI legs, or edit
+meshfed-release — same rationale as the other ports: those steps hinge on the §11 acceptance
+gate (side-by-side transcript equivalence + a real-GitHub smoke) not runnable here.
+
+- **This repo, deferred to the removal PR:** `git rm -r github-block-runner/`;
+  `settings.gradle` drop `include 'github-block-runner'`; `.github/workflows/ci.yml` +
+  `build-images.yml` flip the github JVM leg to `containers/github-block-runner/Dockerfile`
+  and add a `./cmd/github` build leg. Kept intact so CI stays green while the stack lands.
+- **Kotlin pin tests (§3):** not added (gradle not runnable here); the Go scenario suite
+  (`internal/github/*_test.go`) reproduces the planned pins (G-P1/G-P2 JWT+PEM, the 422
+  heuristic + permission-gate tables, Mode A/B input parity incl. the G-P10 secret-leak pin,
+  the async/sync/find-timeout/poll-timeout/ctx-cancel handler+poller ladder, G-P11 single-run
+  exit) as the surviving pin.
+- **Fit-check reconciliation (consolidation, flagged):** PLAN_DETAIL_06D §4.6 assumed github
+  would consume a shared `meshapi.DecryptInputs` and a shared `ExternalCallError` from 06B. In
+  the landed stack neither is consumed by github: (a) 06B/06C/06D each keep `ExternalCallError`
+  **package-local** (06B put it in `internal/gitlab`, not `internal/meshapi`) because each
+  persona classifies its own external-call failures — so there is no shared type to consume,
+  and github's `externalCallError` is consistent with that; (b) github's Mode A/B input
+  handling decodes into its own `[]runInput` via `decodeAndDecryptInputs`, which neither the
+  byte-based `meshapi.DecryptInputs` (gitlab) nor the typed `meshapi.DecryptInputSpecs`
+  (azdevops) can express, so it keeps a package-local decode+decrypt path. github likewise
+  keeps a package-local `Decryptor`/`NoOpDecryptor`/`NewCertDecryptor` twin — the same choice
+  `internal/tf` already makes (documented in `internal/meshapi/decryptor.go`), so this is
+  consistent with the established precedent rather than a new divergence. Recorded for a
+  reviewer who wants to later promote a single shared decryptor trio once all ports are the
+  only consumers. One behavioral nuance: github's package-local `certDecryptor` does NOT carry
+  the Kotlin `decrypt("") == ""` empty-string guard that `meshapi.CertDecryptor` has; github
+  never decrypts a legitimately-empty ciphertext (appPem/token are always present), so this is
+  inert today, but a future convergence onto `meshapi.CertDecryptor` would be strictly safer.

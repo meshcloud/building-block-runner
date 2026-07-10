@@ -308,6 +308,32 @@ linters:
             - github.com/prometheus/client_golang
             - github.com/stretchr/testify
 
+        # github persona (internal/github) + its wiring cmd/github (phase 6d, the Kotlin-port
+        # of GITHUB_WORKFLOW): App JWT (stdlib crypto, no jwt dependency) → installation token
+        # → workflow_dispatch → async handover / sync poll. HTTP-only — shared
+        # client/report/config/dispatch/crypto + its own handler; NO k8s, NO go-git, NO tofu,
+        # NO external JWT lib (§4.2/§16.13). prometheus is allowed for the RunPolling wiring.
+        github:
+          files:
+            - "internal/github/**/*.go"
+            - "cmd/github/**/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+        github-test:
+          files:
+            - "internal/github/**/*_test.go"
+            - "cmd/github/**/*_test.go"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+            - github.com/stretchr/testify
+
   exclusions:
     rules:
       # --- Temporary legacy exclusions (PLAN_DETAIL_00_guardrails.md §5.3 category 2) ---

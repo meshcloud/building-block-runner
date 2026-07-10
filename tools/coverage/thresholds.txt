@@ -59,3 +59,10 @@ github.com/meshcloud/building-block-runner/internal/gitlab 90
 # httptest transport + an injected Clock (no real sleeps) -- no exclusion-list entries. The
 # persona polling wiring lives in cmd/azdevops + cmd/bbrunner (package main, not gated).
 github.com/meshcloud/building-block-runner/internal/azdevops 90
+
+# Phase 6d (PLAN_DETAIL_06D_github.md §10.3): the github runner port (D6 Kotlin corollary).
+# Whole package hermetically testable — fake HTTP for BOTH meshStack (meshapitest) and GitHub
+# (httptest stub) + a fake clock for the find/poll loops — so NO exclusion-list entries
+# (umbrella §5.3). The persona polling wiring lives in cmd/github + cmd/bbrunner (package
+# main, not gated).
+github.com/meshcloud/building-block-runner/internal/github 90

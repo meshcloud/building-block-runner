@@ -5,10 +5,9 @@ import (
 	_ "embed"
 	"io"
 	"log"
+	"os"
 	"path/filepath"
 	"sync"
-
-	"os"
 
 	"github.com/hashicorp/go-version"
 	"github.com/hashicorp/hc-install/product"

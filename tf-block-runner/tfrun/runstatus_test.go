@@ -9,7 +9,7 @@ import (
 func Test_firstStep_correctlyInitializes(t *testing.T) {
 	runStatus := makeTestRunStatus()
 	runStatus.firstStep()
-	assert.Equal(t, 0, runStatus.CurrentStepIndex, "")
+	assert.Equal(t, 0, runStatus.CurrentStepIndex)
 	assert.Equal(t, "step1", runStatus.currentStepStatus().Name)
 }
 
@@ -20,7 +20,7 @@ func Test_failRunAndNotFinishedSteps_correctlyFailsThisAndSuccessorSteps(t *test
 	runStatus.nextStep()
 	runStatus.failRunAndNotFinishedSteps()
 
-	assert.Equal(t, 1, runStatus.CurrentStepIndex, "")
+	assert.Equal(t, 1, runStatus.CurrentStepIndex)
 	assert.Equal(t, SUCCEEDED, runStatus.Steps[0].Status)
 	assert.Equal(t, FAILED, runStatus.Steps[1].Status)
 	assert.Equal(t, FAILED, runStatus.Steps[2].Status)

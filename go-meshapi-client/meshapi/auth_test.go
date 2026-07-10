@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // loginHandler returns a handler that responds with an API key login response.
@@ -21,15 +20,17 @@ func loginHandler(t *testing.T, token string, expiresIn int) http.HandlerFunc {
 		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
 
 		var req apiKeyLoginRequest
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+		// assert, not require: this handler runs on the httptest server's own goroutine,
+		// where require's t.FailNow would only end that goroutine, not the test.
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 		assert.Equal(t, "test-client-id", req.ClientId)
 		assert.Equal(t, "test-client-secret", req.ClientSecret)
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(apiKeyLoginResponse{
+		assert.NoError(t, json.NewEncoder(w).Encode(apiKeyLoginResponse{
 			AccessToken: token,
 			ExpiresIn:   expiresIn,
-		})
+		}))
 	}
 }
 
@@ -49,10 +50,10 @@ func TestApiKeyAuth_CachesToken(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount.Add(1)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(apiKeyLoginResponse{
+		assert.NoError(t, json.NewEncoder(w).Encode(apiKeyLoginResponse{
 			AccessToken: "cached-token",
 			ExpiresIn:   3600,
-		})
+		}))
 	}))
 	defer srv.Close()
 
@@ -80,10 +81,10 @@ func TestApiKeyAuth_RefreshesExpiredToken(t *testing.T) {
 		// expires_in=1 minus the 30s buffer would be negative, but our code clamps to 1s minimum.
 		// Use 31s so expiry = 31 - 30 = 1s, which we can wait out in the test.
 		expiresIn := 31
-		json.NewEncoder(w).Encode(apiKeyLoginResponse{
+		assert.NoError(t, json.NewEncoder(w).Encode(apiKeyLoginResponse{
 			AccessToken: token,
 			ExpiresIn:   expiresIn,
-		})
+		}))
 	}))
 	defer srv.Close()
 
@@ -111,7 +112,7 @@ func TestApiKeyAuth_ReturnsEmptyOnLoginFailure(t *testing.T) {
 
 	header := auth.AuthHeader()
 
-	assert.Equal(t, "", header, "should return empty string when login fails")
+	assert.Empty(t, header, "should return empty string when login fails")
 }
 
 func TestApiKeyAuth_ReturnsEmptyOnNonOKStatus(t *testing.T) {
@@ -124,7 +125,7 @@ func TestApiKeyAuth_ReturnsEmptyOnNonOKStatus(t *testing.T) {
 
 	header := auth.AuthHeader()
 
-	assert.Equal(t, "", header, "should return empty string on 401")
+	assert.Empty(t, header, "should return empty string on 401")
 }
 
 func TestBasicAuth_Header(t *testing.T) {

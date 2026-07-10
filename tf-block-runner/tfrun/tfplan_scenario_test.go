@@ -11,8 +11,6 @@ import (
 
 	"github.com/hashicorp/terraform-exec/tfexec"
 	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // Test_DetectSucceeded_ArtifactInStatusUpdate verifies that the DETECT behavior routes through
@@ -45,20 +43,20 @@ func (suite *WorkerTestSuite) Test_DetectSucceeded_ArtifactInStatusUpdate() {
 
 	suite.runWorker()
 
-	require.GreaterOrEqual(suite.T(), len(updateCalls), 1)
+	suite.Require().GreaterOrEqual(len(updateCalls), 1)
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, err := io.ReadAll(lastUpdate.Body)
-	require.NoError(suite.T(), err)
+	suite.Require().NoError(err)
 	var update meshapi.RunStatusUpdateDTO
-	require.NoError(suite.T(), json.Unmarshal(data, &update))
+	suite.Require().NoError(json.Unmarshal(data, &update))
 
-	assert.True(suite.T(), planFuncCalled, "expected DETECT behavior to invoke terraform plan")
-	assert.Equal(suite.T(), SUCCEEDED.str(), *update.Status)
-	require.NotEmpty(suite.T(), update.Artifact, "expected artifact to be set in status update")
+	suite.True(planFuncCalled, "expected DETECT behavior to invoke terraform plan")
+	suite.Equal(SUCCEEDED.str(), *update.Status)
+	suite.Require().NotEmpty(update.Artifact, "expected artifact to be set in status update")
 
 	decoded, err := base64.StdEncoding.DecodeString(update.Artifact)
-	require.NoError(suite.T(), err)
-	assert.Equal(suite.T(), planBytes, decoded)
+	suite.Require().NoError(err)
+	suite.Equal(planBytes, decoded)
 }
 
 // Test_ApplyWithPlanArtifact_DownloadsAndAppliesSavedPlan verifies that an APPLY run carrying a
@@ -78,9 +76,9 @@ func (suite *WorkerTestSuite) Test_ApplyWithPlanArtifact_DownloadsAndAppliesSave
 	downloadCalled := false
 	suite.calls.download = func(req *http.Request) *http.Response {
 		downloadCalled = true
-		assert.Equal(suite.T(), "application/octet-stream", req.Header.Get("Accept"))
+		suite.Equal("application/octet-stream", req.Header.Get("Accept"))
 		// the run-scoped bearer token from the fetched run must be used for the download
-		assert.Equal(suite.T(), "Bearer test-mock-run-token-12345", req.Header.Get("Authorization"))
+		suite.Equal("Bearer test-mock-run-token-12345", req.Header.Get("Authorization"))
 		return &http.Response{
 			StatusCode: 200,
 			Body:       io.NopCloser(bytes.NewBuffer(savedPlanBytes)),
@@ -109,17 +107,17 @@ func (suite *WorkerTestSuite) Test_ApplyWithPlanArtifact_DownloadsAndAppliesSave
 
 	suite.runWorker()
 
-	assert.True(suite.T(), downloadCalled, "expected the predecessor plan artifact to be downloaded")
-	assert.Equal(suite.T(), 1, applyOptCount, "expected apply to be called with a single (DirOrPlan) option")
-	assert.Equal(suite.T(), savedPlanBytes, planOnDisk, "expected the downloaded plan bytes to be written to plan.tfplan")
+	suite.True(downloadCalled, "expected the predecessor plan artifact to be downloaded")
+	suite.Equal(1, applyOptCount, "expected apply to be called with a single (DirOrPlan) option")
+	suite.Equal(savedPlanBytes, planOnDisk, "expected the downloaded plan bytes to be written to plan.tfplan")
 
-	require.GreaterOrEqual(suite.T(), len(updateCalls), 1)
+	suite.Require().GreaterOrEqual(len(updateCalls), 1)
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, err := io.ReadAll(lastUpdate.Body)
-	require.NoError(suite.T(), err)
+	suite.Require().NoError(err)
 	var update meshapi.RunStatusUpdateDTO
-	require.NoError(suite.T(), json.Unmarshal(data, &update))
-	assert.Equal(suite.T(), SUCCEEDED.str(), *update.Status)
+	suite.Require().NoError(json.Unmarshal(data, &update))
+	suite.Equal(SUCCEEDED.str(), *update.Status)
 }
 
 // Test_ApplyWithoutPlanArtifact_PlainApply is the backward-compatibility regression: an APPLY run
@@ -151,16 +149,16 @@ func (suite *WorkerTestSuite) Test_ApplyWithoutPlanArtifact_PlainApply() {
 
 	suite.runWorker()
 
-	assert.False(suite.T(), downloadCalled, "plain apply must not download any plan artifact")
-	assert.Equal(suite.T(), 0, applyOptCount, "plain apply must call terraform apply with no plan option")
+	suite.False(downloadCalled, "plain apply must not download any plan artifact")
+	suite.Equal(0, applyOptCount, "plain apply must call terraform apply with no plan option")
 
-	require.GreaterOrEqual(suite.T(), len(updateCalls), 1)
+	suite.Require().GreaterOrEqual(len(updateCalls), 1)
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, err := io.ReadAll(lastUpdate.Body)
-	require.NoError(suite.T(), err)
+	suite.Require().NoError(err)
 	var update meshapi.RunStatusUpdateDTO
-	require.NoError(suite.T(), json.Unmarshal(data, &update))
-	assert.Equal(suite.T(), SUCCEEDED.str(), *update.Status)
+	suite.Require().NoError(json.Unmarshal(data, &update))
+	suite.Equal(SUCCEEDED.str(), *update.Status)
 }
 
 // Test_ApplyWithPlanArtifact_DownloadFailureFailsRun verifies that when the planArtifact download
@@ -199,20 +197,20 @@ func (suite *WorkerTestSuite) Test_ApplyWithPlanArtifact_DownloadFailureFailsRun
 
 	suite.runWorker()
 
-	assert.False(suite.T(), applyCalled, "terraform apply must not be called when the plan download fails")
+	suite.False(applyCalled, "terraform apply must not be called when the plan download fails")
 
-	require.GreaterOrEqual(suite.T(), len(updateCalls), 1)
+	suite.Require().GreaterOrEqual(len(updateCalls), 1)
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, err := io.ReadAll(lastUpdate.Body)
-	require.NoError(suite.T(), err)
+	suite.Require().NoError(err)
 	var update meshapi.RunStatusUpdateDTO
-	require.NoError(suite.T(), json.Unmarshal(data, &update))
+	suite.Require().NoError(json.Unmarshal(data, &update))
 
-	assert.Equal(suite.T(), FAILED.str(), *update.Status)
+	suite.Equal(FAILED.str(), *update.Status)
 	executeTf := findStep(suite.T(), update, StepExecuteTf)
-	assert.Equal(suite.T(), FAILED.str(), *executeTf.Status)
-	require.NotNil(suite.T(), executeTf.UserMessage)
-	assert.Contains(suite.T(), *executeTf.UserMessage, "previewed terraform plan")
+	suite.Equal(FAILED.str(), *executeTf.Status)
+	suite.Require().NotNil(executeTf.UserMessage)
+	suite.Contains(*executeTf.UserMessage, "previewed terraform plan")
 }
 
 // Test_DetectFailed_WhenPlanFileNotWritten verifies that the run fails when
@@ -239,19 +237,19 @@ func (suite *WorkerTestSuite) Test_DetectFailed_WhenPlanFileNotWritten() {
 
 	suite.runWorker()
 
-	require.GreaterOrEqual(suite.T(), len(updateCalls), 1)
+	suite.Require().GreaterOrEqual(len(updateCalls), 1)
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, err := io.ReadAll(lastUpdate.Body)
-	require.NoError(suite.T(), err)
+	suite.Require().NoError(err)
 	var update meshapi.RunStatusUpdateDTO
-	require.NoError(suite.T(), json.Unmarshal(data, &update))
+	suite.Require().NoError(json.Unmarshal(data, &update))
 
-	assert.True(suite.T(), planFuncCalled, "expected DETECT behavior to invoke terraform plan")
-	assert.Equal(suite.T(), FAILED.str(), *update.Status)
-	assert.Empty(suite.T(), update.Artifact)
+	suite.True(planFuncCalled, "expected DETECT behavior to invoke terraform plan")
+	suite.Equal(FAILED.str(), *update.Status)
+	suite.Empty(update.Artifact)
 
 	executeTf := findStep(suite.T(), update, StepExecuteTf)
-	assert.Equal(suite.T(), FAILED.str(), *executeTf.Status)
-	require.NotNil(suite.T(), executeTf.UserMessage)
-	assert.Contains(suite.T(), *executeTf.UserMessage, "failed to read plan artifact")
+	suite.Equal(FAILED.str(), *executeTf.Status)
+	suite.Require().NotNil(executeTf.UserMessage)
+	suite.Contains(*executeTf.UserMessage, "failed to read plan artifact")
 }

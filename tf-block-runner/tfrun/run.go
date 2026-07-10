@@ -41,7 +41,7 @@ type Variable struct {
 	isSensitive bool
 }
 
-// add more "decryptable" types here, once we support them
+// add more "decryptable" types here, once we support them.
 func (variable Variable) decryptIfSensitive(crypto *meshcrypto.MeshCertBasedCrypto) (result any, err error) {
 	result = variable.value
 	if variable.isSensitive {

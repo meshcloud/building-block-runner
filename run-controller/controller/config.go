@@ -11,10 +11,10 @@ import (
 
 var AppConfig *ControllerConfig = nil
 
-// DiscoveredOidcIssuer holds the OIDC issuer URL discovered from Kubernetes at runtime
+// DiscoveredOidcIssuer holds the OIDC issuer URL discovered from Kubernetes at runtime.
 var DiscoveredOidcIssuer string = ""
 
-// ControllerConfig holds the main configuration for the run controller
+// ControllerConfig holds the main configuration for the run controller.
 type ControllerConfig struct {
 	Namespace              string                     `yaml:"namespace"`              // Kubernetes namespace where jobs are created
 	ImagePullSecrets       []string                   `yaml:"imagePullSecrets"`       // Image pull secrets for runner jobs (optional)
@@ -54,14 +54,14 @@ func (c ApiConfig) NewAuthProvider(fallbackURL string) meshapi.AuthProvider {
 	return meshapi.BasicAuth{Username: c.Username, Password: c.Password}
 }
 
-// CryptoConfig holds cryptographic keys for secure communication
+// CryptoConfig holds cryptographic keys for secure communication.
 type CryptoConfig struct {
 	PublicKey  string `yaml:"publicKey"`  // Public key for encryption (used to update runner)
 	PrivateKey string `yaml:"privateKey"` // Private key for decryption (used to decrypt encrypted secrets)
 }
 
-// JobSpecTemplate defines the Kubernetes job specification for a runner
-// All configuration is passed via environment variables
+// JobSpecTemplate defines the Kubernetes job specification for a runner.
+// All configuration is passed via environment variables.
 type JobSpecTemplate struct {
 	Image             string             `yaml:"image"`             // Container image to use for the runner
 	Command           []string           `yaml:"command"`           // Optional: Override container command for custom entrypoint wrapper
@@ -83,8 +83,8 @@ type TolerationConfig struct {
 	TolerationSeconds *int64 `yaml:"tolerationSeconds"` // Only meaningful for "NoExecute" effect
 }
 
-// ExtraVolume defines an additional volume with support for ConfigMap, Secret, or EmptyDir sources
-// Only one of ConfigMap, Secret, or EmptyDir should be set
+// ExtraVolume defines an additional volume with support for ConfigMap, Secret, or EmptyDir sources.
+// Only one of ConfigMap, Secret, or EmptyDir should be set.
 type ExtraVolume struct {
 	Name      string               `yaml:"name"`      // Volume name
 	ConfigMap *ConfigMapVolumeSpec `yaml:"configMap"` // ConfigMap volume source (optional)
@@ -92,35 +92,35 @@ type ExtraVolume struct {
 	EmptyDir  *EmptyDirVolumeSpec  `yaml:"emptyDir"`  // EmptyDir volume source (optional)
 }
 
-// ConfigMapVolumeSpec defines a ConfigMap volume source
+// ConfigMapVolumeSpec defines a ConfigMap volume source.
 type ConfigMapVolumeSpec struct {
 	Name string `yaml:"name"` // ConfigMap name
 }
 
-// SecretVolumeSpec defines a Secret volume source
+// SecretVolumeSpec defines a Secret volume source.
 type SecretVolumeSpec struct {
 	SecretName string `yaml:"secretName"` // Secret name
 }
 
-// EmptyDirVolumeSpec defines an EmptyDir volume source
+// EmptyDirVolumeSpec defines an EmptyDir volume source.
 type EmptyDirVolumeSpec struct {
 	SizeLimit string `yaml:"sizeLimit"` // Optional size limit (e.g., "1Gi")
 }
 
-// ExtraVolumeMount defines an additional volume mount
+// ExtraVolumeMount defines an additional volume mount.
 type ExtraVolumeMount struct {
 	Name      string `yaml:"name"`      // Volume name (must match volume)
 	MountPath string `yaml:"mountPath"` // Path to mount in container
 	ReadOnly  bool   `yaml:"readOnly"`  // Mount as read-only
 }
 
-// ResourcesConfig defines CPU and memory resource requests and limits for the runner container
+// ResourcesConfig defines CPU and memory resource requests and limits for the runner container.
 type ResourcesConfig struct {
 	Requests ResourceSpec `yaml:"requests"` // Resource requests (guaranteed minimum)
 	Limits   ResourceSpec `yaml:"limits"`   // Resource limits (maximum allowed)
 }
 
-// ResourceSpec defines CPU and memory values
+// ResourceSpec defines CPU and memory values.
 type ResourceSpec struct {
 	Cpu    string `yaml:"cpu"`    // CPU in Kubernetes format (e.g., "100m", "1")
 	Memory string `yaml:"memory"` // Memory in Kubernetes format (e.g., "256Mi", "1Gi")
@@ -273,7 +273,7 @@ func validateConfig(config *ControllerConfig) error {
 	return nil
 }
 
-// logConfig logs the startup configuration
+// logConfig logs the startup configuration.
 func logConfig(logger *log.Logger, config *ControllerConfig) {
 	logger.Println("--------------------------------------------------------------------")
 	logger.Printf("Kubernetes namespace: %s\n", config.Namespace)

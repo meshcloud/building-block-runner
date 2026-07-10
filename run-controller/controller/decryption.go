@@ -9,7 +9,7 @@ import (
 	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
 )
 
-// decryptRunDetails decrypts all sensitive fields in the run details
+// decryptRunDetails decrypts all sensitive fields in the run details.
 func decryptRunDetails(runJsonBase64 string, cryptoInstance *meshcrypto.MeshCertBasedCrypto) (string, error) {
 	// Decode base64
 	runJsonBytes, err := base64.StdEncoding.DecodeString(runJsonBase64)

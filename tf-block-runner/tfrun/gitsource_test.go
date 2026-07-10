@@ -7,7 +7,6 @@ import (
 	"path"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -61,11 +60,11 @@ func (suite *GitSourceTestSuite) Test_GitSourceCloneSimple() {
 	}
 
 	err := uut.CopyToTargetDir(suite.wd)
-	assert.Nil(suite.T(), err)
-	assert.True(suite.T(), mock.called("clone", auth, "url", path.Join(suite.wd, TEMP_CLONE_DIR_PATH)))
-	assert.True(suite.T(), mock.neverCalled("checkoutRef"))
-	assert.True(suite.T(), mock.neverCalled("azureClone"))
-	assert.True(suite.T(), mock.neverCalled("azureCheckoutRef"))
+	suite.Require().NoError(err)
+	suite.True(mock.called("clone", auth, "url", path.Join(suite.wd, TEMP_CLONE_DIR_PATH)))
+	suite.True(mock.neverCalled("checkoutRef"))
+	suite.True(mock.neverCalled("azureClone"))
+	suite.True(mock.neverCalled("azureCheckoutRef"))
 }
 
 func (suite *GitSourceTestSuite) Test_GitSourceCloneWithRef() {
@@ -82,11 +81,11 @@ func (suite *GitSourceTestSuite) Test_GitSourceCloneWithRef() {
 	}
 
 	err := uut.CopyToTargetDir(suite.wd)
-	assert.Nil(suite.T(), err)
-	assert.True(suite.T(), mock.called("clone", auth, "url", path.Join(suite.wd, TEMP_CLONE_DIR_PATH)))
-	assert.True(suite.T(), mock.called("checkoutRef", Any{}, "ref"))
-	assert.True(suite.T(), mock.neverCalled("azureClone"))
-	assert.True(suite.T(), mock.neverCalled("azureCheckoutRef"))
+	suite.Require().NoError(err)
+	suite.True(mock.called("clone", auth, "url", path.Join(suite.wd, TEMP_CLONE_DIR_PATH)))
+	suite.True(mock.called("checkoutRef", Any{}, "ref"))
+	suite.True(mock.neverCalled("azureClone"))
+	suite.True(mock.neverCalled("azureCheckoutRef"))
 }
 
 func (suite *GitSourceTestSuite) Test_GitSourceCloneSimpleAzure() {
@@ -103,11 +102,11 @@ func (suite *GitSourceTestSuite) Test_GitSourceCloneSimpleAzure() {
 	}
 
 	err := uut.CopyToTargetDir(suite.wd)
-	assert.Nil(suite.T(), err)
-	assert.True(suite.T(), mock.neverCalled("clone"))
-	assert.True(suite.T(), mock.neverCalled("checkoutRef"))
-	assert.True(suite.T(), mock.called("azureClone", suite.wd, azureUrl, nil, auth.name()))
-	assert.True(suite.T(), mock.neverCalled("azureCheckoutRef"))
+	suite.Require().NoError(err)
+	suite.True(mock.neverCalled("clone"))
+	suite.True(mock.neverCalled("checkoutRef"))
+	suite.True(mock.called("azureClone", suite.wd, azureUrl, nil, auth.name()))
+	suite.True(mock.neverCalled("azureCheckoutRef"))
 }
 
 func (suite *GitSourceTestSuite) Test_GitSourceCloneWithRefAzure() {
@@ -126,11 +125,11 @@ func (suite *GitSourceTestSuite) Test_GitSourceCloneWithRefAzure() {
 	}
 
 	err := uut.CopyToTargetDir(suite.wd)
-	assert.Nil(suite.T(), err)
-	assert.True(suite.T(), mock.neverCalled("clone"))
-	assert.True(suite.T(), mock.neverCalled("checkoutRef"))
-	assert.True(suite.T(), mock.called("azureClone", suite.wd, azureUrl, ref, auth.name()))
-	assert.True(suite.T(), mock.called("azureCheckoutRef", Any{}, *ref))
+	suite.Require().NoError(err)
+	suite.True(mock.neverCalled("clone"))
+	suite.True(mock.neverCalled("checkoutRef"))
+	suite.True(mock.called("azureClone", suite.wd, azureUrl, ref, auth.name()))
+	suite.True(mock.called("azureCheckoutRef", Any{}, *ref))
 }
 
 func (suite *GitSourceTestSuite) newGitFacadeMock() *MockedGitFacade {

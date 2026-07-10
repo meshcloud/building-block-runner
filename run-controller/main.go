@@ -11,9 +11,10 @@ import (
 	"time"
 
 	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/meshcloud/building-block-runner/run-controller/build"
 	controller "github.com/meshcloud/building-block-runner/run-controller/controller"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {

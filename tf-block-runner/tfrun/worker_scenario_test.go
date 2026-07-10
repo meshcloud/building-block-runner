@@ -17,10 +17,8 @@ import (
 	"time"
 
 	"github.com/hashicorp/terraform-exec/tfexec"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/suite"
-
 	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
+	"github.com/stretchr/testify/suite"
 )
 
 type WorkerTestSuite struct {
@@ -66,7 +64,7 @@ func Test_WorkerSuite(t *testing.T) {
 }
 
 // run once before suite runs,
-// setup worker and tfBinaries, use temp directories
+// setup worker and tfBinaries, use temp directories.
 func (suite *WorkerTestSuite) SetupSuite() {
 
 	testTfInstallDir, err := os.MkdirTemp(os.TempDir(), "workerScenario-tf-")
@@ -97,13 +95,13 @@ func (suite *WorkerTestSuite) SetupSuite() {
 	}
 }
 
-// clean up temp directory after test suite ran
+// clean up temp directory after test suite ran.
 func (suite *WorkerTestSuite) TearDownSuite() {
 	os.RemoveAll(suite.tfBin.dir)
 	os.RemoveAll(AppConfig.TfParentWorkingDir)
 }
 
-// for each test setup new channels
+// for each test setup new channels.
 func (suite *WorkerTestSuite) SetupTest() {
 	suite.calls = MockRunApiCalls{
 		fetch:    noopCall,
@@ -138,7 +136,7 @@ func (suite *WorkerTestSuite) SetupTest() {
 	}
 }
 
-// clean up after test
+// clean up after test.
 func (suite *WorkerTestSuite) TearDownTest() {
 	close(suite.w.workerIn)
 	close(suite.w.workerOut)
@@ -162,8 +160,8 @@ func (suite *WorkerTestSuite) runWorker() {
 
 // findStep returns the step with the given ID from a status update.
 // It immediately fails the test if no matching step is found.
-func findStep(t testing.TB, update meshapi.RunStatusUpdateDTO, stepId string) meshapi.StepStatusUpdateDTO {
-	t.Helper()
+func findStep(tb testing.TB, update meshapi.RunStatusUpdateDTO, stepId string) meshapi.StepStatusUpdateDTO {
+	tb.Helper()
 	if s := findStepOrNil(update, stepId); s != nil {
 		return *s
 	}
@@ -171,7 +169,7 @@ func findStep(t testing.TB, update meshapi.RunStatusUpdateDTO, stepId string) me
 	for i, s := range update.Steps {
 		ids[i] = s.Id
 	}
-	t.Fatalf("step %q not found; available step IDs: %v", stepId, ids)
+	tb.Fatalf("step %q not found; available step IDs: %v", stepId, ids)
 	return meshapi.StepStatusUpdateDTO{}
 }
 
@@ -199,23 +197,23 @@ func (suite *WorkerTestSuite) Test_MissingAuth() {
 	suite.runWorker()
 
 	// assertions
-	assert.Equal(suite.T(), 1, len(updateCalls))
+	suite.Len(updateCalls, 1)
 
 	data, _ := io.ReadAll(updateCalls[0].Body)
 	var update meshapi.RunStatusUpdateDTO
 	json.Unmarshal(data, &update)
 
-	assert.Equal(suite.T(), FAILED.str(), *update.Status)
-	assert.Equal(suite.T(), 6, len(update.Steps))
+	suite.Equal(FAILED.str(), *update.Status)
+	suite.Len(update.Steps, 6)
 	for i, step := range update.Steps {
-		assert.Equal(suite.T(), FAILED.str(), *step.Status)
+		suite.Equal(FAILED.str(), *step.Status)
 		if i == 0 {
-			assert.Contains(suite.T(), *step.SystemMessage, "copy sources from")
+			suite.Contains(*step.SystemMessage, "copy sources from")
 			// UserMessage is now populated with the actual error to improve panel visibility
-			assert.NotNil(suite.T(), step.UserMessage)
+			suite.NotNil(step.UserMessage)
 		} else {
-			assert.Equal(suite.T(), "Aborted due to failure in an earlier step", *step.SystemMessage)
-			assert.Nil(suite.T(), step.UserMessage)
+			suite.Equal("Aborted due to failure in an earlier step", *step.SystemMessage)
+			suite.Nil(step.UserMessage)
 		}
 	}
 }
@@ -237,7 +235,7 @@ func (suite *WorkerTestSuite) Test_ApplySucceeded() {
 	suite.runWorker()
 
 	// assertions - check for at least one update call
-	assert.GreaterOrEqual(suite.T(), len(updateCalls), 1)
+	suite.GreaterOrEqual(len(updateCalls), 1)
 
 	// Check the final update call
 	lastUpdate := updateCalls[len(updateCalls)-1]
@@ -245,12 +243,12 @@ func (suite *WorkerTestSuite) Test_ApplySucceeded() {
 	var update meshapi.RunStatusUpdateDTO
 	json.Unmarshal(data, &update)
 
-	assert.Equal(suite.T(), SUCCEEDED.str(), *update.Status)
+	suite.Equal(SUCCEEDED.str(), *update.Status)
 	for _, step := range update.Steps {
-		assert.Equal(suite.T(), SUCCEEDED.str(), *step.Status)
-		assert.Nil(suite.T(), step.UserMessage)
+		suite.Equal(SUCCEEDED.str(), *step.Status)
+		suite.Nil(step.UserMessage)
 	}
-	assert.Nil(suite.T(), update.Summary)
+	suite.Nil(update.Summary)
 }
 
 func (suite *WorkerTestSuite) Test_RegistrationConflict_ContinuesExecution() {
@@ -305,18 +303,18 @@ func (suite *WorkerTestSuite) Test_RegistrationConflict_ContinuesExecution() {
 	suite.runWorker()
 
 	// At least one status update must have been sent
-	assert.GreaterOrEqual(suite.T(), len(capturedUpdates), 1, "expected at least one status update")
+	suite.GreaterOrEqual(len(capturedUpdates), 1, "expected at least one status update")
 
 	// PENDING must NEVER appear in any update — it is a coordinator-only status and
 	// sending it would cause the coordinator's state machine to reject it with a 500
 	for _, u := range capturedUpdates {
-		assert.NotEqual(suite.T(), PENDING.str(), u.status,
+		suite.NotEqual(PENDING.str(), u.status,
 			"runner must never report PENDING status to the API (coordinator rejects it)")
 	}
 
 	// Final update must indicate successful execution
 	finalStatus := capturedUpdates[len(capturedUpdates)-1].status
-	assert.Equal(suite.T(), SUCCEEDED.str(), finalStatus,
+	suite.Equal(SUCCEEDED.str(), finalStatus,
 		"run should complete successfully even when registration returns 409")
 }
 
@@ -329,7 +327,7 @@ func (suite *WorkerTestSuite) Test_ApplyRunAborted() {
 
 	// we test that apply is called with a cancelled context because run is aborted before
 	suite.tfMock.applyFunc = func(ctx context.Context, opts ...tfexec.ApplyOption) error {
-		assert.Equal(suite.T(), context.Canceled, ctx.Err())
+		suite.Equal(context.Canceled, ctx.Err())
 		return nil
 	}
 
@@ -350,11 +348,11 @@ func (suite *WorkerTestSuite) Test_ApplyRunAborted() {
 	// with a context that has been cancelled already.
 	// therefore also not more then 1 update call is sent (11s duration / 10sec update interval)
 	// update will have the IN_PROGRESS state, as we are not done yet
-	assert.Equal(suite.T(), 1, len(updateCalls))
+	suite.Len(updateCalls, 1)
 	data, _ := io.ReadAll(updateCalls[0].Body)
 	var update meshapi.RunStatusUpdateDTO
 	json.Unmarshal(data, &update)
-	assert.Equal(suite.T(), IN_PROGRESS.str(), *update.Status)
+	suite.Equal(IN_PROGRESS.str(), *update.Status)
 }
 
 func (suite *WorkerTestSuite) Test_ApplyTfFailure() {
@@ -381,7 +379,7 @@ func (suite *WorkerTestSuite) Test_ApplyTfFailure() {
 	suite.runWorker()
 
 	// assertions - now we expect multiple update calls due to error logging
-	assert.GreaterOrEqual(suite.T(), len(updateCalls), 1)
+	suite.GreaterOrEqual(len(updateCalls), 1)
 
 	// Check the final update call
 	lastUpdate := updateCalls[len(updateCalls)-1]
@@ -389,28 +387,28 @@ func (suite *WorkerTestSuite) Test_ApplyTfFailure() {
 	var update meshapi.RunStatusUpdateDTO
 	json.Unmarshal(data, &update)
 
-	assert.Equal(suite.T(), FAILED.str(), *update.Status)
-	assert.Equal(suite.T(), 6, len(update.Steps))
+	suite.Equal(FAILED.str(), *update.Status)
+	suite.Len(update.Steps, 6)
 
 	sources := findStep(suite.T(), update, StepSources)
-	assert.Equal(suite.T(), SUCCEEDED.str(), *sources.Status)
-	assert.Nil(suite.T(), sources.UserMessage)
+	suite.Equal(SUCCEEDED.str(), *sources.Status)
+	suite.Nil(sources.UserMessage)
 
 	inputStep := findStep(suite.T(), update, StepInput)
-	assert.Equal(suite.T(), SUCCEEDED.str(), *inputStep.Status)
-	assert.Nil(suite.T(), inputStep.UserMessage)
+	suite.Equal(SUCCEEDED.str(), *inputStep.Status)
+	suite.Nil(inputStep.UserMessage)
 
 	executeTf := findStep(suite.T(), update, StepExecuteTf)
-	assert.Equal(suite.T(), FAILED.str(), *executeTf.Status)
+	suite.Equal(FAILED.str(), *executeTf.Status)
 	// UserMessage is now set to the error text for better panel visibility
-	assert.NotNil(suite.T(), executeTf.UserMessage)
-	assert.Equal(suite.T(), "test error", *executeTf.UserMessage)
-	assert.Equal(suite.T(), "No plan artifact linked to this run; running a fresh terraform apply.\napply in progress\nfailure\ntest error\n", *executeTf.SystemMessage) // includes error message
+	suite.NotNil(executeTf.UserMessage)
+	suite.Equal("test error", *executeTf.UserMessage)
+	suite.Equal("No plan artifact linked to this run; running a fresh terraform apply.\napply in progress\nfailure\ntest error\n", *executeTf.SystemMessage) // includes error message
 
 	outputStep := findStep(suite.T(), update, StepOutput)
-	assert.Equal(suite.T(), FAILED.str(), *outputStep.Status)
-	assert.Nil(suite.T(), outputStep.UserMessage)
-	assert.Equal(suite.T(), "Aborted due to failure in an earlier step", *outputStep.SystemMessage)
+	suite.Equal(FAILED.str(), *outputStep.Status)
+	suite.Nil(outputStep.UserMessage)
+	suite.Equal("Aborted due to failure in an earlier step", *outputStep.SystemMessage)
 }
 
 func (suite *WorkerTestSuite) Test_DestroySucceeded() {
@@ -430,7 +428,7 @@ func (suite *WorkerTestSuite) Test_DestroySucceeded() {
 	suite.runWorker()
 
 	// assertions - check for at least one update call
-	assert.GreaterOrEqual(suite.T(), len(updateCalls), 1)
+	suite.GreaterOrEqual(len(updateCalls), 1)
 
 	// Check the final update call
 	lastUpdate := updateCalls[len(updateCalls)-1]
@@ -438,12 +436,12 @@ func (suite *WorkerTestSuite) Test_DestroySucceeded() {
 	var update meshapi.RunStatusUpdateDTO
 	json.Unmarshal(data, &update)
 
-	assert.Equal(suite.T(), SUCCEEDED.str(), *update.Status)
+	suite.Equal(SUCCEEDED.str(), *update.Status)
 	for _, step := range update.Steps {
-		assert.Equal(suite.T(), SUCCEEDED.str(), *step.Status)
-		assert.Nil(suite.T(), step.UserMessage)
+		suite.Equal(SUCCEEDED.str(), *step.Status)
+		suite.Nil(step.UserMessage)
 	}
-	assert.Nil(suite.T(), update.Summary)
+	suite.Nil(update.Summary)
 }
 
 func (suite *WorkerTestSuite) Test_DestroyTfFailure() {
@@ -470,7 +468,7 @@ func (suite *WorkerTestSuite) Test_DestroyTfFailure() {
 	suite.runWorker()
 
 	// assertions - now we expect multiple update calls due to error logging
-	assert.GreaterOrEqual(suite.T(), len(updateCalls), 1)
+	suite.GreaterOrEqual(len(updateCalls), 1)
 
 	// Check the final update call
 	lastUpdate := updateCalls[len(updateCalls)-1]
@@ -478,28 +476,28 @@ func (suite *WorkerTestSuite) Test_DestroyTfFailure() {
 	var update meshapi.RunStatusUpdateDTO
 	json.Unmarshal(data, &update)
 
-	assert.Equal(suite.T(), FAILED.str(), *update.Status)
-	assert.Equal(suite.T(), 6, len(update.Steps))
+	suite.Equal(FAILED.str(), *update.Status)
+	suite.Len(update.Steps, 6)
 
 	sources := findStep(suite.T(), update, StepSources)
-	assert.Equal(suite.T(), SUCCEEDED.str(), *sources.Status)
-	assert.Nil(suite.T(), sources.UserMessage)
+	suite.Equal(SUCCEEDED.str(), *sources.Status)
+	suite.Nil(sources.UserMessage)
 
 	inputStep := findStep(suite.T(), update, StepInput)
-	assert.Equal(suite.T(), SUCCEEDED.str(), *inputStep.Status)
-	assert.Nil(suite.T(), inputStep.UserMessage)
+	suite.Equal(SUCCEEDED.str(), *inputStep.Status)
+	suite.Nil(inputStep.UserMessage)
 
 	executeTf := findStep(suite.T(), update, StepExecuteTf)
-	assert.Equal(suite.T(), FAILED.str(), *executeTf.Status)
+	suite.Equal(FAILED.str(), *executeTf.Status)
 	// UserMessage is now set to the error text for better panel visibility
-	assert.NotNil(suite.T(), executeTf.UserMessage)
-	assert.Equal(suite.T(), "test error", *executeTf.UserMessage)
-	assert.Equal(suite.T(), "destroy in progress\nfailure\ntest error\n", *executeTf.SystemMessage) // includes error message
+	suite.NotNil(executeTf.UserMessage)
+	suite.Equal("test error", *executeTf.UserMessage)
+	suite.Equal("destroy in progress\nfailure\ntest error\n", *executeTf.SystemMessage) // includes error message
 
 	outputStep := findStep(suite.T(), update, StepOutput)
-	assert.Equal(suite.T(), FAILED.str(), *outputStep.Status)
-	assert.Nil(suite.T(), outputStep.UserMessage)
-	assert.Equal(suite.T(), "Aborted due to failure in an earlier step", *outputStep.SystemMessage)
+	suite.Equal(FAILED.str(), *outputStep.Status)
+	suite.Nil(outputStep.UserMessage)
+	suite.Equal("Aborted due to failure in an earlier step", *outputStep.SystemMessage)
 }
 
 func (suite *WorkerTestSuite) Test_UpdatesStatusWithLiveLogs() {
@@ -508,7 +506,7 @@ func (suite *WorkerTestSuite) Test_UpdatesStatusWithLiveLogs() {
 
 	suite.tfMock.applyFunc = func(ctx context.Context, opts ...tfexec.ApplyOption) error {
 		for i := 0; i < 5; i++ {
-			suite.tfMock.stdOut.Write([]byte(fmt.Sprintf("%d", i)))
+			fmt.Fprintf(suite.tfMock.stdOut, "%d", i)
 			time.Sleep(time.Second * 1)
 		}
 		return nil
@@ -523,7 +521,7 @@ func (suite *WorkerTestSuite) Test_UpdatesStatusWithLiveLogs() {
 	}
 
 	suite.runWorker()
-	assert.GreaterOrEqual(suite.T(), len(updateCalls), 9) // updates every 500ms, apply duration is minimum 5s
+	suite.GreaterOrEqual(len(updateCalls), 9) // updates every 500ms, apply duration is minimum 5s
 
 	// to verify, we check if there are at least the expected updates existing
 	// with the systemMessages ["0", "01", "012", "0123", "01234"] in the execute_tf step,
@@ -545,7 +543,7 @@ func (suite *WorkerTestSuite) Test_UpdatesStatusWithLiveLogs() {
 				break
 			}
 		}
-		assert.True(suite.T(), found, fmt.Sprintf("Expected update with systemMessage '%s' not found.", expected))
+		suite.True(found, "Expected update with systemMessage '%s' not found.", expected)
 	}
 }
 
@@ -664,7 +662,7 @@ func mockApplyRunWithPlanArtifactFetchCall(repo, repoPath, planArtifactHref stri
 	}
 }
 
-// returns pointer of given value to be able to inline value without var usage
+// returns pointer of given value to be able to inline value without var usage.
 func p[T any](v T) *T {
 	return &v
 }

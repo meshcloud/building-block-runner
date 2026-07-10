@@ -9,6 +9,7 @@ import (
 )
 
 func assertJsonEqual(t *testing.T, jsonRoot any, path string, expected any) {
+	t.Helper()
 	value, err := jsonpath.Get(path, jsonRoot)
 	if err != nil {
 		assert.Fail(t, err.Error())
@@ -18,15 +19,17 @@ func assertJsonEqual(t *testing.T, jsonRoot any, path string, expected any) {
 }
 
 func assertJsonExists(t *testing.T, jsonRoot any, path string) {
+	t.Helper()
 	value, err := jsonpath.Get(path, jsonRoot)
 	if err != nil {
 		assert.Fail(t, err.Error())
 	}
 
-	assert.True(t, value != nil)
+	assert.NotNil(t, value)
 }
 
 func assertJsonNotExists(t *testing.T, jsonRoot any, path string) {
+	t.Helper()
 	val, err := jsonpath.Get(path, jsonRoot)
 	if val != nil && err == nil {
 		assert.Fail(t, fmt.Sprintf("value at '%s' exists", path))
@@ -40,6 +43,7 @@ func assertJsonNotExists(t *testing.T, jsonRoot any, path string) {
 }
 
 func assertJsonLen(t *testing.T, jsonRoot any, path string, length int) {
+	t.Helper()
 	value, err := jsonpath.Get(path, jsonRoot)
 	if err != nil {
 		assert.Fail(t, err.Error())

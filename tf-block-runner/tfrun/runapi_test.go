@@ -9,10 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/suite"
-
 	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
+	"github.com/stretchr/testify/suite"
 )
 
 type ApiTestSuite struct {
@@ -31,7 +29,7 @@ func Test_ApiSuite(t *testing.T) {
 	suite.Run(t, new(ApiTestSuite))
 }
 
-// setup test server and a real RunApi client
+// setup test server and a real RunApi client.
 func (suite *ApiTestSuite) SetupSuite() {
 
 	// setup statically referenced app config
@@ -104,7 +102,7 @@ func (suite *ApiTestSuite) SetupSuite() {
 	}
 }
 
-// reset caught requests after each test
+// reset caught requests after each test.
 func (suite *ApiTestSuite) TearDownTest() {
 	suite.caughtRequests = make([]*CaughtRequest, 0)
 }
@@ -114,7 +112,7 @@ func (suite *ApiTestSuite) TearDownSuite() {
 }
 
 // setupRequestCapture replaces the test server handler to capture URL and query parameters
-// Returns a cleanup function and pointers to the captured values
+// Returns a cleanup function and pointers to the captured values.
 func (suite *ApiTestSuite) setupRequestCapture() (cleanup func(), capturedURL *string, capturedQuery *string) {
 	originalHandler := suite.meshfed.Config.Handler
 	var url, query string
@@ -153,69 +151,69 @@ func (suite *ApiTestSuite) Test_FetchRun() {
 	run, err := suite.api.FetchRunDetails("test")
 
 	// make sure a request was made
-	assert.Len(suite.T(), suite.caughtRequests, 1)
+	suite.Len(suite.caughtRequests, 1)
 
 	// now assert response is parsed correctly:
 
 	// assert basic run fields
-	assert.Nil(suite.T(), err)
-	assert.Equal(suite.T(), "run-uuid", run.Id)
-	assert.Equal(suite.T(), APPLY, run.Behavior)
-	assert.Equal(suite.T(), false, run.IsAsync)
-	assert.Equal(suite.T(), "buildingBlock-uuid", run.BuildingBlockId)
-	assert.Equal(suite.T(), "Test BuildingBlock", run.BuildingBlockName)
-	assert.Equal(suite.T(), "workspace-test", *run.WorkspaceIdentifier)
-	assert.Equal(suite.T(), "project-test", *run.ProjectIdentifier)
-	assert.Equal(suite.T(), "platform-test", *run.FullPlatformIdentifier)
-	assert.Equal(suite.T(), "1.5", run.TerraformVersion)
-	assert.NotEmpty(suite.T(), run.RunJsonBase64)
+	suite.Require().NoError(err)
+	suite.Equal("run-uuid", run.Id)
+	suite.Equal(APPLY, run.Behavior)
+	suite.False(run.IsAsync)
+	suite.Equal("buildingBlock-uuid", run.BuildingBlockId)
+	suite.Equal("Test BuildingBlock", run.BuildingBlockName)
+	suite.Equal("workspace-test", *run.WorkspaceIdentifier)
+	suite.Equal("project-test", *run.ProjectIdentifier)
+	suite.Equal("platform-test", *run.FullPlatformIdentifier)
+	suite.Equal("1.5", run.TerraformVersion)
+	suite.NotEmpty(run.RunJsonBase64)
 
 	// assert source
-	assert.NotNil(suite.T(), run.Source)
-	assert.Equal(suite.T(), "https://github.com/meshcloud/forTest.git", run.Source.url)
-	assert.Equal(suite.T(), "testDirectory", *run.Source.path)
-	assert.Equal(suite.T(), "testRef", *run.Source.refName)
+	suite.NotNil(run.Source)
+	suite.Equal("https://github.com/meshcloud/forTest.git", run.Source.url)
+	suite.Equal("testDirectory", *run.Source.path)
+	suite.Equal("testRef", *run.Source.refName)
 
 	// assert auth
-	assert.NotNil(suite.T(), run.Source.auth)
-	assert.IsType(suite.T(), &SshAuth{}, run.Source.auth)
+	suite.NotNil(run.Source.auth)
+	suite.IsType(&SshAuth{}, run.Source.auth)
 	auth := run.Source.auth.(*SshAuth)
-	assert.Equal(suite.T(), "notARealKey", auth.certStr)
-	assert.Equal(suite.T(), "knownHost", auth.knownHostEntry.host)
-	assert.Equal(suite.T(), "knownHostValue", auth.knownHostEntry.value)
-	assert.Equal(suite.T(), "ssh-rsa", auth.knownHostEntry.key)
+	suite.Equal("notARealKey", auth.certStr)
+	suite.Equal("knownHost", auth.knownHostEntry.host)
+	suite.Equal("knownHostValue", auth.knownHostEntry.value)
+	suite.Equal("ssh-rsa", auth.knownHostEntry.key)
 
 	// assert vars
-	assert.NotEmpty(suite.T(), run.Vars)
-	assert.NotNil(suite.T(), run.Vars["input1"])
-	assert.Equal(suite.T(), "STRING", string(run.Vars["input1"].Type))
-	assert.Equal(suite.T(), false, run.Vars["input1"].env)
-	assert.Equal(suite.T(), true, run.Vars["input1"].isSensitive)
-	assert.Equal(suite.T(), "test1", run.Vars["input1"].value)
+	suite.NotEmpty(run.Vars)
+	suite.NotNil(run.Vars["input1"])
+	suite.Equal("STRING", string(run.Vars["input1"].Type))
+	suite.False(run.Vars["input1"].env)
+	suite.True(run.Vars["input1"].isSensitive)
+	suite.Equal("test1", run.Vars["input1"].value)
 
-	assert.NotNil(suite.T(), run.Vars["input2"])
-	assert.Equal(suite.T(), "INTEGER", string(run.Vars["input2"].Type))
-	assert.Equal(suite.T(), true, run.Vars["input2"].env)
-	assert.Equal(suite.T(), false, run.Vars["input2"].isSensitive)
-	assert.Equal(suite.T(), float64(42), run.Vars["input2"].value)
+	suite.NotNil(run.Vars["input2"])
+	suite.Equal("INTEGER", string(run.Vars["input2"].Type))
+	suite.True(run.Vars["input2"].env)
+	suite.False(run.Vars["input2"].isSensitive)
+	suite.InDelta(float64(42), run.Vars["input2"].value, 0)
 
-	assert.NotNil(suite.T(), run.Vars["input3"])
-	assert.Equal(suite.T(), "BOOLEAN", string(run.Vars["input3"].Type))
-	assert.Equal(suite.T(), true, run.Vars["input3"].env)
-	assert.Equal(suite.T(), false, run.Vars["input3"].isSensitive)
-	assert.Equal(suite.T(), true, run.Vars["input3"].value)
+	suite.NotNil(run.Vars["input3"])
+	suite.Equal("BOOLEAN", string(run.Vars["input3"].Type))
+	suite.True(run.Vars["input3"].env)
+	suite.False(run.Vars["input3"].isSensitive)
+	suite.Equal(true, run.Vars["input3"].value)
 
-	assert.NotNil(suite.T(), run.Vars["input4"])
-	assert.Equal(suite.T(), "LIST", string(run.Vars["input4"].Type))
-	assert.Equal(suite.T(), false, run.Vars["input4"].env)
-	assert.Equal(suite.T(), false, run.Vars["input4"].isSensitive)
-	assert.IsType(suite.T(), make([]any, 0), run.Vars["input4"].value)
+	suite.NotNil(run.Vars["input4"])
+	suite.Equal("LIST", string(run.Vars["input4"].Type))
+	suite.False(run.Vars["input4"].env)
+	suite.False(run.Vars["input4"].isSensitive)
+	suite.IsType(make([]any, 0), run.Vars["input4"].value)
 
-	assert.NotNil(suite.T(), run.Vars["input5"])
-	assert.Equal(suite.T(), "FILE", string(run.Vars["input5"].Type))
-	assert.Equal(suite.T(), false, run.Vars["input5"].env)
-	assert.Equal(suite.T(), false, run.Vars["input5"].isSensitive)
-	assert.Equal(suite.T(), "fileContent", run.Vars["input5"].value)
+	suite.NotNil(run.Vars["input5"])
+	suite.Equal("FILE", string(run.Vars["input5"].Type))
+	suite.False(run.Vars["input5"].env)
+	suite.False(run.Vars["input5"].isSensitive)
+	suite.Equal("fileContent", run.Vars["input5"].value)
 }
 
 func (suite *ApiTestSuite) Test_RegisterSource() {
@@ -244,29 +242,29 @@ func (suite *ApiTestSuite) Test_RegisterSource() {
 		},
 	)
 	// assert that no error occurs
-	assert.Nil(suite.T(), err)
+	suite.Require().NoError(err)
 
 	// assert that one request was done
-	assert.Len(suite.T(), suite.caughtRequests, 1)
+	suite.Len(suite.caughtRequests, 1)
 
 	// now assert that request looks as expected
 	req := suite.caughtRequests[0]
 
 	// assert headers
 	acceptHeader, exists := req.header["Accept"]
-	assert.True(suite.T(), exists)
-	assert.Len(suite.T(), acceptHeader, 1)
-	assert.Equal(suite.T(), meshapi.BlockRunMediaTypeV1, acceptHeader[0])
+	suite.True(exists)
+	suite.Len(acceptHeader, 1)
+	suite.Equal(meshapi.BlockRunMediaTypeV1, acceptHeader[0])
 
 	contentTypeHeader, exists := req.header["Content-Type"]
-	assert.True(suite.T(), exists)
-	assert.Len(suite.T(), contentTypeHeader, 1)
-	assert.Equal(suite.T(), meshapi.BlockRunMediaTypeV1, contentTypeHeader[0])
+	suite.True(exists)
+	suite.Len(contentTypeHeader, 1)
+	suite.Equal(meshapi.BlockRunMediaTypeV1, contentTypeHeader[0])
 
 	runnerIdHeader, exists := req.header["X-Block-Runner-Node-Id"]
-	assert.True(suite.T(), exists)
-	assert.Len(suite.T(), runnerIdHeader, 1)
-	assert.Equal(suite.T(), "runApi_test", runnerIdHeader[0])
+	suite.True(exists)
+	suite.Len(runnerIdHeader, 1)
+	suite.Equal("runApi_test", runnerIdHeader[0])
 
 	// assert body
 	root := any(nil)
@@ -322,29 +320,29 @@ func (suite *ApiTestSuite) Test_UpdateState() {
 		},
 	)
 	// assert that no error occurs
-	assert.Nil(suite.T(), err)
+	suite.Require().NoError(err)
 
 	// assert that one request was done
-	assert.Len(suite.T(), suite.caughtRequests, 1)
+	suite.Len(suite.caughtRequests, 1)
 
 	// now assert that request looks as expected
 	req := suite.caughtRequests[0]
 
 	// assert headers
 	acceptHeader, exists := req.header["Accept"]
-	assert.True(suite.T(), exists)
-	assert.Len(suite.T(), acceptHeader, 1)
-	assert.Equal(suite.T(), meshapi.BlockRunMediaTypeV1, acceptHeader[0])
+	suite.True(exists)
+	suite.Len(acceptHeader, 1)
+	suite.Equal(meshapi.BlockRunMediaTypeV1, acceptHeader[0])
 
 	contentTypeHeader, exists := req.header["Content-Type"]
-	assert.True(suite.T(), exists)
-	assert.Len(suite.T(), contentTypeHeader, 1)
-	assert.Equal(suite.T(), meshapi.BlockRunMediaTypeV1, contentTypeHeader[0])
+	suite.True(exists)
+	suite.Len(contentTypeHeader, 1)
+	suite.Equal(meshapi.BlockRunMediaTypeV1, contentTypeHeader[0])
 
 	runnerIdHeader, exists := req.header["X-Block-Runner-Node-Id"]
-	assert.True(suite.T(), exists)
-	assert.Len(suite.T(), runnerIdHeader, 1)
-	assert.Equal(suite.T(), "runApi_test", runnerIdHeader[0])
+	suite.True(exists)
+	suite.Len(runnerIdHeader, 1)
+	suite.Equal("runApi_test", runnerIdHeader[0])
 
 	// assert body
 	root := any(nil)
@@ -406,10 +404,10 @@ func (suite *ApiTestSuite) Test_UpdateStateOutputs() {
 		},
 	)
 	// assert that no error occurs
-	assert.Nil(suite.T(), err)
+	suite.Require().NoError(err)
 
 	// assert that one request was done
-	assert.Len(suite.T(), suite.caughtRequests, 1)
+	suite.Len(suite.caughtRequests, 1)
 
 	// now assert that request looks as expected
 	req := suite.caughtRequests[0]
@@ -557,22 +555,22 @@ func (suite *ApiTestSuite) Test_UseCustomPredicate_V2MediaType() {
 	)
 
 	// Assert: No error occurs
-	assert.Nil(suite.T(), err)
+	suite.Require().NoError(err)
 
 	// Assert: One request was made
-	assert.Len(suite.T(), suite.caughtRequests, 1)
+	suite.Len(suite.caughtRequests, 1)
 
 	// Assert: Request uses V1 media type (registration always uses V1 regardless of custom predicate)
 	req := suite.caughtRequests[0]
 	acceptHeader, exists := req.header["Accept"]
-	assert.True(suite.T(), exists)
-	assert.Len(suite.T(), acceptHeader, 1)
-	assert.Equal(suite.T(), meshapi.BlockRunMediaTypeV1, acceptHeader[0])
+	suite.True(exists)
+	suite.Len(acceptHeader, 1)
+	suite.Equal(meshapi.BlockRunMediaTypeV1, acceptHeader[0])
 
 	contentTypeHeader, exists := req.header["Content-Type"]
-	assert.True(suite.T(), exists)
-	assert.Len(suite.T(), contentTypeHeader, 1)
-	assert.Equal(suite.T(), meshapi.BlockRunMediaTypeV1, contentTypeHeader[0])
+	suite.True(exists)
+	suite.Len(contentTypeHeader, 1)
+	suite.Equal(meshapi.BlockRunMediaTypeV1, contentTypeHeader[0])
 }
 
 func (suite *ApiTestSuite) Test_UseCustomPredicate_Null_UsesV1MediaType() {
@@ -601,22 +599,22 @@ func (suite *ApiTestSuite) Test_UseCustomPredicate_Null_UsesV1MediaType() {
 	)
 
 	// Assert: No error occurs
-	assert.Nil(suite.T(), err)
+	suite.Require().NoError(err)
 
 	// Assert: One request was made
-	assert.Len(suite.T(), suite.caughtRequests, 1)
+	suite.Len(suite.caughtRequests, 1)
 
 	// Assert: Request uses V1 media type (default behavior)
 	req := suite.caughtRequests[0]
 	acceptHeader, exists := req.header["Accept"]
-	assert.True(suite.T(), exists)
-	assert.Len(suite.T(), acceptHeader, 1)
-	assert.Equal(suite.T(), meshapi.BlockRunMediaTypeV1, acceptHeader[0])
+	suite.True(exists)
+	suite.Len(acceptHeader, 1)
+	suite.Equal(meshapi.BlockRunMediaTypeV1, acceptHeader[0])
 
 	contentTypeHeader, exists := req.header["Content-Type"]
-	assert.True(suite.T(), exists)
-	assert.Len(suite.T(), contentTypeHeader, 1)
-	assert.Equal(suite.T(), meshapi.BlockRunMediaTypeV1, contentTypeHeader[0])
+	suite.True(exists)
+	suite.Len(contentTypeHeader, 1)
+	suite.Equal(meshapi.BlockRunMediaTypeV1, contentTypeHeader[0])
 }
 
 func (suite *ApiTestSuite) Test_UseCustomPredicate_Empty_UsesV1MediaType() {
@@ -646,22 +644,22 @@ func (suite *ApiTestSuite) Test_UseCustomPredicate_Empty_UsesV1MediaType() {
 	)
 
 	// Assert: No error occurs
-	assert.Nil(suite.T(), err)
+	suite.Require().NoError(err)
 
 	// Assert: One request was made
-	assert.Len(suite.T(), suite.caughtRequests, 1)
+	suite.Len(suite.caughtRequests, 1)
 
 	// Assert: Request uses V1 media type
 	req := suite.caughtRequests[0]
 	acceptHeader, exists := req.header["Accept"]
-	assert.True(suite.T(), exists)
-	assert.Len(suite.T(), acceptHeader, 1)
-	assert.Equal(suite.T(), meshapi.BlockRunMediaTypeV1, acceptHeader[0])
+	suite.True(exists)
+	suite.Len(acceptHeader, 1)
+	suite.Equal(meshapi.BlockRunMediaTypeV1, acceptHeader[0])
 
 	contentTypeHeader, exists := req.header["Content-Type"]
-	assert.True(suite.T(), exists)
-	assert.Len(suite.T(), contentTypeHeader, 1)
-	assert.Equal(suite.T(), meshapi.BlockRunMediaTypeV1, contentTypeHeader[0])
+	suite.True(exists)
+	suite.Len(contentTypeHeader, 1)
+	suite.Equal(meshapi.BlockRunMediaTypeV1, contentTypeHeader[0])
 }
 
 func (suite *ApiTestSuite) Test_FetchRunDetails_UseCustomPredicate_UsesCreateEndpoint() {
@@ -690,23 +688,23 @@ func (suite *ApiTestSuite) Test_FetchRunDetails_UseCustomPredicate_UsesCreateEnd
 	_, err := api.FetchRunDetails("test")
 
 	// Assert: No error occurs
-	assert.Nil(suite.T(), err)
+	suite.Require().NoError(err)
 
 	// Verify that the URL contains /create endpoint
-	assert.Contains(suite.T(), *capturedURL, "/create")
-	assert.Contains(suite.T(), *capturedQuery, "forRunnerUuid=CUSTOM_PREDICATE")
+	suite.Contains(*capturedURL, "/create")
+	suite.Contains(*capturedQuery, "forRunnerUuid=CUSTOM_PREDICATE")
 
 	// Assert: Request uses V1 media type when custom predicate is configured
 	req := suite.caughtRequests[0]
 	acceptHeader, exists := req.header["Accept"]
-	assert.True(suite.T(), exists)
-	assert.Len(suite.T(), acceptHeader, 1)
-	assert.Equal(suite.T(), meshapi.BlockRunMediaTypeV1, acceptHeader[0])
+	suite.True(exists)
+	suite.Len(acceptHeader, 1)
+	suite.Equal(meshapi.BlockRunMediaTypeV1, acceptHeader[0])
 
 	contentTypeHeader, exists := req.header["Content-Type"]
-	assert.True(suite.T(), exists)
-	assert.Len(suite.T(), contentTypeHeader, 1)
-	assert.Equal(suite.T(), meshapi.BlockRunMediaTypeV1, contentTypeHeader[0])
+	suite.True(exists)
+	suite.Len(contentTypeHeader, 1)
+	suite.Equal(meshapi.BlockRunMediaTypeV1, contentTypeHeader[0])
 }
 
 func (suite *ApiTestSuite) Test_FetchRunDetails_NoCustomPredicate_UsesDefaultEndpoint() {
@@ -734,11 +732,11 @@ func (suite *ApiTestSuite) Test_FetchRunDetails_NoCustomPredicate_UsesDefaultEnd
 	_, err := api.FetchRunDetails("test")
 
 	// Assert: No error occurs
-	assert.Nil(suite.T(), err)
+	suite.Require().NoError(err)
 
 	// Verify that the URL contains /create endpoint with forRunnerUuid parameter
-	assert.Contains(suite.T(), *capturedURL, "/create")
-	assert.Contains(suite.T(), *capturedQuery, "forRunnerUuid=b2c3d4e5-f6a7-48b9-9c0d-1e2f3a4b5c6d")
+	suite.Contains(*capturedURL, "/create")
+	suite.Contains(*capturedQuery, "forRunnerUuid=b2c3d4e5-f6a7-48b9-9c0d-1e2f3a4b5c6d")
 }
 
 func (suite *ApiTestSuite) Test_ClearRunToken_ResetsToBasicAuth() {
@@ -759,18 +757,18 @@ func (suite *ApiTestSuite) Test_ClearRunToken_ResetsToBasicAuth() {
 
 	// Execute: Fetch run details (should use basic auth initially)
 	run, err := api.FetchRunDetails("test-node")
-	assert.Nil(suite.T(), err)
-	assert.NotNil(suite.T(), run)
+	suite.Require().NoError(err)
+	suite.NotNil(run)
 
 	// Verify: First request uses Basic auth
-	assert.Len(suite.T(), suite.caughtRequests, 1)
+	suite.Len(suite.caughtRequests, 1)
 	authHeader1 := suite.caughtRequests[0].header["Authorization"]
-	assert.Len(suite.T(), authHeader1, 1)
-	assert.Equal(suite.T(), "Basic "+basicAuth, authHeader1[0])
+	suite.Len(authHeader1, 1)
+	suite.Equal("Basic "+basicAuth, authHeader1[0])
 
 	// Now the runToken should be set from the fetched run
-	assert.NotNil(suite.T(), api.auth.runToken)
-	assert.NotEmpty(suite.T(), *api.auth.runToken)
+	suite.NotNil(api.auth.runToken)
+	suite.NotEmpty(*api.auth.runToken)
 
 	// Create a status update (should use Bearer token)
 	status := &RunStatus{
@@ -784,38 +782,38 @@ func (suite *ApiTestSuite) Test_ClearRunToken_ResetsToBasicAuth() {
 
 	// Execute: Update state (should use Bearer token)
 	_, err = api.UpdateState(status)
-	assert.Nil(suite.T(), err)
+	suite.Require().NoError(err)
 
 	// Verify: Second request uses Bearer token
-	assert.Len(suite.T(), suite.caughtRequests, 1)
+	suite.Len(suite.caughtRequests, 1)
 	authHeader2 := suite.caughtRequests[0].header["Authorization"]
-	assert.Len(suite.T(), authHeader2, 1)
-	assert.Contains(suite.T(), authHeader2[0], "Bearer ")
-	assert.NotEqual(suite.T(), "Basic "+basicAuth, authHeader2[0])
+	suite.Len(authHeader2, 1)
+	suite.Contains(authHeader2[0], "Bearer ")
+	suite.NotEqual("Basic "+basicAuth, authHeader2[0])
 
 	// Execute: Clear the run token
 	api.ClearRunToken()
 
 	// Verify: runToken is now nil
-	assert.Nil(suite.T(), api.auth.runToken)
+	suite.Nil(api.auth.runToken)
 
 	// Reset caught requests for next call
 	suite.caughtRequests = make([]*CaughtRequest, 0)
 
 	// Execute: Fetch next run (should use basic auth again)
 	run2, err := api.FetchRunDetails("test-node-2")
-	assert.Nil(suite.T(), err)
-	assert.NotNil(suite.T(), run2)
+	suite.Require().NoError(err)
+	suite.NotNil(run2)
 
 	// Verify: Third request uses Basic auth again
-	assert.Len(suite.T(), suite.caughtRequests, 1)
+	suite.Len(suite.caughtRequests, 1)
 	authHeader3 := suite.caughtRequests[0].header["Authorization"]
-	assert.Len(suite.T(), authHeader3, 1)
-	assert.Equal(suite.T(), "Basic "+basicAuth, authHeader3[0])
+	suite.Len(authHeader3, 1)
+	suite.Equal("Basic "+basicAuth, authHeader3[0])
 
 	// Verify: runToken is set again from the new run
-	assert.NotNil(suite.T(), api.auth.runToken)
-	assert.NotEmpty(suite.T(), *api.auth.runToken)
+	suite.NotNil(api.auth.runToken)
+	suite.NotEmpty(*api.auth.runToken)
 }
 
 func (suite *ApiTestSuite) Test_ClearRunToken_MultipleRunCycle() {
@@ -840,17 +838,17 @@ func (suite *ApiTestSuite) Test_ClearRunToken_MultipleRunCycle() {
 
 		// Fetch run (should always use basic auth at start of each cycle)
 		run, err := api.FetchRunDetails("worker-node")
-		assert.Nil(suite.T(), err, "Iteration %d: FetchRunDetails should not error", i)
-		assert.NotNil(suite.T(), run, "Iteration %d: Run should not be nil", i)
+		suite.Require().NoError(err, "Iteration %d: FetchRunDetails should not error", i)
+		suite.NotNil(run, "Iteration %d: Run should not be nil", i)
 
 		// Verify fetch used Basic auth
-		assert.Len(suite.T(), suite.caughtRequests, 1, "Iteration %d: Should have one request", i)
+		suite.Len(suite.caughtRequests, 1, "Iteration %d: Should have one request", i)
 		fetchAuthHeader := suite.caughtRequests[0].header["Authorization"]
-		assert.Equal(suite.T(), "Basic "+basicAuth, fetchAuthHeader[0],
+		suite.Equal("Basic "+basicAuth, fetchAuthHeader[0],
 			"Iteration %d: Fetch should use Basic auth", i)
 
 		// Verify runToken is set
-		assert.NotNil(suite.T(), api.auth.runToken, "Iteration %d: runToken should be set after fetch", i)
+		suite.NotNil(api.auth.runToken, "Iteration %d: runToken should be set after fetch", i)
 
 		// Simulate run operations (Register, UpdateState) - should use Bearer token
 		suite.caughtRequests = make([]*CaughtRequest, 0)
@@ -861,16 +859,16 @@ func (suite *ApiTestSuite) Test_ClearRunToken_MultipleRunCycle() {
 			Steps:  nil,
 		}
 		_, err = api.UpdateState(status)
-		assert.Nil(suite.T(), err, "Iteration %d: UpdateState should not error", i)
+		suite.Require().NoError(err, "Iteration %d: UpdateState should not error", i)
 
 		// Verify update used Bearer token
 		updateAuthHeader := suite.caughtRequests[0].header["Authorization"]
-		assert.Contains(suite.T(), updateAuthHeader[0], "Bearer ",
+		suite.Contains(updateAuthHeader[0], "Bearer ",
 			"Iteration %d: Update should use Bearer token", i)
 
 		// Clear token after run completes (simulating worker behavior)
 		api.ClearRunToken()
-		assert.Nil(suite.T(), api.auth.runToken,
+		suite.Nil(api.auth.runToken,
 			"Iteration %d: runToken should be nil after clearing", i)
 	}
 }

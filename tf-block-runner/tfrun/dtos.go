@@ -124,7 +124,7 @@ func toInternalVariableMap(m []meshapi.BuildingBlockInputSpecDTO) map[string]*Va
 	return r
 }
 
-// with this behavior the update won't update steps if the current status' step is nil
+// with this behavior the update won't update steps if the current status' step is nil.
 func (status RunStatus) toExternal() (meshapi.RunStatusUpdateDTO, error) {
 
 	// status

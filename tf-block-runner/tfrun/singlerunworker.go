@@ -21,7 +21,7 @@ type SingleRunWorker struct {
 	statusUpdateInterval time.Duration
 }
 
-// NewSingleRunWorker creates a new single-run worker
+// NewSingleRunWorker creates a new single-run worker.
 func NewSingleRunWorker(logger *log.Logger, workerDir string, timeoutMins int, tfbin *TfBinaries) *SingleRunWorker {
 	return &SingleRunWorker{
 		workerDir:            workerDir,
@@ -34,7 +34,7 @@ func NewSingleRunWorker(logger *log.Logger, workerDir string, timeoutMins int, t
 }
 
 // NewSingleRunWorkerWithApi creates a new single-run worker with a provided API client
-// This is used in Kubernetes mode where the API client needs the runToken from the run spec
+// This is used in Kubernetes mode where the API client needs the runToken from the run spec.
 func NewSingleRunWorkerWithApi(logger *log.Logger, workerDir string, timeoutMins int, tfbin *TfBinaries, api RunApi) *SingleRunWorker {
 	return &SingleRunWorker{
 		workerDir:            workerDir,
@@ -46,7 +46,7 @@ func NewSingleRunWorkerWithApi(logger *log.Logger, workerDir string, timeoutMins
 	}
 }
 
-// ExecuteRun executes a single run
+// ExecuteRun executes a single run.
 func (w *SingleRunWorker) ExecuteRun(run *Run) error {
 	w.log.Printf("Start execution of run %s: %s %s\n", run.Id, run.Behavior.str(), run.BuildingBlockName)
 
@@ -94,7 +94,7 @@ func (w *SingleRunWorker) ExecuteRun(run *Run) error {
 	return nil
 }
 
-// workRoutine starts the actual tf command execution
+// workRoutine starts the actual tf command execution.
 func (w *SingleRunWorker) workRoutine(ctx context.Context, run *Run, wg *sync.WaitGroup, doneSignallingChan chan bool) {
 	defer wg.Done()
 	defer func() { doneSignallingChan <- true }()
@@ -139,7 +139,7 @@ func (w *SingleRunWorker) workRoutine(ctx context.Context, run *Run, wg *sync.Wa
 	}
 }
 
-// observerRoutine periodically sends out status updates
+// observerRoutine periodically sends out status updates.
 func (w *SingleRunWorker) observerRoutine(ctx context.Context, cancel context.CancelFunc, run *Run, wg *sync.WaitGroup, doneSignallingChan chan bool) {
 	defer wg.Done()
 

@@ -13,24 +13,24 @@ var (
 )
 
 // Error type constants for metrics labels
-// All error types used in metrics are defined here for discoverability
+// All error types used in metrics are defined here for discoverability.
 const (
-	// Run fetch error types
+	// Run fetch error types.
 	ErrorTypeFetchAPI = "api_error"
 
-	// Job creation error types
+	// Job creation error types.
 	ErrorTypeJobCreation = "job_creation_error"
 	ErrorTypeRunTooLarge = "run_too_large"
 
-	// Service account error types
+	// Service account error types.
 	ErrorTypeServiceAccountCreation = "creation_error"
 
-	// Runner registration error types
+	// Runner registration error types.
 	ErrorTypeRegistrationMarshal = "marshal_error"
 	ErrorTypeRegistrationPut     = "put_error"
 )
 
-// MetricsCollector holds all Prometheus metrics for the run-controller
+// MetricsCollector holds all Prometheus metrics for the run-controller.
 type MetricsCollector struct {
 	// Run fetch metrics
 	runsFetchErrors   *prometheus.CounterVec
@@ -60,8 +60,8 @@ type MetricsCollector struct {
 	activeRunners            prometheus.Gauge
 }
 
-// NewMetricsCollector creates and registers all Prometheus metrics
-// Uses singleton pattern to prevent duplicate registration panics
+// NewMetricsCollector creates and registers all Prometheus metrics.
+// Uses singleton pattern to prevent duplicate registration panics.
 func NewMetricsCollector() *MetricsCollector {
 	metricsOnce.Do(func() {
 		metricsInstance = &MetricsCollector{

@@ -212,7 +212,7 @@ func validateAuthConfig(config TfRunnerConfig) error {
 	return nil
 }
 
-// validateRunnerUuid ensures that the runner UUID is configured and not empty
+// validateRunnerUuid ensures that the runner UUID is configured and not empty.
 func validateRunnerUuid(config TfRunnerConfig) error {
 	if config.RunnerUuid == "" {
 		return fmt.Errorf("runnerUuid is required and must not be empty. Set it via RUNNER_UUID environment variable or runner-config.yml")

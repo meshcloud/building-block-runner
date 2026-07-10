@@ -10,7 +10,7 @@ type Behavior int
 const (
 	APPLY   = Behavior(iota) // generic term that represents tf apply
 	DETECT                   // generic term that represents tf plan (detects state drift)
-	DESTROY                  // generic term tat represents tf destory
+	DESTROY                  // generic term that represents tf destroy
 	UNKNOWN_BEHAVIOR
 )
 

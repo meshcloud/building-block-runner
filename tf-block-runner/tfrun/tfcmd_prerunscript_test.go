@@ -21,9 +21,7 @@ import (
 func makePreRunScriptTfCmd(t *testing.T, preRunScript *string, runMode string, downloadTfBinaries bool) (*GenericTfCmd, func() string) {
 	t.Helper()
 
-	wd, err := os.MkdirTemp(os.TempDir(), "test-prerun-")
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = os.RemoveAll(wd) })
+	wd := t.TempDir()
 
 	// Use a temp file so we can assert on what was written to the system message
 	// (operator-visible update log). This is distinct from MESHSTACK_USER_MESSAGE,

@@ -69,7 +69,7 @@ func NewRunApi() RunApi {
 	}
 }
 
-// SetRunToken sets the runToken from the fetched run for subsequent API calls
+// SetRunToken sets the runToken from the fetched run for subsequent API calls.
 func (api *RunApiClient) SetRunToken(token string) {
 	api.auth.runToken = &token
 }

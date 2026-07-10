@@ -13,6 +13,6 @@ const (
 	// consumption during runtime.
 	DATA_TYPE_FILE = "FILE"
 
-	// legacy, remove once lists are no more
+	// legacy, remove once lists are no more.
 	DATA_TYPE_LIST = "LIST"
 )

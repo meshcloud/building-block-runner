@@ -99,7 +99,7 @@ func (rm *DefaultRunManager) handleWorkers() {
 		case norun:
 			go rm.handoutWorkerToken(NORUN_WORKER_DELAY)
 
-		// if an error occured while fetching a run, hand out a new token, but with a delay
+		// if an error occurred while fetching a run, hand out a new token, but with a delay
 		// in case shutdown was called, send out a stop token instead.
 		case failed:
 			go rm.handoutWorkerToken(FAILED_WORKER_DELAY)

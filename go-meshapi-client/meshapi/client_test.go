@@ -21,7 +21,8 @@ func TestDownloadArtifact_StreamsBodyIntoWriter(t *testing.T) {
 		gotNodeID = r.Header.Get("X-Block-Runner-Node-Id")
 		gotAuth = r.Header.Get("Authorization")
 		w.WriteHeader(http.StatusOK)
-		w.Write(payload)
+		_, err := w.Write(payload)
+		assert.NoError(t, err)
 	}))
 	defer srv.Close()
 

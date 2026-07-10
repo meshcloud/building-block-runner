@@ -120,7 +120,7 @@ func (sshAuth *SshAuth) toTransport(url string, log *logwrap) (transport.AuthMet
 	// TODO: maybe we should auto-discover known_hosts instead of letting users specify it?
 	if sshAuth.knownHostEntry != nil && sshAuth.knownHostEntry.key != "" {
 		log.PrintlnToLocalLogs(fmt.Sprintf("Configuring SSH client to use key type: %s", sshAuth.knownHostEntry.key))
-		key.HostKeyCallbackHelper.HostKeyAlgorithms = []string{sshAuth.knownHostEntry.key}
+		key.HostKeyAlgorithms = []string{sshAuth.knownHostEntry.key}
 	}
 
 	return key, err
@@ -258,7 +258,7 @@ func (*SshAuth) checkKnownHostsEnv(hostname string, remote net.Addr, key ssh.Pub
 	}
 }
 
-// method 3
+// method 3.
 func (*SshAuth) checkLocalKnownHostFile(hostname string, remote net.Addr, key ssh.PublicKey, log *logwrap) error {
 	knownHostsHome := filepath.Join(os.Getenv("HOME"), ".ssh", "known_hosts")
 	localKnownHostsBasedCallback, err := knownhosts.New(knownHostsHome)

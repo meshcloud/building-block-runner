@@ -1,0 +1,14 @@
+# One `<import-path-prefix> <min-percent>` line per enforced coverage gate.
+#
+# check.sh recomputes statement coverage across every profile line whose source file's
+# import path equals the prefix or sits under it (prefix + "/"), then fails the build if
+# that recomputed percentage is below min-percent. A prefix with zero matching statements
+# in the profile (stale path, typo, or file fully excluded) is also treated as a failure —
+# a silently vacuous gate is worse than a loud one.
+#
+# Ships empty for phase 0: the mechanism exists and CI already runs it on every module's
+# profile, but nothing gates yet (PLAN_HIGH_LEVEL.md D6, Phase 0 exit criteria — "not yet
+# gating"). Phase 1 turns the gate on for the tf runner's characterization tests with:
+#   github.com/meshcloud/building-block-runner/tf-block-runner/tfrun 90
+#
+# Phase 3+ add lines as shared/domain packages join the gate (D6).

@@ -84,7 +84,7 @@ func (g *GitSource) CopyToTargetDir(dir string) error {
 			err := g.gitFacade.checkoutRef(repo, *g.refName)
 
 			if err != nil {
-				// we observed some strange issues with git-go that prevented a successfull switch of the
+				// we observed some strange issues with git-go that prevented a successful switch of the
 				// worktree contains unstaged changes
 				if err.Error() == "worktree contains unstaged changes" {
 					g.logDirectoryContentsForWorktreeUnstagedChangedError(tmpDir)

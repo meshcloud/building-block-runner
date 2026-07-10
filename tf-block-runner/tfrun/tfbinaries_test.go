@@ -72,6 +72,7 @@ func listTfBinariesInstallDir(t *testing.T, uut *TfBinaries, version string) (na
 }
 
 func getTerraformBinaryModTime(t *testing.T, uut *TfBinaries, version string) time.Time {
+	t.Helper()
 	f, err := os.Stat(filepath.Join(uut.dir, version, "terraform"))
 	require.NoError(t, err)
 	return f.ModTime()

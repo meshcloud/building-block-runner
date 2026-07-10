@@ -27,7 +27,7 @@ func NewLogWrap(logger *log.Logger, logsFileName string) *logwrap {
 	}
 }
 
-// this writes to the tf output log file
+// this writes to the tf output log file.
 func (l *logwrap) Write(p []byte) (int, error) {
 	n, err := l.updateLogger.Write(p)
 	if err != nil {

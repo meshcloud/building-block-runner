@@ -149,6 +149,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # go-meshapi-client had no CI leg at all before this (only `go test` locally via
+          # the Makefile/Taskfile) — an additive guardrail, sanctioned by
+          # PLAN_DETAIL_00_guardrails.md §5.5/§11 as the one exception to "CI functionally
+          # untouched until phase 7" (D14): a shared module the refactor leans on should not
+          # go unguarded through it.
+          - app: go-meshapi-client
+            go-dir: go-meshapi-client
           - app: run-controller
             go-dir: run-controller
           - app: tf-block-runner
@@ -171,7 +178,20 @@ jobs:
           cache: false
 
       - name: Test
-        run: go test ./...
+        run: go test -coverprofile=coverage.out ./...
+
+      # Report-only for now: tools/coverage/thresholds.txt ships empty (PLAN_HIGH_LEVEL.md
+      # D6, Phase 0 exit criteria), so this never fails the build yet. Phase 1 turns the
+      # gate on by adding a threshold line — no further CI change needed then.
+      - name: Coverage
+        run: ../tools/coverage/check.sh . coverage.out
+
+      - name: Upload coverage profile
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage-${{ matrix.app }}
+          path: ${{ matrix.go-dir }}/coverage.out
 
   # One job for PRs and main (see jvm-runners-image for the rationale): the matrix always expands, so
   # there are no skipped jobs with unresolved ${{ matrix.* }} names. PRs only build (never push);

@@ -18,8 +18,9 @@ import (
 	"github.com/hashicorp/hcl/v2/hclwrite"
 	"github.com/hashicorp/terraform-exec/tfexec"
 	meshcrypto "github.com/meshcloud/building-block-runner/go-meshapi-client/crypto"
-	"github.com/meshcloud/building-block-runner/tf-block-runner/util"
 	"github.com/zclconf/go-cty/cty"
+
+	"github.com/meshcloud/building-block-runner/tf-block-runner/util"
 )
 
 const (
@@ -49,7 +50,7 @@ type TfCmdParams struct {
 	planArtifactUrl string
 }
 
-// GenericTfCmd implements generic functionality all TF commands re-use
+// GenericTfCmd implements generic functionality all TF commands re-use.
 type GenericTfCmd struct {
 	ctx            context.Context
 	runContextInfo *RunContextInfo // is actually part of the context, but extracted for easier access w/o cast
@@ -248,7 +249,7 @@ func (tfcmd *GenericTfCmd) deleteWorkspaceIfNeeded(tf TfFacade) {
 	wsCtx, cancel := context.WithTimeout(tfcmd.ctx, time.Duration(AppConfig.WsTimeoutMins)*time.Minute)
 	defer cancel()
 
-	// This is primarly using the somewhat complex workspace naming logic to detect the workspace
+	// This is primarily using the somewhat complex workspace naming logic to detect the workspace
 	// that is supposed to get deleted.
 	workspace, err := tfcmd.selectWorkspace(tf)
 
@@ -381,12 +382,12 @@ func matchOutputType(outputMeta tfexec.OutputMeta) DataType {
 		var str string
 		_ = json.Unmarshal(outputMeta.Type, &str)
 
-		switch {
-		case str == "number":
+		switch str {
+		case "number":
 			return DATA_TYPE_INTEGER
-		case str == "bool":
+		case "bool":
 			return DATA_TYPE_BOOLEAN
-		case str == "string":
+		case "string":
 			return DATA_TYPE_STRING
 		default:
 			return DATA_TYPE_CODE

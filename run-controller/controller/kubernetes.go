@@ -261,14 +261,14 @@ func buildTolerations(configs []TolerationConfig) []corev1.Toleration {
 	return tolerations
 }
 
-// MaxKubernetesSecretSize is the maximum size of data in a Kubernetes secret (1MiB)
+// MaxKubernetesSecretSize is the maximum size of data in a Kubernetes secret (1MiB).
 const MaxKubernetesSecretSize = 1048576
 
 // SecretMetadataOverhead accounts for Kubernetes Secret serialization overhead
 // (metadata, labels, key names, etc.) so that the total Secret object stays within limits.
 const SecretMetadataOverhead = 10 * 1024 // 10KiB
 
-// EffectiveMaxRunJsonSize is the maximum run JSON size accounting for Secret overhead
+// EffectiveMaxRunJsonSize is the maximum run JSON size accounting for Secret overhead.
 const EffectiveMaxRunJsonSize = MaxKubernetesSecretSize - SecretMetadataOverhead
 
 // RunTooLargeError is returned when the run JSON data exceeds the Kubernetes secret size limit.
@@ -294,7 +294,7 @@ func estimateRunJsonSize(runJsonBase64 string) (int, error) {
 	return estimatedSize, nil
 }
 
-// Default resource values for runner containers
+// Default resource values for runner containers.
 const (
 	DefaultCpuRequest    = "100m"
 	DefaultCpuLimit      = "" // No default CPU limit to avoid throttling
@@ -302,8 +302,8 @@ const (
 	DefaultMemoryLimit   = "1Gi"
 )
 
-// buildResourceRequirements creates Kubernetes resource requirements from config, applying defaults
-// CPU limit is not set by default to avoid throttling issues
+// buildResourceRequirements creates Kubernetes resource requirements from config, applying defaults.
+// CPU limit is not set by default to avoid throttling issues.
 func buildResourceRequirements(config ResourcesConfig) corev1.ResourceRequirements {
 	cpuRequest := DefaultCpuRequest
 	if config.Requests.Cpu != "" {
@@ -547,13 +547,13 @@ func (k *KubernetesClient) createVolumes(namespace string, jobSpec *JobSpecTempl
 
 		// Set the appropriate volume source based on what's configured
 		if extraVol.ConfigMap != nil {
-			volume.VolumeSource.ConfigMap = &corev1.ConfigMapVolumeSource{
+			volume.ConfigMap = &corev1.ConfigMapVolumeSource{
 				LocalObjectReference: corev1.LocalObjectReference{
 					Name: extraVol.ConfigMap.Name,
 				},
 			}
 		} else if extraVol.Secret != nil {
-			volume.VolumeSource.Secret = &corev1.SecretVolumeSource{
+			volume.Secret = &corev1.SecretVolumeSource{
 				SecretName: extraVol.Secret.SecretName,
 			}
 		} else if extraVol.EmptyDir != nil {
@@ -565,7 +565,7 @@ func (k *KubernetesClient) createVolumes(namespace string, jobSpec *JobSpecTempl
 					emptyDir.SizeLimit = &quantity
 				}
 			}
-			volume.VolumeSource.EmptyDir = emptyDir
+			volume.EmptyDir = emptyDir
 		}
 
 		volumes = append(volumes, volume)
@@ -610,10 +610,10 @@ func (k *KubernetesClient) createVolumeMounts(jobSpec *JobSpecTemplate) []corev1
 	return volumeMounts
 }
 
-// runJsonFilePath is the path where the run JSON file is mounted inside the runner container
+// runJsonFilePath is the path where the run JSON file is mounted inside the runner container.
 const runJsonFilePath = "/var/run/secrets/meshstack/run.json"
 
-// buildEnvVars constructs the environment variables for the runner container
+// buildEnvVars constructs the environment variables for the runner container.
 func (k *KubernetesClient) buildEnvVars(jobSpec *JobSpecTemplate) []corev1.EnvVar {
 	envVars := []corev1.EnvVar{
 		{

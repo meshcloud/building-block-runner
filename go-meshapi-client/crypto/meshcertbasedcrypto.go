@@ -125,7 +125,7 @@ func (c *MeshCertBasedCrypto) DecryptMeshCertBased(encrypted string) (string, er
 		return "", err
 	}
 
-	cipherBytes := []byte(data)
+	cipherBytes := data
 	encryptedRSKLen := c.privateKey.Size() // !byte length
 	if len(cipherBytes) < encryptedRSKLen {
 		return "", errors.New("encrypted value empty or too short")
@@ -218,11 +218,11 @@ func validateKeyPair(publicKey *rsa.PublicKey, privateKey *rsa.PrivateKey) error
 	}
 
 	// Compare the public key from the certificate with the public key in the private key
-	if publicKey.E != privateKey.PublicKey.E {
+	if publicKey.E != privateKey.E {
 		return errors.New("public key and private key do not match: public exponent mismatch")
 	}
 
-	if publicKey.N.Cmp(privateKey.PublicKey.N) != 0 {
+	if publicKey.N.Cmp(privateKey.N) != 0 {
 		return errors.New("public key and private key do not match: modulus mismatch")
 	}
 

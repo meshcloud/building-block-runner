@@ -1,0 +1,184 @@
+# Visit https://golangci-lint.run/ for usage documentation
+# and information on other useful linters
+#
+# One root config for three separate Go modules (go-meshapi-client, run-controller,
+# tf-block-runner; bridged by ./go.work during phase 0-3, see D11). `task lint` runs
+# `golangci-lint run ./...` per module dir; golangci-lint discovers this file by walking
+# up from the module dir to the repo root, so one config serves all three.
+#
+# Mirrors terraform-provider-meshstack/.golangci.yml (full linter set, depguard-per-area
+# pattern) trimmed to this repo's module boundaries; the vet-in-lint precedent/comment is
+# from meshfed-release/buildingblocks/multiplexing-block-runner/.golangci.yml.
+# `govet` runs here, so do not run `go vet` separately (PLAN_DETAIL_00_guardrails.md §5.1/D14).
+version: "2"
+issues:
+  max-same-issues: 0
+  # Default 50/linter cap would silently hide real findings once a module crosses it
+  # (tf-block-runner's testifylint backlog did) -- show everything, always.
+  max-issues-per-linter: 0
+
+formatters:
+  enable:
+    - gci
+    - gofmt
+  settings:
+    gci:
+      sections:
+        - standard     # Go standard library
+        - default      # All other external dependencies
+        - localmodule  # This repository's modules
+      # Sibling-module imports (e.g. run-controller -> go-meshapi-client) classify as
+      # "default", not "localmodule", until the phase-4 module consolidation collapses
+      # the three modules into one (PLAN_DETAIL_00_guardrails.md §5.2) -- accepted,
+      # deterministic, revisited then.
+
+linters:
+  default: none
+  enable:
+    - depguard
+    - durationcheck
+    - errcheck
+    - copyloopvar
+    - forcetypeassert
+    - godot
+    - ineffassign
+    - makezero
+    - misspell
+    - nilerr
+    - predeclared
+    - staticcheck
+    - usetesting
+    - unconvert
+    - unparam
+    - unused
+    - govet
+    - testifylint
+    - thelper
+  settings:
+    depguard:
+      rules:
+        # go-meshapi-client: shared API client, stdlib-only in production (verified via
+        # `go list -f '{{join .Imports "\n"}}' ./...`, phase-0 baseline).
+        go-meshapi-client:
+          files:
+            - "go-meshapi-client/**/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner/go-meshapi-client
+        go-meshapi-client-test:
+          files:
+            - "go-meshapi-client/**/*_test.go"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner/go-meshapi-client
+            - github.com/stretchr/testify
+
+        # run-controller: claims/dispatches runs as k8s Jobs; depends on go-meshapi-client
+        # (cross-module import via go.work during phase 0-3, D11) plus k8s client-go and
+        # Prometheus metrics (current direct deps per run-controller/go.mod).
+        run-controller:
+          files:
+            - "run-controller/**/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner/go-meshapi-client
+            - github.com/meshcloud/building-block-runner/run-controller
+            - github.com/prometheus/client_golang
+            - gopkg.in/yaml.v2
+            - k8s.io/api
+            - k8s.io/apimachinery
+            - k8s.io/client-go
+        run-controller-test:
+          files:
+            - "run-controller/**/*_test.go"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner/go-meshapi-client
+            - github.com/meshcloud/building-block-runner/run-controller
+            - github.com/prometheus/client_golang
+            - gopkg.in/yaml.v2
+            - k8s.io/api
+            - k8s.io/apimachinery
+            - k8s.io/client-go
+
+        # tf-block-runner: executes tofu/terraform plans against a cloned git repo;
+        # depends on go-meshapi-client plus the hashicorp/go-git/zclconf toolchain
+        # (current direct deps per tf-block-runner/go.mod).
+        tf-block-runner:
+          files:
+            - "tf-block-runner/**/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner/go-meshapi-client
+            - github.com/meshcloud/building-block-runner/tf-block-runner
+            - github.com/go-git/go-git/v5
+            - github.com/hashicorp/go-version
+            - github.com/hashicorp/hc-install
+            - github.com/hashicorp/hcl/v2
+            - github.com/hashicorp/terraform-exec
+            - github.com/opentofu/tofudl
+            - github.com/zclconf/go-cty
+            - golang.org/x/crypto
+            - gopkg.in/yaml.v2
+        tf-block-runner-test:
+          files:
+            - "tf-block-runner/**/*_test.go"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner/go-meshapi-client
+            - github.com/meshcloud/building-block-runner/tf-block-runner
+            - github.com/PaesslerAG/jsonpath
+            - github.com/go-git/go-git/v5
+            - github.com/hashicorp/go-version
+            - github.com/hashicorp/hc-install
+            - github.com/hashicorp/hcl/v2
+            - github.com/hashicorp/terraform-exec
+            - github.com/opentofu/tofudl
+            - github.com/sebdah/goldie/v2
+            - github.com/stretchr/testify
+            - github.com/zclconf/go-cty
+            - golang.org/x/crypto
+            - gopkg.in/yaml.v2
+
+  exclusions:
+    rules:
+      # --- Temporary legacy exclusions (PLAN_DETAIL_00_guardrails.md §5.3 category 2) ---
+      # Phase 0 adopts the linter set without changing behavior (D13: bugs pinned, fixed
+      # in phase 2/2b/3). Each block below silences findings that would require altering
+      # an executed production code path if fixed now; the comment names the phase that
+      # owns removing the block by actually fixing the underlying code.
+
+      # tf-block-runner: dies in phase 2/2b (DDD refactor + bug-fix pass).
+      - path: ^tf-block-runner/tfrun/
+        linters:
+          - errcheck
+          - forcetypeassert
+          - nilerr
+          - makezero
+          - ineffassign
+          - unparam
+      # tf-block-runner/main.go's healthz handler shares the same unchecked-Write pattern
+      # (dies alongside tfrun in phase 2/2b, once main.go wiring is revisited).
+      - path: ^tf-block-runner/main\.go$
+        linters:
+          - errcheck
+
+      # run-controller + go-meshapi-client: die in phase 3 (shared-core consolidation).
+      - path: ^run-controller/controller/
+        linters:
+          - errcheck
+          - unparam
+      - path: ^go-meshapi-client/
+        linters:
+          - errcheck
+          - forcetypeassert
+          - makezero

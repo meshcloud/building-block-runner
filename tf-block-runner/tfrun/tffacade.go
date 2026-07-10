@@ -11,7 +11,7 @@ var _ TfFacade = &tfexec.Terraform{}
 
 // TfFacade this is a facade in order to abstract away from functionality of the
 // tfexec library and be able to mock tf execution behavior in tests
-// tfexec.Terraform implements this interface
+// tfexec.Terraform implements this interface.
 type TfFacade interface {
 	Init(ctx context.Context, opts ...tfexec.InitOption) error
 	Apply(ctx context.Context, opts ...tfexec.ApplyOption) error

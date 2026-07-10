@@ -1,0 +1,83 @@
+version: '3'
+
+# Behavior-neutral replacement for the former Makefile (D14): every target is
+# preserved 1:1 except `vet` — govet runs as part of `task lint` (golangci-lint
+# enables it), so a separate vet target is dropped rather than duplicating the
+# check under two names.
+vars:
+  MODULES: go-meshapi-client run-controller tf-block-runner
+  RUN_CONTROLLER_CONFIG: run-controller/runner-config.yml
+  TF_BLOCK_RUNNER_CONFIG: tf-block-runner/runner-config.yml
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list-all
+
+  test:
+    desc: Run all tests (all modules)
+    cmds:
+      - for: { var: MODULES }
+        cmd: 'echo "==> {{.ITEM}}: go test ./..." && cd {{.ITEM}} && go test ./...'
+
+  test:go-meshapi-client:
+    desc: Run go-meshapi-client tests
+    dir: go-meshapi-client
+    cmds:
+      - go test ./...
+
+  test:run-controller:
+    desc: Run run-controller tests
+    dir: run-controller
+    cmds:
+      - go test ./...
+
+  test:tf-block-runner:
+    desc: Run tf-block-runner tests
+    dir: tf-block-runner
+    cmds:
+      - go test ./...
+
+  lint:
+    desc: Lint all modules with golangci-lint (govet runs inside; pass extra args after --, e.g. `task lint -- --fix`)
+    cmds:
+      - for: { var: MODULES }
+        cmd: 'echo "==> {{.ITEM}}: golangci-lint run" && cd {{.ITEM}} && golangci-lint run {{.CLI_ARGS}} ./...'
+
+  fmt:
+    desc: Format all Go code (golangci-lint fmt supersedes go fmt; one formatter authority)
+    cmds:
+      - for: { var: MODULES }
+        cmd: 'echo "==> {{.ITEM}}: golangci-lint fmt" && cd {{.ITEM}} && golangci-lint fmt ./...'
+
+  tidy:
+    desc: Tidy modules
+    cmds:
+      - for: { var: MODULES }
+        cmd: 'echo "==> {{.ITEM}}: go mod tidy" && cd {{.ITEM}} && go mod tidy'
+
+  work-sync:
+    desc: Sync go.work entries
+    cmds:
+      - go work sync
+
+  start:run-controller:
+    desc: Run run-controller
+    env:
+      RUNCONTROLLER_CONFIG_FILE: '{{.RUN_CONTROLLER_CONFIG}}'
+    cmds:
+      - go run ./run-controller
+
+  start:tf-block-runner:
+    desc: Run tf-block-runner
+    env:
+      RUNNER_CONFIG_FILE: '{{.TF_BLOCK_RUNNER_CONFIG}}'
+    cmds:
+      - go run ./tf-block-runner
+
+  coverage:
+    desc: Measure and report test coverage for all modules (gate thresholds defined in tools/coverage/thresholds.txt)
+    cmds:
+      - for: { var: MODULES }
+        cmd: 'echo "==> {{.ITEM}}: coverage" && cd {{.ITEM}} && go test -coverprofile=/tmp/coverage-{{.ITEM}}.out ./... && ../tools/coverage/check.sh . /tmp/coverage-{{.ITEM}}.out'

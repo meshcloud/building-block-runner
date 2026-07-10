@@ -27,7 +27,7 @@ type Worker struct {
 
 // defining custom type for context key is best practice
 // to avoid possible collisions downstream.
-// unlikely in our case, though
+// unlikely in our case, though.
 type contextKey struct{}
 
 var runInfoContextKey = contextKey{}
@@ -133,7 +133,7 @@ func (w *Worker) tfExecution(run *Run) {
 }
 
 // this starts the actual tf command execution.
-// sends out a done signal via the signalling channel, once terminated. (status independent)
+// sends out a done signal via the signalling channel, once terminated (status independent).
 func (w *Worker) workRoutine(ctx context.Context, run *Run, wg *sync.WaitGroup, doneSignallingChan chan bool) {
 	defer wg.Done()
 	defer func() { doneSignallingChan <- true }()
@@ -263,12 +263,12 @@ func (w *Worker) sendInitFail(run *Run) {
 	}
 }
 
-// to inline string pointers
+// to inline string pointers.
 func message(text string) *string {
 	return &text
 }
 
-// TODO rather inefficient version for now, but io.Seeker does not support Seek(..) on a file opened in append mode
+// TODO rather inefficient version for now, but io.Seeker does not support Seek(..) on a file opened in append mode.
 func fileContentOrEmpty(fileName string, startIdx, endIdx int64) string {
 	if b, err := os.ReadFile(fileName); err != nil {
 		return ""

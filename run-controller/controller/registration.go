@@ -17,12 +17,12 @@ const (
 	MeshBuildingBlockRunner_MediaType_V1Preview = "application/vnd.meshcloud.api.meshbuildingblockrunner.v1-preview.hal+json"
 )
 
-// RegistrationApi interface for runner registration
+// RegistrationApi interface for runner registration.
 type RegistrationApi interface {
 	RegisterController(metrics *MetricsCollector) error
 }
 
-// RegistrationApiClient implements the RegistrationApi
+// RegistrationApiClient implements the RegistrationApi.
 type RegistrationApiClient struct {
 	url        string
 	namespace  string
@@ -32,7 +32,7 @@ type RegistrationApiClient struct {
 	logger     *log.Logger
 }
 
-// NewRegistrationApi creates a new registration API client
+// NewRegistrationApi creates a new registration API client.
 func NewRegistrationApi(logger *log.Logger) RegistrationApi {
 	return &RegistrationApiClient{
 		url:        AppConfig.Api.Url,
@@ -69,7 +69,7 @@ func (api *RegistrationApiClient) RegisterController(metrics *MetricsCollector) 
 	return nil
 }
 
-// putController attempts to update the existing controller registration via PUT
+// putController attempts to update the existing controller registration via PUT.
 func (api *RegistrationApiClient) putController(jsonBody []byte) (int, error) {
 	url := fmt.Sprintf(EP_RunnerWithUuid, api.url, AppConfig.Uuid)
 
@@ -101,7 +101,7 @@ func (api *RegistrationApiClient) putController(jsonBody []byte) (int, error) {
 	return resp.StatusCode, nil
 }
 
-// setHeaders sets the common headers for API requests
+// setHeaders sets the common headers for API requests.
 func (api *RegistrationApiClient) setHeaders(req *http.Request) {
 	req.Header.Set("Authorization", api.auth.AuthHeader())
 	req.Header.Set("Content-Type", MeshBuildingBlockRunner_MediaType_V1Preview)

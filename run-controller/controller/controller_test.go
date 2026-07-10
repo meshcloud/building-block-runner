@@ -288,7 +288,7 @@ func TestIsNoRunError(t *testing.T) {
 	}
 }
 
-// Verify that meshapi.StatusError satisfies the error interface and is accessible
+// Verify that meshapi.StatusError satisfies the error interface and is accessible.
 func TestStatusError_Message(t *testing.T) {
 	err := &meshapi.StatusError{Status: 404}
 	if !strings.Contains(err.Error(), "404") {

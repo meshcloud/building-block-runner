@@ -22,6 +22,7 @@
         core_packages = [
           pkgs.go
           pkgs.golangci-lint
+          pkgs.go-task # task runner (replaces the Makefile, see Taskfile.yml / D14)
           pkgs.jdk21_headless
           pkgs.opentofu
           pkgs.minikube

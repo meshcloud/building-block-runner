@@ -25,11 +25,12 @@ var customMeshStackRunVarsTf []byte
 // pattern that allows flexible whitespace (to handle HCL's automatic alignment of equals signs),
 // then asserts the pattern exists in the content.
 func assertContainsHCL(t *testing.T, content, expected string) {
+	t.Helper()
 	// Escape special regex characters in the expected string
 	escaped := regexp.QuoteMeta(expected)
 	// Replace spaces around the equals sign with flexible whitespace pattern
 	pattern := strings.ReplaceAll(escaped, ` = `, `\s*=\s*`)
-	assert.Regexp(t, regexp.MustCompile(pattern), content, "Expected to find pattern: %s", expected)
+	assert.Regexp(t, pattern, content, "Expected to find pattern: %s", expected)
 }
 
 func Test_saveInputFiles_savedUnencryptedTextFileViaDataUrl(t *testing.T) {
@@ -44,12 +45,12 @@ func Test_saveInputFiles_savedUnencryptedTextFileViaDataUrl(t *testing.T) {
 	savedFiles, err := uut.saveInputFiles()
 
 	assert.Equal(t, 1, savedFiles)
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
 	filePath := path.Join(uut.runContextInfo.workingDirectory, "testfile")
 	data, err := os.ReadFile(filePath)
 
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
 	fileContent := string(data)
 
@@ -67,12 +68,12 @@ func Test_saveInputFiles_overwriteIfFileAlreadyExists(t *testing.T) {
 	filePath := path.Join(uut.runContextInfo.workingDirectory, "testfile")
 
 	err := os.WriteFile(filePath, []byte("test"), 0600)
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
 	savedFiles, err := uut.saveInputFiles()
 
 	assert.Equal(t, 1, savedFiles)
-	assert.Nil(t, err)
+	require.NoError(t, err)
 }
 
 func Test_saveInputFiles_IgnoresNonFileVariables(t *testing.T) {
@@ -87,7 +88,7 @@ func Test_saveInputFiles_IgnoresNonFileVariables(t *testing.T) {
 	savedFiles, err := uut.saveInputFiles()
 
 	assert.Equal(t, 0, savedFiles)
-	assert.Nil(t, err)
+	require.NoError(t, err)
 }
 
 func Test_saveInputFiles_ErrorsOnFilesAsEnvironments(t *testing.T) {
@@ -212,7 +213,7 @@ func Test_collectOutput(t *testing.T) {
 
 	uut.collectOutput(out)
 	collectedOutput := uut.runContextInfo.runStatus.currentStepStatus().Outputs
-	assert.Equal(t, len(collectedOutput), 3)
+	assert.Len(t, collectedOutput, 3)
 
 	assert.Equal(t, DataType(DATA_TYPE_INTEGER), collectedOutput["number"].Type)
 	assert.Equal(t, jsonRawFrom(5), collectedOutput["number"].Value)
@@ -221,7 +222,7 @@ func Test_collectOutput(t *testing.T) {
 	assert.Equal(t, "[\n  \"foo\",\n  \"bar\"\n]", collectedOutput["list"].Value)
 
 	assert.Equal(t, DataType(DATA_TYPE_CODE), collectedOutput["object"].Type)
-	assert.Equal(t, "{\n  \"test1\": \"foo\",\n  \"test2\": true,\n  \"test3\": 42\n}", collectedOutput["object"].Value)
+	assert.JSONEq(t, "{\n  \"test1\": \"foo\",\n  \"test2\": true,\n  \"test3\": 42\n}", collectedOutput["object"].Value.(string))
 }
 
 // Creates a new *GenericTfCmd and provides config with a working directory
@@ -233,11 +234,8 @@ func Test_collectOutput(t *testing.T) {
 // defer cleanUpFunc()
 // This function returns nil as first argument, in case something fails.
 func makeTestGenericTfCmd(t *testing.T) *GenericTfCmd {
-	wd, err := os.MkdirTemp(os.TempDir(), "test-")
-	t.Cleanup(func() {
-		_ = os.RemoveAll(wd)
-	})
-	require.NoError(t, err)
+	t.Helper()
+	wd := t.TempDir()
 	return &GenericTfCmd{
 		params: &TfCmdParams{
 			vars: make(map[string]*Variable),
@@ -260,7 +258,7 @@ func makeTestGenericTfCmd(t *testing.T) *GenericTfCmd {
 }
 
 // Test that both FILE type variables and regular variables are written correctly
-// and don't conflict with each other
+// and don't conflict with each other.
 func Test_FileAndRegularVariablesWorkTogether(t *testing.T) {
 	uut := makeTestGenericTfCmd(t)
 
@@ -315,7 +313,7 @@ func Test_FileAndRegularVariablesWorkTogether(t *testing.T) {
 }
 
 // Test_vars_WithSpecialCharacters tests that variables with special characters
-// are correctly written to the tfvars file
+// are correctly written to the tfvars file.
 func Test_vars_WithSpecialCharacters(t *testing.T) {
 	uut := makeTestGenericTfCmd(t)
 
@@ -349,7 +347,7 @@ func Test_vars_WithSpecialCharacters(t *testing.T) {
 }
 
 // Test_vars_WithPrettyPrintedJSONObjects tests that CODE/LIST values containing
-// pretty-printed JSON objects (with newlines) are written as-is, not quoted
+// pretty-printed JSON objects (with newlines) are written as-is, not quoted.
 func Test_vars_WithPrettyPrintedJSONObjects(t *testing.T) {
 	uut := makeTestGenericTfCmd(t)
 
@@ -551,7 +549,7 @@ func Test_vars_SkipsDeclaringVariablesAlreadyDeclaredByBuildingBlock(t *testing.
 }
 
 // Test_setEnvWith_DoesNotOverwriteExistingMeshStackRunVarsFile tests that
-// if the meshStack_run_vars.tf file already exists, it is not overwritten
+// if the meshStack_run_vars.tf file already exists, it is not overwritten.
 func Test_setEnvWith_DoesNotOverwriteExistingMeshStackRunVarsFile(t *testing.T) {
 	uut := makeTestGenericTfCmd(t)
 	uut.params.vars["ENV_FROM_VAR"] = &Variable{

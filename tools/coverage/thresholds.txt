@@ -32,3 +32,11 @@ github.com/meshcloud/building-block-runner/internal/report 90
 # Phase 4 (PLAN_DETAIL_04 §4.3/§7.1, step 3): the D12 management listener + generic
 # runner_* metrics -- hermetic httptest/testutil tests, no exclusion-list entries needed.
 github.com/meshcloud/building-block-runner/internal/mgmt 90
+
+# Phase 5 (PLAN_DETAIL_05 §5/§13): internal/controller dissolves into the backend-agnostic
+# claim/drain loop (dispatch) and the Kubernetes-specific Dispatcher (k8sjob). dispatch is
+# hermetically testable via fakes/channels (no exclusion-list entries needed); k8sjob's
+# manifest-building code is tested via k8s.io/client-go/kubernetes/fake, with only the real
+# cluster-connection file excluded (exclusions.txt).
+github.com/meshcloud/building-block-runner/internal/dispatch 90
+github.com/meshcloud/building-block-runner/internal/k8sjob 90

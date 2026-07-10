@@ -1,4 +1,4 @@
-package controller
+package k8sjob
 
 import (
 	"encoding/base64"
@@ -9,7 +9,11 @@ import (
 	meshapi "github.com/meshcloud/building-block-runner/internal/meshapi"
 )
 
-// decryptRunDetails decrypts all sensitive fields in the run details.
+// decryptRunDetails decrypts all sensitive fields in the run details. Moved verbatim from
+// the former internal/controller/decryption.go (PLAN_DETAIL_05 §5 resolution: the promised
+// merge into a shared meshapi.DecryptRunDetails did not land in prior phases, so this stays
+// a same-shape, k8sjob-local move) -- the five implementation-type branches and the
+// unsupported-type error are unchanged.
 func decryptRunDetails(runJsonBase64 string, cryptoInstance *meshcrypto.MeshCertBasedCrypto) (string, error) {
 	// Decode base64
 	runJsonBytes, err := base64.StdEncoding.DecodeString(runJsonBase64)
@@ -126,3 +130,13 @@ func decryptRunDetails(runJsonBase64 string, cryptoInstance *meshcrypto.MeshCert
 	// Re-encode to base64
 	return base64.StdEncoding.EncodeToString(decryptedJsonBytes), nil
 }
+
+// decryptFailure wraps a decrypt error so Loop recognizes it as a SilentDispatchFailure
+// (the controller's pre-existing, D9-pinned quirk: a claimed run with an undecryptable
+// payload is left for the coordinator's own timeout rather than actively failed -- see
+// PLAN_DETAIL_05_dispatcher.md §10.2/§16.8).
+type decryptFailure struct{ err error }
+
+func (e *decryptFailure) Error() string          { return e.err.Error() }
+func (e *decryptFailure) Unwrap() error          { return e.err }
+func (e *decryptFailure) SilentDispatchFailure() {}

@@ -17,3 +17,6 @@
 # --- Phase 1: tf runner adapter exclusions (PLAN_DETAIL_01 §7) ---
 github.com/meshcloud/building-block-runner/internal/tf/git.go  # Real go-git/exec-git+bash adapter: SSH clones need a live server and the Azure path shells out to git; the hermetic local-repo tests (CP11) exercise clone/checkout, but the auth transports and Azure remote quirks are only reachable via opt-in real-I/O e2e.
 github.com/meshcloud/building-block-runner/internal/tf/tfbinaries.go  # Real HashiCorp/OpenTofu release downloads (network + signature verification); tfbinaries_test.go keeps exercising it outside the gate.
+
+# --- Phase 5: k8sjob real-cluster I/O exclusion (PLAN_DETAIL_05 §5/§13) ---
+github.com/meshcloud/building-block-runner/internal/k8sjob/cluster.go  # Real Kubernetes API I/O: kubeconfig loading via client-go's clientcmd (in-cluster/KUBECONFIG/$HOME precedence) and OIDC discovery HTTP against the live API server's /.well-known/openid-configuration. Everything else in k8sjob is hermetically testable via k8s.io/client-go/kubernetes/fake (kubernetes_test.go); real cluster connectivity is proven by the phase-7 opt-in kind controller e2e (plan 07 §5.4), not this gate.

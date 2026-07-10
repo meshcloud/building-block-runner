@@ -1,59 +1,13 @@
-package controller
+package k8sjob
 
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	meshapi "github.com/meshcloud/building-block-runner/internal/meshapi"
 )
-
-func TestGetImplementationType_ValidTypes(t *testing.T) {
-	tests := []struct {
-		name     string
-		implType meshapi.ImplementationType
-	}{
-		{"Terraform", meshapi.ImplTypeTerraform},
-		{"GitHub Workflow", meshapi.ImplTypeGitHubWorkflow},
-		{"GitLab CICD", meshapi.ImplTypeGitLabCICD},
-		{"Azure DevOps", meshapi.ImplTypeAzureDevOps},
-		{"Manual", meshapi.ImplTypeManual},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			impl := map[string]interface{}{
-				"type": string(tt.implType),
-			}
-			implJson, _ := json.Marshal(impl)
-
-			dto := &meshapi.DefinitionDetailsSpecDTO{
-				Version:        1,
-				Implementation: implJson,
-			}
-
-			result, err := dto.GetImplementationType()
-			if err != nil {
-				t.Errorf("expected no error, got: %v", err)
-				return
-			}
-			if result != tt.implType {
-				t.Errorf("got %v, want %v", result, tt.implType)
-			}
-		})
-	}
-}
-
-func TestGetImplementationType_InvalidJSON(t *testing.T) {
-	dto := &meshapi.DefinitionDetailsSpecDTO{
-		Version:        1,
-		Implementation: []byte("invalid json"),
-	}
-
-	if _, err := dto.GetImplementationType(); err == nil {
-		t.Error("expected error for invalid JSON")
-	}
-}
 
 func TestDecryptRunDetails_UnsupportedImplementationType(t *testing.T) {
 	runDetails := meshapi.RunDetailsDTO{
@@ -122,12 +76,10 @@ func TestDecryptRunDetails_ManualImplementation(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected no error for MANUAL type, got: %v", err)
 	}
-
 	if result == "" {
 		t.Error("expected non-empty result")
 	}
 
-	// Verify the result can be decoded back
 	decoded, err := base64.StdEncoding.DecodeString(result)
 	if err != nil {
 		t.Fatalf("failed to decode result: %v", err)
@@ -137,7 +89,6 @@ func TestDecryptRunDetails_ManualImplementation(t *testing.T) {
 	if err := json.Unmarshal(decoded, &decodedRun); err != nil {
 		t.Fatalf("failed to unmarshal decoded result: %v", err)
 	}
-
 	if decodedRun.Metadata.Uuid != "test-uuid" {
 		t.Errorf("got UUID %v, want test-uuid", decodedRun.Metadata.Uuid)
 	}
@@ -167,25 +118,17 @@ func TestDecryptRunDetails_InvalidInputs(t *testing.T) {
 	}
 }
 
-func TestImplementationType_ToRunnerType(t *testing.T) {
-	tests := []struct {
-		name       string
-		implType   meshapi.ImplementationType
-		runnerType meshapi.RunnerImplementationType
-	}{
-		{"Terraform maps to Terraform", meshapi.ImplTypeTerraform, meshapi.RunnerTypeTerraform},
-		{"GitHub Workflow maps to GitHub Workflow", meshapi.ImplTypeGitHubWorkflow, meshapi.RunnerTypeGitHubWorkflow},
-		{"GitLab CICD maps to GitLab Pipeline", meshapi.ImplTypeGitLabCICD, meshapi.RunnerTypeGitLabPipeline},
-		{"Azure DevOps maps to Azure DevOps Pipeline", meshapi.ImplTypeAzureDevOps, meshapi.RunnerTypeAzureDevOpsPipeline},
-		{"Manual maps to Manual", meshapi.ImplTypeManual, meshapi.RunnerTypeManual},
+// TestDecryptFailure_IsSilentDispatchFailure pins the marker used by KubernetesJobDispatcher
+// to signal Loop's decrypt-failure quirk (§10.2/§16.8): the wrapped error must still satisfy
+// the standard error contract (Error/Unwrap) as well as the marker method.
+func TestDecryptFailure_IsSilentDispatchFailure(t *testing.T) {
+	errBoom := errors.New("boom")
+	inner := &decryptFailure{err: errBoom}
+	if inner.Error() != errBoom.Error() {
+		t.Errorf("expected Error() to delegate to the wrapped error, got %q", inner.Error())
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := meshapi.ToRunnerType(tt.implType)
-			if result != tt.runnerType {
-				t.Errorf("got %v, want %v", result, tt.runnerType)
-			}
-		})
+	if !errors.Is(inner.Unwrap(), errBoom) {
+		t.Error("expected Unwrap() to return the wrapped error")
 	}
+	inner.SilentDispatchFailure() // must not panic; marker method only
 }

@@ -1,4 +1,4 @@
-package controller
+package dispatch
 
 import (
 	"sync"
@@ -12,8 +12,9 @@ var (
 	metricsOnce     sync.Once
 )
 
-// Error type constants for metrics labels
-// All error types used in metrics are defined here for discoverability.
+// Error type constants for metrics labels. All error types used in metrics are defined
+// here for discoverability -- moved verbatim from the former internal/controller/metrics.go
+// (names/labels are the frozen run_controller_* surface, D12).
 const (
 	// Run fetch error types.
 	ErrorTypeFetchAPI = "api_error"
@@ -30,7 +31,12 @@ const (
 	ErrorTypeRegistrationPut     = "put_error"
 )
 
-// MetricsCollector holds all Prometheus metrics for the run-controller.
+// MetricsCollector holds all Prometheus metrics for the run-controller persona. It is the
+// dissolution target of the former internal/controller/metrics.go (PLAN_DETAIL_05 §5): the
+// metric names/labels are a frozen operator-facing surface (D12) and are unchanged by the
+// move. internal/k8sjob never imports prometheus directly (depguard) -- it drives these
+// same series through the small consumer-side JobMetrics interface it declares, satisfied
+// structurally by the exported methods below.
 type MetricsCollector struct {
 	// Run fetch metrics
 	runsFetchErrors   *prometheus.CounterVec
@@ -159,4 +165,60 @@ func NewMetricsCollector() *MetricsCollector {
 		}
 	})
 	return metricsInstance
+}
+
+// The methods below are the exported surface internal/k8sjob and the cmd/bbrunner wiring
+// drive these metrics through (k8sjob declares its own small JobMetrics interface,
+// structurally satisfied by *MetricsCollector, so it never imports prometheus itself).
+
+func (m *MetricsCollector) IncRunsFetchError(runnerUuid, errorType string) {
+	m.runsFetchErrors.WithLabelValues(runnerUuid, errorType).Inc()
+}
+
+func (m *MetricsCollector) ObserveRunsFetchDuration(runnerUuid string, seconds float64) {
+	m.runsFetchDuration.WithLabelValues(runnerUuid).Observe(seconds)
+}
+
+func (m *MetricsCollector) IncJobsCreated(runnerUuid string) {
+	m.jobsCreatedTotal.WithLabelValues(runnerUuid).Inc()
+}
+
+func (m *MetricsCollector) IncJobCreationError(runnerUuid, errorType string) {
+	m.jobCreationErrors.WithLabelValues(runnerUuid, errorType).Inc()
+}
+
+func (m *MetricsCollector) ObserveJobCreationDuration(runnerUuid string, seconds float64) {
+	m.jobCreationDuration.WithLabelValues(runnerUuid).Observe(seconds)
+}
+
+func (m *MetricsCollector) IncJobsAtCapacitySkips(runnerUuid string) {
+	m.jobsAtCapacitySkips.WithLabelValues(runnerUuid).Inc()
+}
+
+func (m *MetricsCollector) IncServiceAccountsCreated(runnerUuid string) {
+	m.serviceAccountsCreatedTotal.WithLabelValues(runnerUuid).Inc()
+}
+
+func (m *MetricsCollector) IncServiceAccountCreationError(runnerUuid, errorType string) {
+	m.serviceAccountCreationErrors.WithLabelValues(runnerUuid, errorType).Inc()
+}
+
+func (m *MetricsCollector) IncDecryptionError(runnerUuid string) {
+	m.decryptionErrors.WithLabelValues(runnerUuid).Inc()
+}
+
+func (m *MetricsCollector) IncRegistrationSuccess(runnerUuid string) {
+	m.runnerRegistrationSuccess.WithLabelValues(runnerUuid).Inc()
+}
+
+func (m *MetricsCollector) IncRegistrationError(runnerUuid, errorType string) {
+	m.runnerRegistrationErrors.WithLabelValues(runnerUuid, errorType).Inc()
+}
+
+func (m *MetricsCollector) IncLoopIteration() {
+	m.controllerLoopIterations.Inc()
+}
+
+func (m *MetricsCollector) SetActiveRunners(n float64) {
+	m.activeRunners.Set(n)
 }

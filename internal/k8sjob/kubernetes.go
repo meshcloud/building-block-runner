@@ -1,14 +1,11 @@
-package controller
+package k8sjob
 
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
-	"log"
-	"net/http"
-	"strings"
+	"log/slog"
 	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -17,81 +14,154 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 
+	meshcrypto "github.com/meshcloud/building-block-runner/internal/crypto"
+	"github.com/meshcloud/building-block-runner/internal/dispatch"
 	meshapi "github.com/meshcloud/building-block-runner/internal/meshapi"
 )
 
-type KubernetesClient struct {
-	clientset *kubernetes.Clientset
-	namespace string
-	logger    *log.Logger
+// JobMetrics is the small consumer-side meter interface this package drives its metrics
+// through -- structurally satisfied by *dispatch.MetricsCollector's exported methods, so
+// k8sjob itself never imports prometheus (depguard, PLAN_DETAIL_05 §5).
+type JobMetrics interface {
+	ObserveJobCreationDuration(runnerUuid string, seconds float64)
+	IncJobCreationError(runnerUuid, errorType string)
+	IncJobsCreated(runnerUuid string)
+	IncServiceAccountCreationError(runnerUuid, errorType string)
+	IncServiceAccountsCreated(runnerUuid string)
+	IncDecryptionError(runnerUuid string)
 }
 
-func newKubernetesClient(namespace string, logger *log.Logger) (*KubernetesClient, error) {
-	config, err := getKubernetesConfig()
+// KubernetesJobDispatcher is the dissolution target of the former
+// internal/controller.KubernetesClient / JobManager (PLAN_DETAIL_05 §5): it implements
+// dispatch.Dispatcher by creating one Kubernetes Job per claimed run (moved, not changed --
+// the manifest shapes, env contract and size guard are byte-identical, D9/D10).
+type KubernetesJobDispatcher struct {
+	clientset  kubernetes.Interface
+	namespace  string
+	runnerUuid string
+	// apiUrl is stamped into the dispatched Job's RUNNER_API_URL env var (a fallback for
+	// building callback URLs; runners prefer the run's own _links.meshstackBaseUrl). It is
+	// not part of Config because the api/crypto/registration fields stay in the persona
+	// yaml struct (PLAN_DETAIL_05 §5) -- only this one k8s-facing use crosses over.
+	apiUrl  string
+	cfg     Config
+	crypto  *meshcrypto.MeshCertBasedCrypto
+	metrics JobMetrics
+	logger  *slog.Logger
+}
+
+// dispatchError is a plain string error (not fmt.Errorf/errors.New) so its frozen,
+// capitalized, user-facing wire text -- reported verbatim as the run's FAILED status
+// message -- does not trip staticcheck's ST1005 (errors, unlike operator status text, are
+// conventionally lowercase; these strings are the latter, not the former).
+type dispatchError string
+
+func (e dispatchError) Error() string { return string(e) }
+
+// NewKubernetesJobDispatcher lives in cluster.go (real cluster connection, coverage-excluded
+// per §13); this file only builds/tests the hermetic, fake-clientset-injectable half.
+
+// NewKubernetesJobDispatcherWithClient builds a dispatcher over a caller-supplied
+// clientset -- the seam tests use to inject k8s.io/client-go/kubernetes/fake.
+func NewKubernetesJobDispatcherWithClient(clientset kubernetes.Interface, cfg Config, runnerUuid, apiUrl string, crypto *meshcrypto.MeshCertBasedCrypto, metrics JobMetrics, logger *slog.Logger) *KubernetesJobDispatcher {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &KubernetesJobDispatcher{
+		clientset:  clientset,
+		namespace:  cfg.Namespace,
+		runnerUuid: runnerUuid,
+		apiUrl:     apiUrl,
+		cfg:        cfg,
+		crypto:     crypto,
+		metrics:    metrics,
+		logger:     logger,
+	}
+}
+
+// Dispatch decrypts the claimed run and creates its Kubernetes Job. Order preserved from
+// the former controller.processNextRun (PLAN_DETAIL_05 §5): decrypt -> template lookup ->
+// size guard -> ServiceAccount/Secret/Job. A decrypt failure returns a
+// dispatch.SilentDispatchFailure (§10.2/§16.8 quirk, kept bit-for-bit); a missing template
+// returns *dispatch.UnhandledTypeError with the frozen message (D5/§10.1); any other job
+// creation error's Error() text is the exact FAILED-status message reported to meshfed.
+func (k *KubernetesJobDispatcher) Dispatch(run dispatch.ClaimedRun) error {
+	decryptedRunJsonBase64, err := decryptRunDetails(run.RawJson, k.crypto)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get kubernetes config: %w", err)
+		k.metrics.IncDecryptionError(k.runnerUuid)
+		return &decryptFailure{err: fmt.Errorf("failed to decrypt run details for run %s: %w", run.Id, err)}
 	}
 
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create kubernetes client: %w", err)
+	runnerType := string(run.Type)
+	jobSpec, ok := k.cfg.Implementations[runnerType]
+	if !ok {
+		return &dispatch.UnhandledTypeError{
+			Type:    run.Type,
+			Message: fmt.Sprintf("no implementation handler configured for type '%s'", runnerType),
+		}
 	}
 
-	return &KubernetesClient{
-		clientset: clientset,
-		namespace: namespace,
-		logger:    logger,
-	}, nil
+	runInfo := run.Details.GetRunInfo()
+	if err := k.createRunnerJob(runInfo, decryptedRunJsonBase64, runnerType, &jobSpec); err != nil {
+		var tooLarge *RunTooLargeError
+		if errors.As(err, &tooLarge) {
+			return dispatchError("Run data is too large to be passed to the runner. The run data exceeds the Kubernetes secret size limit of 1MiB. Please reduce the size of the building block inputs.")
+		}
+		return dispatchError(fmt.Sprintf("Failed to create job for run: %s", err.Error()))
+	}
+
+	return nil
 }
 
-func getKubernetesConfig() (*rest.Config, error) {
-	// This uses the standard Kubernetes client-go precedence:
-	// 1. In-cluster config (when running inside a pod)
-	// 2. KUBECONFIG environment variable
-	// 3. $HOME/.kube/config
-	// This is the idiomatic way and handles all edge cases properly
-	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
-	configOverrides := &clientcmd.ConfigOverrides{}
-	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
-	return kubeConfig.ClientConfig()
+// InFlight returns the number of runner jobs created by this controller that have not yet
+// finished (dispatch.Dispatcher's capacity signal). Finished jobs (Complete or Failed) are
+// excluded so that jobs still lingering during their TTLSecondsAfterFinished window do not
+// count against the concurrency budget.
+func (k *KubernetesJobDispatcher) InFlight() (int, error) {
+	selector := fmt.Sprintf("meshcloud.io/runner-id=%s", k.runnerUuid)
+	jobList, err := k.clientset.BatchV1().Jobs(k.namespace).List(context.TODO(), metav1.ListOptions{
+		LabelSelector: selector,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("failed to list jobs for capacity check: %w", err)
+	}
+
+	active := 0
+	for i := range jobList.Items {
+		if !isJobFinished(&jobList.Items[i]) {
+			active++
+		}
+	}
+	return active, nil
 }
 
-func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase64 string, implType string, jobSpec *JobSpecTemplate, metrics *MetricsCollector) error {
-	k.logger.Printf("Preparing to create runner job for run %s", runInfo.Uuid)
+func (k *KubernetesJobDispatcher) createRunnerJob(runInfo meshapi.RunInfo, runJsonBase64 string, implType string, jobSpec *JobSpecTemplate) error {
+	k.logger.Info("preparing to create runner job", "run_id", runInfo.Uuid)
 
-	// Measure job creation duration
 	start := time.Now()
 	defer func() {
-		metrics.jobCreationDuration.WithLabelValues(AppConfig.Uuid).Observe(time.Since(start).Seconds())
+		k.metrics.ObserveJobCreationDuration(k.runnerUuid, time.Since(start).Seconds())
 	}()
 
 	jobName := fmt.Sprintf("runner-%s", runInfo.Uuid)
-
-	// Use namespace from controller config
-	namespace := AppConfig.Namespace
+	namespace := k.namespace
 
 	// Check if job already exists
 	_, err := k.clientset.BatchV1().Jobs(namespace).Get(context.TODO(), jobName, metav1.GetOptions{})
 	if err == nil {
-		k.logger.Printf("Job %s already exists, skipping creation", jobName)
+		k.logger.Info("job already exists, skipping creation", "job", jobName)
 		return nil
 	}
 
-	k.logger.Printf("Creating job %s for run %s with controller %s in namespace %s", jobName, runInfo.Uuid, AppConfig.Uuid, namespace)
+	k.logger.Info("creating job", "job", jobName, "run_id", runInfo.Uuid, "runner_uuid", k.runnerUuid, "namespace", namespace)
 
 	// Check if the run JSON data exceeds the Kubernetes secret size limit (1MiB).
 	// Kubernetes secrets are limited to 1MiB of data. If the run data is too large,
 	// we cannot create a secret and must report the error back to meshfed.
-	runJsonSize, err := estimateRunJsonSize(runJsonBase64)
-	if err != nil {
-		metrics.jobCreationErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeJobCreation).Inc()
-		return fmt.Errorf("failed to estimate run json size: %w", err)
-	}
+	runJsonSize := estimateRunJsonSize(runJsonBase64)
 	if runJsonSize > EffectiveMaxRunJsonSize {
-		metrics.jobCreationErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeRunTooLarge).Inc()
+		k.metrics.IncJobCreationError(k.runnerUuid, dispatch.ErrorTypeRunTooLarge)
 		return &RunTooLargeError{
 			RunId:    runInfo.Uuid,
 			DataSize: runJsonSize,
@@ -103,11 +173,11 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 	// Using periods as separators for clear, unambiguous parsing (workspace names can contain dashes)
 	// this will eventually be reflected in the sub claim of the jwt token used for workload identity,
 	// as sub: "system:serviceaccount:<namespace>:workspace.<bbd-workspace>.buildingblockdefinition.<bbd-uuid>"
-	// IMPORTANT: this should align with subject pattern in dtos.go BuildRunnerRegistrationDTO()
+	// IMPORTANT: this should align with subject pattern in registration.go BuildRunnerRegistrationDTO()
 	serviceAccountName := fmt.Sprintf("workspace.%s.buildingblockdefinition.%s", runInfo.BuildingBlockDefinitionWorkspace, runInfo.BuildingBlockDefinitionUuid)
-	err = k.createServiceAccount(namespace, serviceAccountName, runInfo.Uuid, metrics)
+	err = k.createServiceAccount(namespace, serviceAccountName, runInfo.Uuid)
 	if err != nil {
-		metrics.jobCreationErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeJobCreation).Inc()
+		k.metrics.IncJobCreationError(k.runnerUuid, dispatch.ErrorTypeJobCreation)
 		return fmt.Errorf("failed to create service account: %w", err)
 	}
 
@@ -116,7 +186,7 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 	runJsonSecretName := fmt.Sprintf("run-json-%s", runInfo.Uuid)
 	err = k.createRunJsonSecret(namespace, runJsonSecretName, runJsonBase64, runInfo.Uuid)
 	if err != nil {
-		metrics.jobCreationErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeJobCreation).Inc()
+		k.metrics.IncJobCreationError(k.runnerUuid, dispatch.ErrorTypeJobCreation)
 		return fmt.Errorf("failed to create run json secret: %w", err)
 	}
 
@@ -128,7 +198,7 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 			Labels: map[string]string{
 				"app.kubernetes.io/name":   "runner",
 				"meshcloud.io/run-id":      runInfo.Uuid,
-				"meshcloud.io/runner-id":   AppConfig.Uuid,
+				"meshcloud.io/runner-id":   k.runnerUuid,
 				"meshcloud.io/runner-type": implType,
 			},
 		},
@@ -144,7 +214,7 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 					Labels: map[string]string{
 						"app.kubernetes.io/name":   "runner",
 						"meshcloud.io/run-id":      runInfo.Uuid,
-						"meshcloud.io/runner-id":   AppConfig.Uuid,
+						"meshcloud.io/runner-id":   k.runnerUuid,
 						"meshcloud.io/runner-type": implType,
 					},
 				},
@@ -152,8 +222,8 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 					RestartPolicy:      corev1.RestartPolicyNever,
 					ServiceAccountName: serviceAccountName,
 					ImagePullSecrets:   k.buildImagePullSecrets(),
-					Tolerations:        buildTolerations(AppConfig.Tolerations),
-					NodeSelector:       AppConfig.NodeSelector,
+					Tolerations:        buildTolerations(k.cfg.Tolerations),
+					NodeSelector:       k.cfg.NodeSelector,
 					Volumes:            k.createVolumes(namespace, jobSpec, runJsonSecretName),
 					// Disable service-link env injection (MARIADB_*, KUBERNETES_* etc.) to keep
 					// the container environment clean and avoid leaking service discovery info.
@@ -190,7 +260,7 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 
 	createdJob, err := k.clientset.BatchV1().Jobs(namespace).Create(context.TODO(), job, metav1.CreateOptions{})
 	if err != nil {
-		metrics.jobCreationErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeJobCreation).Inc()
+		k.metrics.IncJobCreationError(k.runnerUuid, dispatch.ErrorTypeJobCreation)
 		// Clean up the secret since the job failed to create
 		_ = k.clientset.CoreV1().Secrets(namespace).Delete(context.TODO(), runJsonSecretName, metav1.DeleteOptions{})
 		return fmt.Errorf("failed to create job: %w", err)
@@ -199,35 +269,12 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 	// Set owner reference on the secret so it gets garbage-collected when the job is deleted
 	err = k.setSecretOwnerReference(namespace, runJsonSecretName, createdJob)
 	if err != nil {
-		k.logger.Printf("Warning: failed to set owner reference on secret %s: %v (secret will need manual cleanup)", runJsonSecretName, err)
+		k.logger.Warn("failed to set owner reference on secret (secret will need manual cleanup)", "secret", runJsonSecretName, "error", err)
 	}
 
-	metrics.jobsCreatedTotal.WithLabelValues(AppConfig.Uuid).Inc()
-	k.logger.Printf("Successfully created job %s", jobName)
+	k.metrics.IncJobsCreated(k.runnerUuid)
+	k.logger.Info("successfully created job", "job", jobName)
 	return nil
-}
-
-// CountActiveJobs returns the number of runner jobs created by this controller that have not
-// yet finished. Finished jobs (Complete or Failed) are excluded so that jobs still lingering
-// during their TTLSecondsAfterFinished window do not count against the concurrency budget.
-// This is used as a best-effort capacity signal: the controller avoids claiming runs it would
-// not be able to place, since a failed job creation forces the run to be reported as FAILED.
-func (k *KubernetesClient) CountActiveJobs() (int, error) {
-	selector := fmt.Sprintf("meshcloud.io/runner-id=%s", AppConfig.Uuid)
-	jobList, err := k.clientset.BatchV1().Jobs(AppConfig.Namespace).List(context.TODO(), metav1.ListOptions{
-		LabelSelector: selector,
-	})
-	if err != nil {
-		return 0, fmt.Errorf("failed to list jobs for capacity check: %w", err)
-	}
-
-	active := 0
-	for i := range jobList.Items {
-		if !isJobFinished(&jobList.Items[i]) {
-			active++
-		}
-	}
-	return active, nil
 }
 
 // isJobFinished reports whether a job has reached a terminal state (completed or failed).
@@ -273,7 +320,6 @@ const SecretMetadataOverhead = 10 * 1024 // 10KiB
 const EffectiveMaxRunJsonSize = MaxKubernetesSecretSize - SecretMetadataOverhead
 
 // RunTooLargeError is returned when the run JSON data exceeds the Kubernetes secret size limit.
-// This error should be caught by the controller to report back to meshfed.
 type RunTooLargeError struct {
 	RunId    string
 	DataSize int
@@ -290,9 +336,8 @@ func (e *RunTooLargeError) Error() string {
 // estimateRunJsonSize returns an estimate of the decoded run JSON data size in bytes.
 // Uses DecodedLen to estimate the maximum size without performing a full decode,
 // avoiding redundant decoding since the data is decoded again when building the Secret.
-func estimateRunJsonSize(runJsonBase64 string) (int, error) {
-	estimatedSize := base64.StdEncoding.DecodedLen(len(runJsonBase64))
-	return estimatedSize, nil
+func estimateRunJsonSize(runJsonBase64 string) int {
+	return base64.StdEncoding.DecodedLen(len(runJsonBase64))
 }
 
 // Default resource values for runner containers.
@@ -344,19 +389,19 @@ func buildResourceRequirements(config ResourcesConfig) corev1.ResourceRequiremen
 	return requirements
 }
 
-func (k *KubernetesClient) buildImagePullSecrets() []corev1.LocalObjectReference {
-	if len(AppConfig.ImagePullSecrets) == 0 {
+func (k *KubernetesJobDispatcher) buildImagePullSecrets() []corev1.LocalObjectReference {
+	if len(k.cfg.ImagePullSecrets) == 0 {
 		return nil
 	}
 
-	imagePullSecrets := make([]corev1.LocalObjectReference, len(AppConfig.ImagePullSecrets))
-	for i, secret := range AppConfig.ImagePullSecrets {
+	imagePullSecrets := make([]corev1.LocalObjectReference, len(k.cfg.ImagePullSecrets))
+	for i, secret := range k.cfg.ImagePullSecrets {
 		imagePullSecrets[i] = corev1.LocalObjectReference{Name: secret}
 	}
 	return imagePullSecrets
 }
 
-func (k *KubernetesClient) buildCommand(jobSpec *JobSpecTemplate) []string {
+func (k *KubernetesJobDispatcher) buildCommand(jobSpec *JobSpecTemplate) []string {
 	// Return custom command from job spec if provided
 	if len(jobSpec.Command) > 0 {
 		return jobSpec.Command
@@ -366,7 +411,7 @@ func (k *KubernetesClient) buildCommand(jobSpec *JobSpecTemplate) []string {
 	return nil
 }
 
-func (k *KubernetesClient) buildArgs(jobSpec *JobSpecTemplate) []string {
+func (k *KubernetesJobDispatcher) buildArgs(jobSpec *JobSpecTemplate) []string {
 	// Return custom args from job spec if provided
 	if len(jobSpec.Args) > 0 {
 		return jobSpec.Args
@@ -376,7 +421,7 @@ func (k *KubernetesClient) buildArgs(jobSpec *JobSpecTemplate) []string {
 	return nil
 }
 
-func (k *KubernetesClient) createServiceAccount(namespace, name, runID string, metrics *MetricsCollector) error {
+func (k *KubernetesJobDispatcher) createServiceAccount(namespace, name, runID string) error {
 	serviceAccount := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -384,7 +429,7 @@ func (k *KubernetesClient) createServiceAccount(namespace, name, runID string, m
 			Labels: map[string]string{
 				"app.kubernetes.io/name": "runner",
 				"meshcloud.io/run-id":    runID,
-				"meshcloud.io/runner-id": AppConfig.Uuid,
+				"meshcloud.io/runner-id": k.runnerUuid,
 			},
 		},
 	}
@@ -392,24 +437,24 @@ func (k *KubernetesClient) createServiceAccount(namespace, name, runID string, m
 	// Check if service account already exists
 	_, err := k.clientset.CoreV1().ServiceAccounts(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 	if err == nil {
-		k.logger.Printf("Service account %s already exists, skipping creation", name)
+		k.logger.Info("service account already exists, skipping creation", "service_account", name)
 		return nil
 	}
 
 	_, err = k.clientset.CoreV1().ServiceAccounts(namespace).Create(context.TODO(), serviceAccount, metav1.CreateOptions{})
 	if err != nil {
-		metrics.serviceAccountCreationErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeServiceAccountCreation).Inc()
+		k.metrics.IncServiceAccountCreationError(k.runnerUuid, dispatch.ErrorTypeServiceAccountCreation)
 		return fmt.Errorf("failed to create service account: %w", err)
 	}
 
-	metrics.serviceAccountsCreatedTotal.WithLabelValues(AppConfig.Uuid).Inc()
-	k.logger.Printf("Successfully created service account %s in namespace %s", name, namespace)
+	k.metrics.IncServiceAccountsCreated(k.runnerUuid)
+	k.logger.Info("successfully created service account", "service_account", name, "namespace", namespace)
 	return nil
 }
 
 // createRunJsonSecret creates a Kubernetes secret containing the run JSON data.
 // The data is stored as a decoded JSON file (not base64-encoded) so runners can read it directly.
-func (k *KubernetesClient) createRunJsonSecret(namespace, secretName, runJsonBase64, runID string) error {
+func (k *KubernetesJobDispatcher) createRunJsonSecret(namespace, secretName, runJsonBase64, runID string) error {
 	// Decode base64 to get the raw JSON bytes for the secret
 	runJsonBytes, err := base64.StdEncoding.DecodeString(runJsonBase64)
 	if err != nil {
@@ -423,7 +468,7 @@ func (k *KubernetesClient) createRunJsonSecret(namespace, secretName, runJsonBas
 			Labels: map[string]string{
 				"app.kubernetes.io/name": "runner",
 				"meshcloud.io/run-id":    runID,
-				"meshcloud.io/runner-id": AppConfig.Uuid,
+				"meshcloud.io/runner-id": k.runnerUuid,
 			},
 		},
 		Data: map[string][]byte{
@@ -434,7 +479,7 @@ func (k *KubernetesClient) createRunJsonSecret(namespace, secretName, runJsonBas
 	// Check if secret already exists
 	_, err = k.clientset.CoreV1().Secrets(namespace).Get(context.TODO(), secretName, metav1.GetOptions{})
 	if err == nil {
-		k.logger.Printf("Secret %s already exists, skipping creation", secretName)
+		k.logger.Info("secret already exists, skipping creation", "secret", secretName)
 		return nil
 	}
 	if !apierrors.IsNotFound(err) {
@@ -446,13 +491,13 @@ func (k *KubernetesClient) createRunJsonSecret(namespace, secretName, runJsonBas
 		return fmt.Errorf("failed to create secret: %w", err)
 	}
 
-	k.logger.Printf("Successfully created run json secret %s in namespace %s", secretName, namespace)
+	k.logger.Info("successfully created run json secret", "secret", secretName, "namespace", namespace)
 	return nil
 }
 
 // setSecretOwnerReference updates a secret to set an owner reference to the given job.
 // This ensures the secret is automatically garbage-collected when the job is deleted.
-func (k *KubernetesClient) setSecretOwnerReference(namespace, secretName string, job *batchv1.Job) error {
+func (k *KubernetesJobDispatcher) setSecretOwnerReference(namespace, secretName string, job *batchv1.Job) error {
 	secret, err := k.clientset.CoreV1().Secrets(namespace).Get(context.TODO(), secretName, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to get secret for owner reference update: %w", err)
@@ -476,11 +521,11 @@ func (k *KubernetesClient) setSecretOwnerReference(namespace, secretName string,
 		return fmt.Errorf("failed to update secret with owner reference: %w", err)
 	}
 
-	k.logger.Printf("Successfully set owner reference on secret %s to job %s", secretName, job.Name)
+	k.logger.Info("successfully set owner reference on secret", "secret", secretName, "job", job.Name)
 	return nil
 }
 
-func (k *KubernetesClient) createVolumes(namespace string, jobSpec *JobSpecTemplate, runJsonSecretName string) []corev1.Volume {
+func (k *KubernetesJobDispatcher) createVolumes(namespace string, jobSpec *JobSpecTemplate, runJsonSecretName string) []corev1.Volume {
 	expirationSeconds := int64(7200)
 
 	volumes := []corev1.Volume{
@@ -575,7 +620,7 @@ func (k *KubernetesClient) createVolumes(namespace string, jobSpec *JobSpecTempl
 	return volumes
 }
 
-func (k *KubernetesClient) createVolumeMounts(jobSpec *JobSpecTemplate) []corev1.VolumeMount {
+func (k *KubernetesJobDispatcher) createVolumeMounts(jobSpec *JobSpecTemplate) []corev1.VolumeMount {
 	volumeMounts := []corev1.VolumeMount{
 		{
 			Name:      "run-json",
@@ -615,7 +660,7 @@ func (k *KubernetesClient) createVolumeMounts(jobSpec *JobSpecTemplate) []corev1
 const runJsonFilePath = "/var/run/secrets/meshstack/run.json"
 
 // buildEnvVars constructs the environment variables for the runner container.
-func (k *KubernetesClient) buildEnvVars(jobSpec *JobSpecTemplate) []corev1.EnvVar {
+func (k *KubernetesJobDispatcher) buildEnvVars(jobSpec *JobSpecTemplate) []corev1.EnvVar {
 	envVars := []corev1.EnvVar{
 		{
 			// Path to the mounted run JSON file containing the decrypted run specification.
@@ -624,13 +669,13 @@ func (k *KubernetesClient) buildEnvVars(jobSpec *JobSpecTemplate) []corev1.EnvVa
 		},
 		{
 			Name:  "RUNNER_UUID",
-			Value: AppConfig.Uuid,
+			Value: k.runnerUuid,
 		},
 		{
 			// The API URL is used as a fallback for building callback URLs.
 			// Runners prefer the _links.meshstackBaseUrl from the run object when available.
 			Name:  "RUNNER_API_URL",
-			Value: AppConfig.Api.Url,
+			Value: k.apiUrl,
 		},
 	}
 
@@ -643,67 +688,4 @@ func (k *KubernetesClient) buildEnvVars(jobSpec *JobSpecTemplate) []corev1.EnvVa
 	}
 
 	return envVars
-}
-
-// DiscoverOIDCIssuer attempts to discover the OIDC issuer URL from the Kubernetes API server.
-// It queries the /.well-known/openid-configuration endpoint on the API server.
-// Returns empty string if discovery fails (e.g., not running in cluster or OIDC not configured).
-func DiscoverOIDCIssuer(logger *log.Logger) string {
-	config, err := getKubernetesConfig()
-	if err != nil {
-		logger.Printf("Failed to get Kubernetes config for OIDC discovery: %v", err)
-		return ""
-	}
-
-	// Build the OIDC configuration URL from the API server host
-	// The Kubernetes API server exposes /.well-known/openid-configuration
-	apiServerURL := strings.TrimSuffix(config.Host, "/")
-	oidcConfigURL := apiServerURL + "/.well-known/openid-configuration"
-
-	logger.Printf("Discovering OIDC issuer from: %s", oidcConfigURL)
-
-	// Create HTTP client with the same TLS config as the Kubernetes client
-	transport, err := rest.TransportFor(config)
-	if err != nil {
-		logger.Printf("Failed to create transport for OIDC discovery: %v", err)
-		return ""
-	}
-
-	client := &http.Client{Transport: transport}
-
-	resp, err := client.Get(oidcConfigURL)
-	if err != nil {
-		logger.Printf("Failed to fetch OIDC configuration: %v", err)
-		return ""
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		logger.Printf("OIDC configuration endpoint returned status %d", resp.StatusCode)
-		return ""
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		logger.Printf("Failed to read OIDC configuration response: %v", err)
-		return ""
-	}
-
-	// Parse the OpenID configuration to extract the issuer
-	var oidcConfig struct {
-		Issuer string `json:"issuer"`
-	}
-
-	if err := json.Unmarshal(body, &oidcConfig); err != nil {
-		logger.Printf("Failed to parse OIDC configuration: %v", err)
-		return ""
-	}
-
-	if oidcConfig.Issuer == "" {
-		logger.Printf("OIDC configuration does not contain an issuer")
-		return ""
-	}
-
-	logger.Printf("Discovered OIDC issuer: %s", oidcConfig.Issuer)
-	return oidcConfig.Issuer
 }

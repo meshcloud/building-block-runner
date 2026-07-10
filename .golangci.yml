@@ -111,11 +111,61 @@ linters:
             - github.com/prometheus/client_model
             - github.com/stretchr/testify
 
-        # Controller (internal/controller, transitional per §10.3) + its wiring cmd/bbrunner:
-        # claims/dispatches runs as k8s Jobs; k8s client-go + Prometheus metrics.
-        controller:
+        # dispatch (internal/dispatch, PLAN_DETAIL_05 §5): the backend-agnostic claim/drain
+        # loop + capacity guard. Backend-agnostic means no k8s.io/* here (that is k8sjob's
+        # job) -- prometheus is allowed because the frozen run_controller_* MetricsCollector
+        # (moved from the former internal/controller/metrics.go) lives in this package.
+        dispatch:
           files:
-            - "internal/controller/**/*.go"
+            - "internal/dispatch/**/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+        dispatch-test:
+          files:
+            - "internal/dispatch/**/*_test.go"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+
+        # k8sjob (internal/k8sjob, PLAN_DETAIL_05 §5): the KubernetesJobDispatcher (Job/
+        # Secret/ServiceAccount manifests, WIF, OIDC discovery) dissolved out of the former
+        # internal/controller. Imports dispatch (parameter types: ClaimedRun, Dispatcher,
+        # UnhandledTypeError) but never prometheus directly -- it drives the frozen metrics
+        # through the small consumer-side JobMetrics interface it declares itself.
+        k8sjob:
+          files:
+            - "internal/k8sjob/**/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - k8s.io/api
+            - k8s.io/apimachinery
+            - k8s.io/client-go
+        k8sjob-test:
+          files:
+            - "internal/k8sjob/**/*_test.go"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - k8s.io/api
+            - k8s.io/apimachinery
+            - k8s.io/client-go
+
+        # cmd/bbrunner: the run-controller/superset persona wiring (D11 -- only main wires
+        # adapters/dispatchers together). Links dispatch + k8sjob + prometheus (to pass
+        # prometheus.DefaultGatherer to the management listener) + yaml.v2 (its own
+        # runner-config.yml struct, PLAN_DETAIL_05 §5's "persona yaml struct").
+        bbrunner:
+          files:
             - "cmd/bbrunner/**/*.go"
             - "!$test"
           list-mode: strict
@@ -124,12 +174,8 @@ linters:
             - github.com/meshcloud/building-block-runner
             - github.com/prometheus/client_golang
             - gopkg.in/yaml.v2
-            - k8s.io/api
-            - k8s.io/apimachinery
-            - k8s.io/client-go
-        controller-test:
+        bbrunner-test:
           files:
-            - "internal/controller/**/*_test.go"
             - "cmd/bbrunner/**/*_test.go"
           list-mode: strict
           allow:
@@ -137,9 +183,7 @@ linters:
             - github.com/meshcloud/building-block-runner
             - github.com/prometheus/client_golang
             - gopkg.in/yaml.v2
-            - k8s.io/api
-            - k8s.io/apimachinery
-            - k8s.io/client-go
+            - github.com/stretchr/testify
 
         # tf persona (internal/tf) + its wiring cmd/tf: executes tofu/terraform plans against
         # a cloned git repo; the hashicorp/go-git/zclconf toolchain. Must NOT link k8s
@@ -191,12 +235,11 @@ linters:
       # an executed production code path if fixed now; the comment names the phase that
       # owns removing the block by actually fixing the underlying code.
 
-      # Former run-controller + go-meshapi-client debt, reparented to the internal/* paths
-      # after the phase-4 module consolidation (paths only; same files, same justifications).
-      - path: ^internal/controller/
-        linters:
-          - errcheck
-          - unparam
+      # Former go-meshapi-client debt, reparented to the internal/* paths after the phase-4
+      # module consolidation (paths only; same files, same justifications). The former
+      # internal/controller entry here is gone with the package itself (phase 5 dissolution,
+      # PLAN_DETAIL_05 §5) -- its one surviving errcheck finding was fixed at the callsite
+      # instead of carried forward (internal/k8sjob/cluster.go).
       - path: ^internal/(meshapi|crypto|config|report|meshapitest)/
         linters:
           - errcheck

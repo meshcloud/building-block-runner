@@ -29,7 +29,7 @@ func (suite *WorkerTestSuite) Test_DetectSucceeded_ArtifactInStatusUpdate() {
 		return true, os.WriteFile(rci.artifactFilePath, planBytes, 0600)
 	}
 
-	suite.calls.fetch = mockValidRunDetailsFetchCall(DETECT.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	suite.calls.fetch = mockValidRunDetailsFetchCall(DETECT.str(), suite.repo.Path, suite.repoPath)
 
 	updateCalls := make([]http.Request, 0)
 	suite.calls.update = func(req *http.Request) *http.Response {
@@ -68,8 +68,8 @@ func (suite *WorkerTestSuite) Test_ApplyWithPlanArtifact_DownloadsAndAppliesSave
 
 	planArtifactHref := "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/plan-artifact"
 	suite.calls.fetch = mockApplyRunWithPlanArtifactFetchCall(
-		"https://github.com/meshcloud/meshstack-hub.git",
-		"modules/github/repository/buildingblock",
+		suite.repo.Path,
+		suite.repoPath,
 		planArtifactHref,
 	)
 
@@ -123,7 +123,7 @@ func (suite *WorkerTestSuite) Test_ApplyWithPlanArtifact_DownloadsAndAppliesSave
 // Test_ApplyWithoutPlanArtifact_PlainApply is the backward-compatibility regression: an APPLY run
 // with NO planArtifact link must do a plain terraform apply (no download, no DirOrPlan option).
 func (suite *WorkerTestSuite) Test_ApplyWithoutPlanArtifact_PlainApply() {
-	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), suite.repo.Path, suite.repoPath)
 
 	downloadCalled := false
 	suite.calls.download = func(req *http.Request) *http.Response {
@@ -166,8 +166,8 @@ func (suite *WorkerTestSuite) Test_ApplyWithoutPlanArtifact_PlainApply() {
 func (suite *WorkerTestSuite) Test_ApplyWithPlanArtifact_DownloadFailureFailsRun() {
 	planArtifactHref := "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/plan-artifact"
 	suite.calls.fetch = mockApplyRunWithPlanArtifactFetchCall(
-		"https://github.com/meshcloud/meshstack-hub.git",
-		"modules/github/repository/buildingblock",
+		suite.repo.Path,
+		suite.repoPath,
 		planArtifactHref,
 	)
 
@@ -223,7 +223,7 @@ func (suite *WorkerTestSuite) Test_DetectFailed_WhenPlanFileNotWritten() {
 		return true, nil
 	}
 
-	suite.calls.fetch = mockValidRunDetailsFetchCall(DETECT.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	suite.calls.fetch = mockValidRunDetailsFetchCall(DETECT.str(), suite.repo.Path, suite.repoPath)
 
 	updateCalls := make([]http.Request, 0)
 	suite.calls.update = func(req *http.Request) *http.Response {

@@ -3,7 +3,6 @@ package tfrun
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -27,6 +27,11 @@ type WorkerTestSuite struct {
 	calls  MockRunApiCalls
 	tfBin  *TfBinaries
 	tfMock *MockedTfFacade
+	// repo is the hermetic local git fixture (CP1/F1) scenario tests clone from instead of
+	// https://github.com/meshcloud/meshstack-hub.git; repoPath is the terraform-sources
+	// subdirectory inside it, mirroring the real repo's "modules/github/repository/buildingblock".
+	repo     *localGitRepo
+	repoPath string
 }
 
 type MockRunApiCalls struct {
@@ -93,6 +98,11 @@ func (suite *WorkerTestSuite) SetupSuite() {
 	if err != nil {
 		panic(err)
 	}
+
+	suite.repoPath = "modules/github/repository/buildingblock"
+	suite.repo = makeLocalGitRepo(suite.T(), map[string]string{
+		suite.repoPath + "/main.tf": "# fixture terraform source, not executed (MockedTfFacade stubs tf calls)\n",
+	})
 }
 
 // clean up temp directory after test suite ran.
@@ -112,24 +122,14 @@ func (suite *WorkerTestSuite) SetupTest() {
 
 	suite.tfMock.initMockFuncs() // reset to default mock behavior
 
-	// Create basic auth for test API client
-	basicAuth := base64.StdEncoding.EncodeToString([]byte("test-user:test-pass"))
-	_ = basicAuth // retained for clarity; credentials encoded in BasicAuth below
 	scenarioAuth := &runApiAuth{baseAuth: meshapi.BasicAuth{Username: "test-user", Password: "test-pass"}}
-	mockHC := &http.Client{Transport: testRoundTripper(suite.scenarioClientBehavior)}
 
 	suite.w = &Worker{
-		workerNumber: 1,
-		tfBinaries:   suite.tfBin,
-		workerIn:     make(chan workerToken, 2),
-		workerOut:    make(chan workerToken, 2),
-		runApi: &RunApiClient{
-			rid:        "scenario-runner",
-			baseURL:    "http://localhost",
-			auth:       scenarioAuth,
-			client:     meshapi.NewClientWithHTTP("http://localhost", "scenario-runner", scenarioAuth, mockHC),
-			httpClient: mockHC,
-		},
+		workerNumber:         1,
+		tfBinaries:           suite.tfBin,
+		workerIn:             make(chan workerToken, 2),
+		workerOut:            make(chan workerToken, 2),
+		runApi:               newScenarioRunApiClient("scenario-runner", scenarioAuth, testRoundTripper(suite.scenarioClientBehavior)),
 		log:                  log.New(io.Discard, "", log.LstdFlags),
 		timeout:              30 * time.Second,
 		statusUpdateInterval: time.Second * 10,
@@ -185,7 +185,10 @@ func findStepOrNil(update meshapi.RunStatusUpdateDTO, stepId string) *meshapi.St
 }
 
 func (suite *WorkerTestSuite) Test_MissingAuth() {
-	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), "https://github.com/meshcloud/does-not-exist.git", "")
+	// a filesystem path that is guaranteed not to be a git repository — go-git's clone fails the
+	// same way it would for an unreachable/nonexistent remote ("repository not found"), hermetically.
+	doesNotExist := filepath.Join(suite.T().TempDir(), "does-not-exist")
+	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), doesNotExist, "")
 
 	updateCalls := make([]http.Request, 0)
 	suite.calls.update = func(req *http.Request) *http.Response {
@@ -219,7 +222,7 @@ func (suite *WorkerTestSuite) Test_MissingAuth() {
 }
 
 func (suite *WorkerTestSuite) Test_ApplySucceeded() {
-	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), suite.repo.Path, suite.repoPath)
 
 	updateCalls := make([]http.Request, 0)
 	suite.calls.update = func(req *http.Request) *http.Response {
@@ -258,7 +261,7 @@ func (suite *WorkerTestSuite) Test_RegistrationConflict_ContinuesExecution() {
 	// The runner must treat 409 as idempotent and continue executing — it must NEVER report
 	// PENDING status to the API (which would cause a 500 from the coordinator's state machine).
 
-	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), suite.repo.Path, suite.repoPath)
 
 	// Simulate a 409 from the registration endpoint (source already registered by previous pod)
 	suite.calls.register = func(_ *http.Request) *http.Response {
@@ -331,7 +334,7 @@ func (suite *WorkerTestSuite) Test_ApplyRunAborted() {
 		return nil
 	}
 
-	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), suite.repo.Path, suite.repoPath)
 
 	updateCalls := make([]http.Request, 0)
 	suite.calls.update = func(req *http.Request) *http.Response {
@@ -356,7 +359,7 @@ func (suite *WorkerTestSuite) Test_ApplyRunAborted() {
 }
 
 func (suite *WorkerTestSuite) Test_ApplyTfFailure() {
-	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), suite.repo.Path, suite.repoPath)
 
 	updateCalls := make([]http.Request, 0)
 	suite.calls.update = func(req *http.Request) *http.Response {
@@ -412,7 +415,7 @@ func (suite *WorkerTestSuite) Test_ApplyTfFailure() {
 }
 
 func (suite *WorkerTestSuite) Test_DestroySucceeded() {
-	suite.calls.fetch = mockValidRunDetailsFetchCall(DESTROY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	suite.calls.fetch = mockValidRunDetailsFetchCall(DESTROY.str(), suite.repo.Path, suite.repoPath)
 
 	updateCalls := make([]http.Request, 0)
 	suite.calls.update = func(req *http.Request) *http.Response {
@@ -445,7 +448,7 @@ func (suite *WorkerTestSuite) Test_DestroySucceeded() {
 }
 
 func (suite *WorkerTestSuite) Test_DestroyTfFailure() {
-	suite.calls.fetch = mockValidRunDetailsFetchCall(DESTROY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	suite.calls.fetch = mockValidRunDetailsFetchCall(DESTROY.str(), suite.repo.Path, suite.repoPath)
 
 	updateCalls := make([]http.Request, 0)
 	suite.calls.update = func(req *http.Request) *http.Response {
@@ -512,7 +515,7 @@ func (suite *WorkerTestSuite) Test_UpdatesStatusWithLiveLogs() {
 		return nil
 	}
 
-	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), suite.repo.Path, suite.repoPath)
 
 	updateCalls := make([]http.Request, 0)
 	suite.calls.update = func(req *http.Request) *http.Response {
@@ -562,104 +565,15 @@ func mockUpdateCallWithAbortResponse() func(_ *http.Request) *http.Response {
 	}
 }
 
+// mockValidRunDetailsFetchCall and mockApplyRunWithPlanArtifactFetchCall are the pre-CP1 fixture
+// helpers, kept as thin named wrappers over the shared runDetailsFetchCall builder (fixtures_test.go)
+// so every existing call site ports over with no other change.
 func mockValidRunDetailsFetchCall(behavior, repo, path string) func(_ *http.Request) *http.Response {
-	return func(_ *http.Request) *http.Response {
-		implDTO := meshapi.TerraformImplementation{
-			TerraformVersion: DEFAULT_TF_VER,
-			RepositoryUrl:    repo,
-			RepositoryPath:   p(path),
-			RefName:          nil,
-			SshPrivateKey:    nil,
-			KnownHost:        nil,
-			Async:            false,
-		}
-		implJSON, _ := json.Marshal(implDTO)
-		body, _ := json.Marshal(
-			&meshapi.RunDetailsDTO{
-				ApiVersion: "v1",
-				Kind:       "MeshBuildingBlockRun",
-				Metadata: meshapi.RunMetaDTO{
-					Uuid: "run-uuid",
-				},
-				Spec: meshapi.RunSpecDTO{
-					RunNumber: 1,
-					Behavior:  behavior,
-					RunToken:  "test-mock-run-token-12345",
-					BuildingBlock: meshapi.BuildingBlockSpecDTO{
-						Uuid: "block-uuid",
-						Spec: meshapi.BuildingBlockDetailsSpecDTO{
-							DisplayName: "Test-BuildingBlock",
-							Inputs:      make([]meshapi.BuildingBlockInputSpecDTO, 0),
-						},
-					},
-					Definition: meshapi.DefinitionSpecDTO{
-						Uuid: "definition-uuid",
-						Spec: meshapi.DefinitionDetailsSpecDTO{
-							Version:        1,
-							Implementation: implJSON,
-						},
-					},
-				},
-			},
-		)
-		header := make(http.Header)
-		header.Add("Content-Type", meshapi.BlockRunMediaTypeV1)
-
-		return &http.Response{
-			StatusCode: 200,
-			Body:       io.NopCloser(bytes.NewBuffer(body)),
-			Header:     header,
-		}
-	}
+	return runDetailsFetchCall(withBehavior(behavior), withRepo(repo, path))
 }
 
 func mockApplyRunWithPlanArtifactFetchCall(repo, repoPath, planArtifactHref string) func(_ *http.Request) *http.Response {
-	return func(_ *http.Request) *http.Response {
-		implDTO := meshapi.TerraformImplementation{
-			TerraformVersion: DEFAULT_TF_VER,
-			RepositoryUrl:    repo,
-			RepositoryPath:   p(repoPath),
-			Async:            false,
-		}
-		implJSON, _ := json.Marshal(implDTO)
-		body, _ := json.Marshal(
-			&meshapi.RunDetailsDTO{
-				ApiVersion: "v1",
-				Kind:       "MeshBuildingBlockRun",
-				Metadata:   meshapi.RunMetaDTO{Uuid: "run-uuid"},
-				Spec: meshapi.RunSpecDTO{
-					RunNumber: 1,
-					Behavior:  APPLY.str(),
-					RunToken:  "test-mock-run-token-12345",
-					BuildingBlock: meshapi.BuildingBlockSpecDTO{
-						Uuid: "block-uuid",
-						Spec: meshapi.BuildingBlockDetailsSpecDTO{
-							DisplayName: "Test-BuildingBlock",
-							Inputs:      make([]meshapi.BuildingBlockInputSpecDTO, 0),
-						},
-					},
-					Definition: meshapi.DefinitionSpecDTO{
-						Uuid: "definition-uuid",
-						Spec: meshapi.DefinitionDetailsSpecDTO{
-							Version:        1,
-							Implementation: implJSON,
-						},
-					},
-				},
-				Links: meshapi.LinksDTO{
-					PlanArtifact: meshapi.LinkDTO{Href: planArtifactHref},
-				},
-			},
-		)
-		header := make(http.Header)
-		header.Add("Content-Type", meshapi.BlockRunMediaTypeV1)
-
-		return &http.Response{
-			StatusCode: 200,
-			Body:       io.NopCloser(bytes.NewBuffer(body)),
-			Header:     header,
-		}
-	}
+	return runDetailsFetchCall(withRepo(repo, repoPath), withPlanArtifact(planArtifactHref))
 }
 
 // returns pointer of given value to be able to inline value without var usage.

@@ -12,3 +12,7 @@
 #   github.com/meshcloud/building-block-runner/tf-block-runner/tfrun 90
 #
 # Phase 3+ add lines as shared/domain packages join the gate (D6).
+
+# Phase 1 (PLAN_DETAIL_01 §8, §9 CP13): gate the tf runner's characterization tests at 90%
+# statement coverage, with git.go/tfbinaries.go excluded (see exclusions.txt).
+github.com/meshcloud/building-block-runner/tf-block-runner/tfrun 90

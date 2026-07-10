@@ -25,10 +25,12 @@ jobs:
     strategy:
       matrix:
         include:
+          # cmd/bbrunner is the controller/superset (D2) — the run-controller image ships
+          # it directly; cmd/tf is the lean fit persona binary (PLAN_DETAIL_04 §4.4/§4.5).
           - app: run-controller
-            dockerfile: run-controller/Dockerfile
+            dockerfile: containers/run-controller/Dockerfile
           - app: tf-block-runner
-            dockerfile: tf-block-runner/Dockerfile
+            dockerfile: containers/tf-block-runner/Dockerfile
           - app: manual-block-runner
             dockerfile: containers/jvm.Dockerfile
             runner-module: manual-block-runner

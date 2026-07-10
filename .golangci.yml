@@ -1,10 +1,10 @@
 # Visit https://golangci-lint.run/ for usage documentation
 # and information on other useful linters
 #
-# One root config for three separate Go modules (go-meshapi-client, run-controller,
-# tf-block-runner; bridged by ./go.work during phase 0-3, see D11). `task lint` runs
-# `golangci-lint run ./...` per module dir; golangci-lint discovers this file by walking
-# up from the module dir to the repo root, so one config serves all three.
+# One config for the single consolidated module rooted at the repo root (phase 4,
+# PLAN_DETAIL_04 §4.6 — the three former modules go-meshapi-client/run-controller/
+# tf-block-runner and ./go.work are gone). `task lint` runs `golangci-lint run ./...`
+# once at the repo root; depguard rules are keyed on the new internal/* + cmd/* layout.
 #
 # Mirrors terraform-provider-meshstack/.golangci.yml (full linter set, depguard-per-area
 # pattern) trimmed to this repo's module boundaries; the vet-in-lint precedent/comment is
@@ -27,10 +27,9 @@ formatters:
         - standard     # Go standard library
         - default      # All other external dependencies
         - localmodule  # This repository's modules
-      # Sibling-module imports (e.g. run-controller -> go-meshapi-client) classify as
-      # "default", not "localmodule", until the phase-4 module consolidation collapses
-      # the three modules into one (PLAN_DETAIL_00_guardrails.md §5.2) -- accepted,
-      # deterministic, revisited then.
+      # Phase 4 collapsed the three modules into one, so every
+      # github.com/meshcloud/building-block-runner/... import now classifies as
+      # "localmodule" (was "default" while the sibling modules were separate).
 
 linters:
   default: none
@@ -57,72 +56,103 @@ linters:
   settings:
     depguard:
       rules:
-        # go-meshapi-client: shared API client, stdlib-only in production at phase-0
-        # baseline (verified via `go list -f '{{join .Imports "\n"}}' ./...`); phase 3
-        # adds the `config` package (D7), which needs gopkg.in/yaml.v2 for the two-file
-        # deep-merge loader -- the same yaml library both consumers already vendor.
-        go-meshapi-client:
+        # Shared API client + domain packages (former go-meshapi-client): stdlib-only in
+        # production, plus gopkg.in/yaml.v2 for the config deep-merge loader (D7). The
+        # module-root allow covers the intra-package internal imports (e.g. config ->
+        # meshapi, report -> meshapi) now that everything lives in one module.
+        internal-client:
           files:
-            - "go-meshapi-client/**/*.go"
+            - "internal/meshapi/**/*.go"
+            - "internal/crypto/**/*.go"
+            - "internal/config/**/*.go"
+            - "internal/report/**/*.go"
+            - "internal/meshapitest/**/*.go"
             - "!$test"
           list-mode: strict
           allow:
             - $gostd
-            - github.com/meshcloud/building-block-runner/go-meshapi-client
+            - github.com/meshcloud/building-block-runner
             - gopkg.in/yaml.v2
-        go-meshapi-client-test:
+        internal-client-test:
           files:
-            - "go-meshapi-client/**/*_test.go"
+            - "internal/meshapi/**/*_test.go"
+            - "internal/crypto/**/*_test.go"
+            - "internal/config/**/*_test.go"
+            - "internal/report/**/*_test.go"
+            - "internal/meshapitest/**/*_test.go"
           list-mode: strict
           allow:
             - $gostd
-            - github.com/meshcloud/building-block-runner/go-meshapi-client
+            - github.com/meshcloud/building-block-runner
             - github.com/stretchr/testify
             - gopkg.in/yaml.v2
 
-        # run-controller: claims/dispatches runs as k8s Jobs; depends on go-meshapi-client
-        # (cross-module import via go.work during phase 0-3, D11) plus k8s client-go and
-        # Prometheus metrics (current direct deps per run-controller/go.mod).
-        run-controller:
+        # Management listener (internal/mgmt, D12 §4.3): /healthz + /metrics + the generic
+        # runner_* series. Only mgmt + controller (+ the cmd/* wiring, covered by their own
+        # groups above/below) may import prometheus/* -- tf sees only the small Meter
+        # interface it declares on its own consumer side (P3), never this package.
+        mgmt:
           files:
-            - "run-controller/**/*.go"
+            - "internal/mgmt/**/*.go"
             - "!$test"
           list-mode: strict
           allow:
             - $gostd
-            - github.com/meshcloud/building-block-runner/go-meshapi-client
-            - github.com/meshcloud/building-block-runner/run-controller
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+        mgmt-test:
+          files:
+            - "internal/mgmt/**/*_test.go"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+            - github.com/prometheus/client_model
+            - github.com/stretchr/testify
+
+        # Controller (internal/controller, transitional per §10.3) + its wiring cmd/bbrunner:
+        # claims/dispatches runs as k8s Jobs; k8s client-go + Prometheus metrics.
+        controller:
+          files:
+            - "internal/controller/**/*.go"
+            - "cmd/bbrunner/**/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
             - github.com/prometheus/client_golang
             - gopkg.in/yaml.v2
             - k8s.io/api
             - k8s.io/apimachinery
             - k8s.io/client-go
-        run-controller-test:
+        controller-test:
           files:
-            - "run-controller/**/*_test.go"
+            - "internal/controller/**/*_test.go"
+            - "cmd/bbrunner/**/*_test.go"
           list-mode: strict
           allow:
             - $gostd
-            - github.com/meshcloud/building-block-runner/go-meshapi-client
-            - github.com/meshcloud/building-block-runner/run-controller
+            - github.com/meshcloud/building-block-runner
             - github.com/prometheus/client_golang
             - gopkg.in/yaml.v2
             - k8s.io/api
             - k8s.io/apimachinery
             - k8s.io/client-go
 
-        # tf-block-runner: executes tofu/terraform plans against a cloned git repo;
-        # depends on go-meshapi-client plus the hashicorp/go-git/zclconf toolchain
-        # (current direct deps per tf-block-runner/go.mod).
-        tf-block-runner:
+        # tf persona (internal/tf) + its wiring cmd/tf: executes tofu/terraform plans against
+        # a cloned git repo; the hashicorp/go-git/zclconf toolchain. Must NOT link k8s
+        # (disjoint-tree property, §3.6) — enforced by the strict allow-list omitting k8s.io.
+        tf:
           files:
-            - "tf-block-runner/**/*.go"
+            - "internal/tf/**/*.go"
+            - "cmd/tf/**/*.go"
             - "!$test"
           list-mode: strict
           allow:
             - $gostd
-            - github.com/meshcloud/building-block-runner/go-meshapi-client
-            - github.com/meshcloud/building-block-runner/tf-block-runner
+            - github.com/meshcloud/building-block-runner
             - github.com/go-git/go-git/v5
             - github.com/hashicorp/go-version
             - github.com/hashicorp/hc-install
@@ -132,14 +162,14 @@ linters:
             - github.com/zclconf/go-cty
             - golang.org/x/crypto
             - gopkg.in/yaml.v2
-        tf-block-runner-test:
+        tf-test:
           files:
-            - "tf-block-runner/**/*_test.go"
+            - "internal/tf/**/*_test.go"
+            - "cmd/tf/**/*_test.go"
           list-mode: strict
           allow:
             - $gostd
-            - github.com/meshcloud/building-block-runner/go-meshapi-client
-            - github.com/meshcloud/building-block-runner/tf-block-runner
+            - github.com/meshcloud/building-block-runner
             - github.com/PaesslerAG/jsonpath
             - github.com/go-git/go-git/v5
             - github.com/hashicorp/go-version
@@ -161,12 +191,13 @@ linters:
       # an executed production code path if fixed now; the comment names the phase that
       # owns removing the block by actually fixing the underlying code.
 
-      # run-controller + go-meshapi-client: die in phase 3 (shared-core consolidation).
-      - path: ^run-controller/controller/
+      # Former run-controller + go-meshapi-client debt, reparented to the internal/* paths
+      # after the phase-4 module consolidation (paths only; same files, same justifications).
+      - path: ^internal/controller/
         linters:
           - errcheck
           - unparam
-      - path: ^go-meshapi-client/
+      - path: ^internal/(meshapi|crypto|config|report|meshapitest)/
         linters:
           - errcheck
           - forcetypeassert

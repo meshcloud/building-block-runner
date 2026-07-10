@@ -13,7 +13,7 @@ This repository contains multiple runners, one for each supported tool:
 
 | Runner                                                    | Language | Description                                       |
 |-----------------------------------------------------------|----------|---------------------------------------------------|
-| [`tf-block-runner`](tf-block-runner/)                     | Go       | Executes OpenTofu plans and applies               |
+| [`tf-block-runner`](cmd/tf/)                              | Go       | Executes OpenTofu plans and applies               |
 | [`github-block-runner`](github-block-runner/)             | Kotlin   | Triggers GitHub Actions workflows                 |
 | [`gitlab-block-runner`](gitlab-block-runner/)             | Kotlin   | Triggers GitLab CI pipelines                      |
 | [`azure-devops-block-runner`](azure-devops-block-runner/) | Kotlin   | Triggers Azure DevOps pipelines                   |
@@ -47,14 +47,15 @@ For general information about the meshStack platform and Building Blocks, see th
 
 This repository uses two separate build systems in parallel:
 
-- **Go modules** (`run-controller`, `tf-block-runner`, `go-meshapi-client`) are managed via a [Go workspace](go.work). Run `go work sync` from the root if module references change.
+- **Go** — a single Go module rooted at the repository root (`go.mod`). Persona entrypoints live under [`cmd/`](cmd/) (`cmd/tf`, `cmd/bbrunner`) and shared code under [`internal/`](internal/) (`internal/{tf,meshapi,crypto,config,report,mgmt,controller,build}`). There is no Go workspace.
 - **JVM modules** (`block-runner-core`, `github-block-runner`, `gitlab-block-runner`, `azure-devops-block-runner`, `manual-block-runner`) are managed via [Gradle](build.gradle).
 
-Alongside the runners, the repository contains shared modules:
+Notable Go components:
 
-- [`run-controller`](run-controller/) — Kubernetes controller that executes Building Block Runs via Kubernetes Jobs, supporting all runner implementations with parallel execution
+- [`cmd/bbrunner`](cmd/bbrunner/) — the `run-controller` image: the Kubernetes controller (executes Building Block Runs via Kubernetes Jobs, supporting all runner implementations with parallel execution) and superset entrypoint; `bbrunner <persona>` forces one persona in-process for local development
+- [`cmd/tf`](cmd/tf/) — the lean `tf-block-runner` persona binary
+- [`internal/meshapi`](internal/meshapi/) — shared Go client for the meshcloud API
 - [`block-runner-core`](block-runner-core/) — shared Kotlin library used by all JVM-based runners
-- [`go-meshapi-client`](go-meshapi-client/) — shared Go client for the meshcloud API
 
 Common tasks are available via [`task`](https://taskfile.dev):
 
@@ -62,28 +63,34 @@ Common tasks are available via [`task`](https://taskfile.dev):
 task --list
 ```
 
-## Health endpoint
+## Management endpoint (health & metrics)
 
-Every runner exposes a `/healthz` endpoint that returns `200 OK` with body `OK`. This is intended for liveness probes in container orchestrators.
+Each runner process exposes a single management listener serving `GET /healthz`
+(`200 OK`, body `OK` — intended for liveness probes) and `GET /metrics` (Prometheus
+exposition). Each runner listens on a dedicated default port to avoid conflicts when
+running multiple runners locally alongside meshStack (which defaults to port 8080):
 
-Each runner listens on a dedicated default port to avoid conflicts when running multiple runners locally alongside meshStack (which defaults to port 8080):
+| Runner                  | Default port | Serves                                  |
+|-------------------------|--------------|-----------------------------------------|
+| `tf-block-runner`       | 8100         | `/healthz` + `/metrics` (`runner_*`)    |
+| `run-controller`        | 2112         | `/healthz` + `/metrics` (`run_controller_*`) |
+| `azure-devops-runner`   | 8101         | `/healthz`                              |
+| `github-block-runner`   | 8102         | `/healthz`                              |
+| `gitlab-block-runner`   | 8103         | `/healthz`                              |
+| `manual-block-runner`   | 8104         | `/healthz`                              |
 
-| Runner                  | Default port |
-|-------------------------|--------------|
-| `tf-block-runner`       | 8100         |
-| `azure-devops-runner`   | 8101         |
-| `github-block-runner`   | 8102         |
-| `gitlab-block-runner`   | 8103         |
-| `manual-block-runner`   | 8104         |
-
-Override the port with the `PORT` environment variable:
+Override the port with the `MANAGEMENT_PORT` environment variable:
 
 ```bash
-PORT=9000 go run .           # tf-block-runner
-PORT=9000 ./gradlew bootRun  # JVM runners
+MANAGEMENT_PORT=9000 go run ./cmd/tf   # tf-block-runner
+MANAGEMENT_PORT=9000 ./gradlew bootRun # JVM runners (once ported)
 ```
 
-If you are running a runner through a Docker image, it will default to PORT=8080 as well. You can still decide to override the `PORT` environment variable in your environment.
+On the `tf-block-runner` persona the legacy `PORT` variable is still honored as a
+deprecation-logged alias (`MANAGEMENT_PORT` takes precedence). The `tf-block-runner`
+Docker image keeps `PORT=8080` as its baked default, so a runtime `PORT` override
+continues to work; the `run-controller` persona never read `PORT`. The single-run
+mode of `tf-block-runner` serves no listener (short-lived Job pods, no probe).
 
 ## Development
 
@@ -98,8 +105,8 @@ If you are running a runner through a Docker image, it will default to PORT=8080
 task test          # run all Go tests
 task lint          # lint (golangci-lint; runs go vet internally, so there is no separate vet task)
 task fmt           # format Go code
-task tidy          # tidy go modules
-task work-sync     # sync go.work entries
+task tidy          # tidy the go module
+task build         # build every persona binary (cmd/tf, cmd/bbrunner)
 task coverage      # measure and report test coverage
 ```
 
@@ -113,14 +120,15 @@ task coverage      # measure and report test coverage
 ### Run locally
 
 ```bash
-task start:run-controller    # start run-controller
-task start:tf-block-runner   # start tf-block-runner
+task start:run-controller    # go run ./cmd/bbrunner (controller/superset, auto/default mode)
+task start:tf-block-runner   # go run ./cmd/tf
 ```
 
-See the individual module READMEs for module-specific instructions:
-
-- [run-controller/README.md](run-controller/README.md)
-- [tf-block-runner/README.md](tf-block-runner/README.md)
+Equivalently, run a persona directly: `go run ./cmd/tf` (the standalone tf runner) or
+`go run ./cmd/bbrunner tf` (the superset forcing the tf persona in-process). The
+`run-controller` persona expects an in-cluster Kubernetes API in its default mode; for
+local development against minikube, start minikube and point its `runner-config.yml`
+`api.url` at your meshfed instance (e.g. `http://host.minikube.internal:8080`).
 
 ## Release
 

@@ -1,13 +1,14 @@
 version: '3'
 
-# Behavior-neutral replacement for the former Makefile (D14): every target is
-# preserved 1:1 except `vet` — govet runs as part of `task lint` (golangci-lint
-# enables it), so a separate vet target is dropped rather than duplicating the
-# check under two names.
+# Behavior-neutral replacement for the former Makefile (D14). Phase 4 collapsed the three
+# Go modules (go-meshapi-client, run-controller, tf-block-runner) into one module rooted at
+# the repo root (PLAN_DETAIL_04 §4.6): every Go command now runs at the repo root, so the
+# former per-module loop + `work-sync` (go.work is gone) collapse into single-root targets.
+# `vet` is not a separate target — govet runs as part of `task lint` (golangci-lint enables
+# it), so duplicating it under two names is avoided.
 vars:
-  MODULES: go-meshapi-client run-controller tf-block-runner
-  RUN_CONTROLLER_CONFIG: run-controller/runner-config.yml
-  TF_BLOCK_RUNNER_CONFIG: tf-block-runner/runner-config.yml
+  RUN_CONTROLLER_CONFIG: containers/run-controller/runner-config.yml
+  TF_BLOCK_RUNNER_CONFIG: containers/tf-block-runner/runner-config.yml
 
 tasks:
   default:
@@ -16,68 +17,46 @@ tasks:
       - task --list-all
 
   test:
-    desc: Run all tests (all modules)
-    cmds:
-      - for: { var: MODULES }
-        cmd: 'echo "==> {{.ITEM}}: go test ./..." && cd {{.ITEM}} && go test ./...'
-
-  test:go-meshapi-client:
-    desc: Run go-meshapi-client tests
-    dir: go-meshapi-client
-    cmds:
-      - go test ./...
-
-  test:run-controller:
-    desc: Run run-controller tests
-    dir: run-controller
-    cmds:
-      - go test ./...
-
-  test:tf-block-runner:
-    desc: Run tf-block-runner tests (with -race; phase 2 fixed the B6/B10 data races structurally)
-    dir: tf-block-runner
+    desc: Run all tests at the repo root (with -race; A6 — the tf leg must stay race-clean)
     cmds:
       - go test -race ./...
 
   lint:
-    desc: Lint all modules with golangci-lint (govet runs inside; pass extra args after --, e.g. `task lint -- --fix`)
+    desc: Lint with golangci-lint (govet runs inside; pass extra args after --, e.g. `task lint -- --fix`)
     cmds:
-      - for: { var: MODULES }
-        cmd: 'echo "==> {{.ITEM}}: golangci-lint run" && cd {{.ITEM}} && golangci-lint run {{.CLI_ARGS}} ./...'
+      - golangci-lint run {{.CLI_ARGS}} ./...
 
   fmt:
     desc: Format all Go code (golangci-lint fmt supersedes go fmt; one formatter authority)
     cmds:
-      - for: { var: MODULES }
-        cmd: 'echo "==> {{.ITEM}}: golangci-lint fmt" && cd {{.ITEM}} && golangci-lint fmt ./...'
+      - golangci-lint fmt ./...
 
   tidy:
-    desc: Tidy modules
+    desc: Tidy the module
     cmds:
-      - for: { var: MODULES }
-        cmd: 'echo "==> {{.ITEM}}: go mod tidy" && cd {{.ITEM}} && go mod tidy'
+      - go mod tidy
 
-  work-sync:
-    desc: Sync go.work entries
+  build:
+    desc: Build every persona binary (cmd/tf, cmd/bbrunner)
     cmds:
-      - go work sync
+      - go build ./cmd/...
 
   start:run-controller:
-    desc: Run run-controller
+    desc: Run the controller/superset (cmd/bbrunner, auto/default mode)
     env:
       RUNCONTROLLER_CONFIG_FILE: '{{.RUN_CONTROLLER_CONFIG}}'
     cmds:
-      - go run ./run-controller
+      - go run ./cmd/bbrunner
 
   start:tf-block-runner:
-    desc: Run tf-block-runner
+    desc: Run the tf-block-runner fit persona (cmd/tf)
     env:
       RUNNER_CONFIG_FILE: '{{.TF_BLOCK_RUNNER_CONFIG}}'
     cmds:
-      - go run ./tf-block-runner
+      - go run ./cmd/tf
 
   coverage:
-    desc: Measure and report test coverage for all modules (gate thresholds defined in tools/coverage/thresholds.txt)
+    desc: Measure and report test coverage (gate thresholds defined in tools/coverage/thresholds.txt)
     cmds:
-      - for: { var: MODULES }
-        cmd: 'echo "==> {{.ITEM}}: coverage" && cd {{.ITEM}} && go test -coverprofile=/tmp/coverage-{{.ITEM}}.out ./... && ../tools/coverage/check.sh . /tmp/coverage-{{.ITEM}}.out'
+      - go test -coverprofile=/tmp/coverage.out ./...
+      - tools/coverage/check.sh . /tmp/coverage.out

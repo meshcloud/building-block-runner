@@ -15,5 +15,5 @@
 # new gates go in tools/coverage/thresholds.txt, not here.
 
 # --- Phase 1: tf runner adapter exclusions (PLAN_DETAIL_01 §7) ---
-github.com/meshcloud/building-block-runner/tf-block-runner/tfrun/git.go  # Real go-git/exec-git+bash adapter: SSH clones need a live server and the Azure path shells out to git; the hermetic local-repo tests (CP11) exercise clone/checkout, but the auth transports and Azure remote quirks are only reachable via opt-in real-I/O e2e.
-github.com/meshcloud/building-block-runner/tf-block-runner/tfrun/tfbinaries.go  # Real HashiCorp/OpenTofu release downloads (network + signature verification); tfbinaries_test.go keeps exercising it outside the gate.
+github.com/meshcloud/building-block-runner/internal/tf/git.go  # Real go-git/exec-git+bash adapter: SSH clones need a live server and the Azure path shells out to git; the hermetic local-repo tests (CP11) exercise clone/checkout, but the auth transports and Azure remote quirks are only reachable via opt-in real-I/O e2e.
+github.com/meshcloud/building-block-runner/internal/tf/tfbinaries.go  # Real HashiCorp/OpenTofu release downloads (network + signature verification); tfbinaries_test.go keeps exercising it outside the gate.

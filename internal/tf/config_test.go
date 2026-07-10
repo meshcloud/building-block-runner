@@ -141,6 +141,20 @@ func TestApplyEnvVars(t *testing.T) {
 		require.Equal(t, "test-uuid-123", AppConfig.RunnerUuid)
 	})
 
+	t.Run("applies RUNNER_MAX_CONCURRENT_RUNS from environment", func(t *testing.T) {
+		t.Setenv(envMaxConcurrentRuns, "7")
+		AppConfig = TfRunnerConfig{}
+		applyEnvVars(nopLogger)
+		require.Equal(t, 7, AppConfig.MaxConcurrentRuns)
+	})
+
+	t.Run("ignores an invalid RUNNER_MAX_CONCURRENT_RUNS", func(t *testing.T) {
+		t.Setenv(envMaxConcurrentRuns, "not-a-number")
+		AppConfig = TfRunnerConfig{MaxConcurrentRuns: 4}
+		applyEnvVars(nopLogger)
+		require.Equal(t, 4, AppConfig.MaxConcurrentRuns)
+	})
+
 	t.Run("applies RUNNER_API_URL from environment", func(t *testing.T) {
 		t.Setenv(envApiUrl, "https://api.example.com")
 		AppConfig = TfRunnerConfig{}

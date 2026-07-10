@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"strconv"
 
 	"gopkg.in/yaml.v2"
 
@@ -13,6 +14,14 @@ import (
 )
 
 var AppConfig TfRunnerConfig
+
+// DefaultMaxConcurrentRuns is the tf persona's in-process concurrency default when running on
+// the dispatch.Loop path (PLAN_DETAIL_05 §5/§12): up to 3 concurrent runs, an intentional
+// throughput improvement over the former single serial worker. Setting maxConcurrentRuns=1
+// reproduces the exact historic serial cadence; a negative value means unlimited (bounded by
+// the loop's per-cycle backstop). Only effective on the in-process dispatch path (opt-in via
+// RUNNER_DISPATCHER); the legacy Manager path is unaffected.
+const DefaultMaxConcurrentRuns = 3
 
 type TfRunnerConfig struct {
 	TfCommandTimeoutMins  int          `yaml:"timeoutMins"`
@@ -25,6 +34,27 @@ type TfRunnerConfig struct {
 	WsTimeoutMins         int          `yaml:"wsTimeoutMins"`
 	InitTimeoutMins       int          `yaml:"initTimeoutMins"`
 	RunnerUuid            string       `yaml:"runnerUuid"`
+	// MaxConcurrentRuns caps concurrent in-process runs on the dispatch.Loop path (default
+	// DefaultMaxConcurrentRuns via ReadConfig; env RUNNER_MAX_CONCURRENT_RUNS). Additive.
+	MaxConcurrentRuns int `yaml:"maxConcurrentRuns"`
+	// Registration, when present, opts the standalone tf runner into a startup self-
+	// registration PUT to the meshfed API (no WIF -- the standalone has no projected tokens).
+	// Absent (nil) => the runner never self-registers, exactly as today (§3.2). Additive.
+	Registration *TfRegistrationConfig `yaml:"registration"`
+}
+
+// TfRegistrationConfig is the opt-in tf `registration:` section (PLAN_DETAIL_05 §9). It carries
+// the same keys the controller yaml uses (displayName, ownedByWorkspace, publicKey) plus the
+// runner capability. A standalone tf runner still requires a pre-created runner object in
+// meshfed (the PUT returns 404 otherwise -- the frozen "create it via the meshStack UI"
+// contract).
+type TfRegistrationConfig struct {
+	DisplayName      string `yaml:"displayName"`
+	OwnedByWorkspace string `yaml:"ownedByWorkspace"`
+	PublicKey        string `yaml:"publicKey"`
+	// Capability is the runner's registered implementation type: a concrete type or ALL,
+	// validated at startup via dispatch.ParseCapability.
+	Capability string `yaml:"capability"`
 }
 
 // RunApiConfig holds API connection and authentication details.
@@ -54,16 +84,17 @@ const (
 	defaultConfigFile     = "runner-config.yml"
 	defaultPrivateKeyFile = "runner-private.pem"
 
-	envConfigFile       = "RUNNER_CONFIG_FILE"
-	envRunnerUuid       = "RUNNER_UUID"
-	envApiUrl           = "RUNNER_API_URL"
-	envAuthUsername     = "RUNNER_API_USERNAME"
-	envAuthPassword     = "RUNNER_API_PASSWORD"
-	envAuthClientId     = "RUNNER_API_CLIENT_ID"
-	envAuthClientSecret = "RUNNER_API_CLIENT_SECRET"
-	envPrivateKeyFile   = "RUNNER_PRIVATE_KEY_FILE"
-	envExecutionMode    = "EXECUTION_MODE"
-	envRunJsonFilePath  = "RUN_JSON_FILE_PATH"
+	envConfigFile        = "RUNNER_CONFIG_FILE"
+	envRunnerUuid        = "RUNNER_UUID"
+	envApiUrl            = "RUNNER_API_URL"
+	envAuthUsername      = "RUNNER_API_USERNAME"
+	envAuthPassword      = "RUNNER_API_PASSWORD"
+	envAuthClientId      = "RUNNER_API_CLIENT_ID"
+	envAuthClientSecret  = "RUNNER_API_CLIENT_SECRET"
+	envPrivateKeyFile    = "RUNNER_PRIVATE_KEY_FILE"
+	envExecutionMode     = "EXECUTION_MODE"
+	envRunJsonFilePath   = "RUN_JSON_FILE_PATH"
+	envMaxConcurrentRuns = "RUNNER_MAX_CONCURRENT_RUNS"
 )
 
 func ReadConfig(logger *slog.Logger) error {
@@ -80,6 +111,13 @@ func ReadConfig(logger *slog.Logger) error {
 		return err
 	} else if err := yaml.Unmarshal(fileData, &AppConfig); err != nil {
 		return err
+	}
+
+	// Default the in-process concurrency (before env, so an explicit env/file value wins).
+	// Zero means "unset" -> the plan default; operators set it explicitly (incl. 1 for the
+	// historic serial cadence, or a negative value for unlimited).
+	if AppConfig.MaxConcurrentRuns == 0 {
+		AppConfig.MaxConcurrentRuns = DefaultMaxConcurrentRuns
 	}
 
 	// apply environment variables (highest precedence)
@@ -153,6 +191,15 @@ func applyEnvVars(logger *slog.Logger) {
 	if clientSecret := os.Getenv(envAuthClientSecret); clientSecret != "" {
 		logger.Info("Using value from environment", "var", envAuthClientSecret)
 		AppConfig.RunApiBackend.ClientSecret = clientSecret
+	}
+
+	if v := os.Getenv(envMaxConcurrentRuns); v != "" {
+		if n, err := strconv.Atoi(v); err != nil {
+			logger.Warn("ignoring invalid RUNNER_MAX_CONCURRENT_RUNS (not an integer)", "value", v, "error", err)
+		} else {
+			logger.Info("Using value from environment", "var", envMaxConcurrentRuns)
+			AppConfig.MaxConcurrentRuns = n
+		}
 	}
 
 	if privateKeyFile := os.Getenv(envPrivateKeyFile); privateKeyFile != "" {

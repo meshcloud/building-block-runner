@@ -52,3 +52,10 @@ github.com/meshcloud/building-block-runner/internal/manual 90
 # trigger endpoint) -- no exclusion-list entries (umbrella §5.3). The persona polling
 # wiring lives in cmd/gitlab + cmd/bbrunner (package main, not gated).
 github.com/meshcloud/building-block-runner/internal/gitlab 90
+
+# Phase 6c (PLAN_DETAIL_06C_azdevops.md §10.3): the azure-devops runner port (D6 Kotlin
+# corollary) -- the heaviest of the four ports (sync poll loop + stage-step fan-out). Whole
+# package hermetically testable via meshapitest (meshStack side) + a fake Azure DevOps
+# httptest transport + an injected Clock (no real sleeps) -- no exclusion-list entries. The
+# persona polling wiring lives in cmd/azdevops + cmd/bbrunner (package main, not gated).
+github.com/meshcloud/building-block-runner/internal/azdevops 90

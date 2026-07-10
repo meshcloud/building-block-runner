@@ -108,7 +108,7 @@ func (h Handler) Execute(ctx context.Context, run dispatch.ClaimedRun) error {
 	if err != nil {
 		return h.reportFailure(reporter, runId, failureMessage(fmt.Errorf("reading run inputs: %w", err)))
 	}
-	inputs, err = meshapi.DecryptInputs(h.deps.Decryptor, log, inputs)
+	inputs, err = meshapi.DecryptInputSpecs(h.deps.Decryptor, log, inputs)
 	if err != nil {
 		return h.reportFailure(reporter, runId, failureMessage(err))
 	}

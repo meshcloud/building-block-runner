@@ -281,6 +281,33 @@ linters:
             - github.com/prometheus/client_golang
             - github.com/stretchr/testify
 
+        # azure-devops persona (internal/azdevops) + its wiring cmd/azdevops (phase 6c): an
+        # HTTP-only sync-poll + async-handover runner -- shared client/report/config/dispatch/
+        # crypto/meshapi (incl. the shared meshapi.Decryptor/DecryptInputs seam, STOP-C4) + its
+        # own handler, NO k8s, NO go-git, NO tofu (D8). prometheus is allowed for the persona's
+        # polling wiring (the D12 runner_* series + the dispatch loop's default-registry
+        # metrics), matching the manual/tf precedent.
+        azdevops:
+          files:
+            - "internal/azdevops/**/*.go"
+            - "cmd/azdevops/**/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+        azdevops-test:
+          files:
+            - "internal/azdevops/**/*_test.go"
+            - "cmd/azdevops/**/*_test.go"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+            - github.com/stretchr/testify
+
   exclusions:
     rules:
       # --- Temporary legacy exclusions (PLAN_DETAIL_00_guardrails.md §5.3 category 2) ---

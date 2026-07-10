@@ -1,0 +1,52 @@
+name: E2E (opt-in, non-blocking)
+
+# Opt-in real-I/O tests (PLAN_DETAIL_07 §5.4 / L3): the `e2e`-tagged suite drives the real
+# tofu/terraform binary download over the network. It is deliberately kept out of the PR gate
+# (ci.yml) so default CI stays hermetic and fast; it runs on demand and once a week, and a
+# failure notifies engineering via the same Slack webhook release-check.yml uses rather than
+# blocking any branch.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * 1" # 04:00 UTC every Monday
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Go - e2e (real tofu/terraform download)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # Equivalent of `task test:e2e` (Taskfile.yml) — CI runs plain `go` (no task/nix, the
+      # phase-0 decision carried forward). The `e2e` build tag pulls in the network tests
+      # (internal/tf/tfbinaries_test.go) that the default `task test` excludes.
+      - name: Test (e2e)
+        run: go test -tags e2e ./...
+
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@b0fa283ad8fea605de13dc3f449259339835fc52 # v2.1.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            channel: "#engineering"
+            blocks:
+              - type: section
+                text:
+                  type: mrkdwn
+                  text: |
+                    :x: *E2E tests failed on `${{ github.repository }}`*
+                    The opt-in real-tofu/terraform download suite failed.
+                    <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>

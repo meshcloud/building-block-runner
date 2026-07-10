@@ -3,7 +3,7 @@ package tf
 import (
 	"bytes"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -132,7 +132,7 @@ func TestValidateRunnerUuid_ValidUuid(t *testing.T) {
 }
 
 func TestApplyEnvVars(t *testing.T) {
-	nopLogger := log.New(io.Discard, "", 0)
+	nopLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	t.Run("applies RUNNER_UUID from environment", func(t *testing.T) {
 		t.Setenv(envRunnerUuid, "test-uuid-123")
@@ -315,7 +315,7 @@ func TestApplyEnvVars(t *testing.T) {
 		AppConfig = TfRunnerConfig{}
 
 		var logBuffer bytes.Buffer
-		bufferLogger := log.New(&logBuffer, "", 0)
+		bufferLogger := slog.New(slog.NewTextHandler(&logBuffer, nil))
 		applyEnvVars(bufferLogger)
 
 		logOutput := logBuffer.String()
@@ -337,7 +337,7 @@ func TestApplyEnvVars(t *testing.T) {
 }
 
 func TestApplyPrivateKeyFile(t *testing.T) {
-	nopLogger := log.New(io.Discard, "", 0)
+	nopLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	t.Run("loads key from file", func(t *testing.T) {
 		keyFile := filepath.Join(t.TempDir(), "private.key")

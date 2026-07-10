@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 	"os"
 
 	"gopkg.in/yaml.v2"
@@ -66,7 +66,7 @@ const (
 	envRunJsonFilePath  = "RUN_JSON_FILE_PATH"
 )
 
-func ReadConfig(logger *log.Logger) error {
+func ReadConfig(logger *slog.Logger) error {
 	// read configFile path from env var or use default
 	configPath := os.Getenv(envConfigFile)
 	if configPath == "" {
@@ -75,7 +75,7 @@ func ReadConfig(logger *log.Logger) error {
 
 	// read in and unmarshal config file (if present)
 	if fileData, err := os.ReadFile(configPath); errors.Is(err, fs.ErrNotExist) {
-		logger.Printf("config file %s does not exist, will use defaults and environment", configPath)
+		logger.Info("config file does not exist, will use defaults and environment", "path", configPath)
 	} else if err != nil {
 		return err
 	} else if err := yaml.Unmarshal(fileData, &AppConfig); err != nil {
@@ -99,7 +99,7 @@ func ReadConfig(logger *log.Logger) error {
 	// top of a basic-auth default baked into runner-config.yml). Surface that so it's not surprising.
 	if AppConfig.RunApiBackend.ClientId != "" && AppConfig.RunApiBackend.ClientSecret != "" &&
 		(AppConfig.RunApiBackend.User != "" || AppConfig.RunApiBackend.Password != "") {
-		logger.Printf("Both API key and Basic auth are configured; using API key auth and ignoring Basic auth (user/password)\n")
+		logger.Info("Both API key and Basic auth are configured; using API key auth and ignoring Basic auth (user/password)")
 	}
 
 	// validate RunnerUuid is set
@@ -107,56 +107,56 @@ func ReadConfig(logger *log.Logger) error {
 		return err
 	}
 
-	logger.Printf("--------------------------------------------------------------------\n")
-	logger.Printf("Starting as runner with UUID %s\n", AppConfig.RunnerUuid)
-	logger.Printf("Using %s for saving TF binaries\n", AppConfig.TfInstallDir)
-	logger.Printf("Using %s as working directory\n", AppConfig.TfParentWorkingDir)
-	logger.Printf("Configured timeout for TF commands is %d mins \n", AppConfig.TfCommandTimeoutMins)
-	logger.Printf("Configured timeout for TF workspace operations is %d mins \n", AppConfig.WsTimeoutMins)
-	logger.Printf("Configured timeout for TF init command is %d mins \n", AppConfig.InitTimeoutMins)
-	logger.Printf("Connecting to meshfed-api at %s\n", AppConfig.RunApiBackend.Url)
+	logger.Info("Starting as runner",
+		"uuid", AppConfig.RunnerUuid,
+		"tfInstallDir", AppConfig.TfInstallDir,
+		"workingDir", AppConfig.TfParentWorkingDir,
+		"tfCommandTimeoutMins", AppConfig.TfCommandTimeoutMins,
+		"wsTimeoutMins", AppConfig.WsTimeoutMins,
+		"initTimeoutMins", AppConfig.InitTimeoutMins,
+		"meshfedApiUrl", AppConfig.RunApiBackend.Url,
+	)
 	if AppConfig.SkipHostKeyValidation {
-		logger.Printf("(!) Skipping host key validation is considered insecure and should not be used in production.")
+		logger.Warn("Skipping host key validation is considered insecure and should not be used in production.")
 	}
-	logger.Printf("--------------------------------------------------------------------\n")
 	return nil
 }
 
 // applyEnvVars applies environment variables with RUNNER_ prefix and sets defaults for unset values.
 // Environment variables take precedence over config file values.
-func applyEnvVars(logger *log.Logger) {
+func applyEnvVars(logger *slog.Logger) {
 	if envUuid := os.Getenv(envRunnerUuid); envUuid != "" {
-		logger.Printf("Using %s from environment\n", envRunnerUuid)
+		logger.Info("Using value from environment", "var", envRunnerUuid)
 		AppConfig.RunnerUuid = envUuid
 	}
 
 	if apiUrl := os.Getenv(envApiUrl); apiUrl != "" {
-		logger.Printf("Using %s from environment\n", envApiUrl)
+		logger.Info("Using value from environment", "var", envApiUrl)
 		AppConfig.RunApiBackend.Url = apiUrl
 	}
 
 	if username := os.Getenv(envAuthUsername); username != "" {
-		logger.Printf("Using %s from environment\n", envAuthUsername)
+		logger.Info("Using value from environment", "var", envAuthUsername)
 		AppConfig.RunApiBackend.User = username
 	}
 
 	if password := os.Getenv(envAuthPassword); password != "" {
-		logger.Printf("Using %s from environment\n", envAuthPassword)
+		logger.Info("Using value from environment", "var", envAuthPassword)
 		AppConfig.RunApiBackend.Password = password
 	}
 
 	if clientId := os.Getenv(envAuthClientId); clientId != "" {
-		logger.Printf("Using %s from environment\n", envAuthClientId)
+		logger.Info("Using value from environment", "var", envAuthClientId)
 		AppConfig.RunApiBackend.ClientId = clientId
 	}
 
 	if clientSecret := os.Getenv(envAuthClientSecret); clientSecret != "" {
-		logger.Printf("Using %s from environment\n", envAuthClientSecret)
+		logger.Info("Using value from environment", "var", envAuthClientSecret)
 		AppConfig.RunApiBackend.ClientSecret = clientSecret
 	}
 
 	if privateKeyFile := os.Getenv(envPrivateKeyFile); privateKeyFile != "" {
-		logger.Printf("Using %s from environment\n", envPrivateKeyFile)
+		logger.Info("Using value from environment", "var", envPrivateKeyFile)
 		AppConfig.PrivateKeyFile = privateKeyFile
 	} else if AppConfig.PrivateKeyFile == "" {
 		// Use default private key file path if not configured via config file or env var
@@ -167,16 +167,16 @@ func applyEnvVars(logger *log.Logger) {
 // applyPrivateKeyFile loads the private key from path and sets cfg.PrivateKey.
 // It is silently skipped when the file does not exist.
 // Other read errors are logged as warnings but do not fail startup.
-func applyPrivateKeyFile(path string, cfg *TfRunnerConfig, logger *log.Logger) {
+func applyPrivateKeyFile(path string, cfg *TfRunnerConfig, logger *slog.Logger) {
 	if path == "" {
 		return
 	}
 	keyData, err := os.ReadFile(path)
 	if err == nil {
-		logger.Printf("Loaded private key from %s\n", path)
+		logger.Info("Loaded private key", "path", path)
 		cfg.PrivateKey = string(keyData)
 	} else if !errors.Is(err, fs.ErrNotExist) {
-		logger.Printf("Warning: could not read private key file %s: %v\n", path, err)
+		logger.Warn("could not read private key file", "path", path, "error", err)
 	}
 }
 

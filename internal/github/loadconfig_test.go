@@ -1,6 +1,8 @@
 package github
 
 import (
+	"bytes"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -52,6 +54,27 @@ func TestLoadConfig_BlockRunnerCompat(t *testing.T) {
 	require.Equal(t, "block-uuid", cfg.Uuid)
 	require.Equal(t, "http://block-mesh", cfg.Api.Url)
 	require.Equal(t, "BLOCK_PEM", cfg.PrivateKey)
+}
+
+// blockrunner.privateKey/privateKeyFile are honored but must warn -- github's port had
+// silently dropped this warning (unlike gitlab/azdevops); the accumulated alias inventory
+// audit (docs/DEPRECATIONS.md) closes the gap.
+func TestLoadConfig_BlockRunnerCompat_PrivateKeyWarns(t *testing.T) {
+	writeConfig(t, `blockrunner:
+  privateKey: BLOCK_PEM
+  api:
+    url: http://block-mesh
+  auth:
+    username: bu
+    password: bp
+`)
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+	cfg, err := LoadConfig(log, "build-v", false)
+	require.NoError(t, err)
+	require.Equal(t, "BLOCK_PEM", cfg.PrivateKey)
+	require.Contains(t, buf.String(), "deprecated")
+	require.Contains(t, buf.String(), "blockrunner.privateKey")
 }
 
 // env wins last; RUNNER_MAX_CONCURRENT_RUNS is honored; a bad value is a hard error.

@@ -126,7 +126,7 @@ func (c *RunClient) FetchRun(runnerUUID string) (*RunDetailsDTO, []byte, error) 
 	if err != nil {
 		return nil, nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		return nil, nil, c.httpError(req, resp)
@@ -170,7 +170,7 @@ func (c *RunClient) DownloadArtifact(artifactURL string, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("download artifact %s: request failed: %w", artifactURL, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("download artifact %s: %w", artifactURL, c.httpError(req, resp))
@@ -214,7 +214,7 @@ func (c *RunClient) RegisterSource(runID string, registration RegistrationDTO) e
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// 409 Conflict means the source is already registered — treat as success.
 	if resp.StatusCode == http.StatusConflict {
@@ -251,7 +251,7 @@ func (c *RunClient) PatchStatus(runID, sourceID string, payload any) ([]byte, er
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, c.httpError(req, resp)

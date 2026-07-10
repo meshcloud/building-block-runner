@@ -15,7 +15,7 @@ package tf
 import (
 	"context"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
@@ -69,7 +69,7 @@ func runBackendFallbackScenario(t *testing.T, repoFiles map[string]string, useMe
 
 	wd := t.TempDir()
 	require.NoError(t, os.Mkdir(path.Join(wd, "logs"), 0700))
-	runContextInfo, err := initRunContextInfo(run, "[backend-fallback] ", io.Discard, wd)
+	runContextInfo, err := initRunContextInfo(run, slog.New(slog.NewTextHandler(io.Discard, nil)), wd)
 	require.NoError(t, err)
 	run.Source.setLog(runContextInfo.logwrap)
 	ctx := context.Background()
@@ -172,7 +172,7 @@ func Test_BackendFallback_UseCaseMatrix(t *testing.T) {
 			RunApiBackend:        RunApiConfig{Url: "https://fallback-from-appconfig.example.com"},
 		}
 
-		lw, err := NewLogWrap(log.New(io.Discard, "", log.LstdFlags), "/dev/null")
+		lw, err := NewLogWrap(slog.New(slog.NewTextHandler(io.Discard, nil)), "/dev/null")
 		require.NoError(t, err)
 		cmd := &GenericTfCmd{
 			ctx: context.Background(),
@@ -222,7 +222,7 @@ func Test_BackendFallback_UseCaseMatrix(t *testing.T) {
 			return nil
 		}
 
-		lw, err := NewLogWrap(log.New(io.Discard, "", log.LstdFlags), "/dev/null")
+		lw, err := NewLogWrap(slog.New(slog.NewTextHandler(io.Discard, nil)), "/dev/null")
 		require.NoError(t, err)
 		cmd := &GenericTfCmd{
 			ctx: context.Background(),

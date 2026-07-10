@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/meshcloud/building-block-runner/internal/build"
@@ -21,11 +21,11 @@ type runApiAuth struct {
 
 func (a *runApiAuth) AuthHeader() string {
 	if a.runToken != nil && *a.runToken != "" {
-		log.Printf("[AUTH] Using Bearer token for run-specific operations")
+		slog.Info("using Bearer token for run-specific operations", "component", "runApi")
 		return "Bearer " + *a.runToken
 	}
 	if a.baseAuth != nil {
-		log.Printf("[AUTH] Using configured auth for API requests")
+		slog.Info("using configured auth for API requests", "component", "runApi")
 		return a.baseAuth.AuthHeader()
 	}
 	return ""
@@ -134,7 +134,7 @@ func (api *RunApiClient) Register(runStatus *RunStatus) error {
 	}
 
 	// 409 Conflict is handled inside the shared client (treated as success).
-	log.Printf("[RUNNER] Registered source for run %s", runStatus.RunId)
+	slog.Info("registered source for run", "component", "runApi", "run", runStatus.RunId)
 	return nil
 }
 

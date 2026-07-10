@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -37,37 +36,39 @@ func controllerIdentity() meshapi.Identity {
 // wire, decryption order, Job/Secret/ServiceAccount manifests, registration PUT and metric
 // names are all byte-identical to the pre-phase-5 controller; only the internal seam changed
 // (internal/controller dissolved into internal/dispatch + internal/k8sjob, §5). Returns the
-// process exit code; the fatal paths keep using logger.Fatalf (os.Exit(1) directly), matching
-// the legacy main.
+// process exit code; the fatal paths log at error level and return a non-zero code (the
+// former stdlib log.Fatalf os.Exit(1) is retired with the [RUN CONTROLLER] prefix in favor of
+// the slog persona attribute, §8).
 func runController() int {
-	logger := log.New(os.Stdout, "[RUN CONTROLLER] ", log.LstdFlags)
-	logger.Printf("Build metadata: version=%s", build.Version)
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil)).With("persona", controllerRequesterPrefix)
+	logger.Info("build metadata", "version", build.Version)
 
 	cfg := readControllerConfig(logger)
 
 	// D12: one listener serves /healthz + /metrics on MANAGEMENT_PORT (default 2112). A bind
 	// failure is fatal: a liveness-probed listener that fails to bind silently would defeat
 	// the point of adding healthz.
-	mgmtLog := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	mgmtPort, err := config.ManagementPort(mgmtLog, 2112)
+	mgmtPort, err := config.ManagementPort(logger, 2112)
 	if err != nil {
-		logger.Fatalf("invalid management port configuration: %v", err)
+		logger.Error("invalid management port configuration", "error", err)
+		return 1
 	}
 
 	metrics := dispatch.NewMetricsCollector()
 	metrics.SetActiveRunners(1)
 
-	if err := mgmt.NewServer(mgmtLog, mgmtPort.Addr(), prometheus.DefaultGatherer).Start(); err != nil {
-		logger.Fatalf("%v", err)
+	if err := mgmt.NewServer(logger.With("component", "mgmt"), mgmtPort.Addr(), prometheus.DefaultGatherer).Start(); err != nil {
+		logger.Error("failed to start management listener", "error", err)
+		return 1
 	}
 
 	// Auto-discover OIDC issuer from Kubernetes API for WIF configuration.
-	logger.Println("Discovering OIDC issuer from Kubernetes API...")
-	oidcIssuer := k8sjob.DiscoverOIDCIssuer(mgmtLog.With("component", "k8sjob"))
+	logger.Info("discovering OIDC issuer from Kubernetes API")
+	oidcIssuer := k8sjob.DiscoverOIDCIssuer(logger.With("component", "k8sjob"))
 	if oidcIssuer != "" {
-		logger.Printf("WIF enabled with OIDC issuer: %s", oidcIssuer)
+		logger.Info("WIF enabled", "oidcIssuer", oidcIssuer)
 	} else {
-		logger.Println("OIDC issuer discovery failed - WIF will not be configured for runners")
+		logger.Info("OIDC issuer discovery failed - WIF will not be configured for runners")
 	}
 
 	auth := cfg.Api.NewAuthProvider()
@@ -80,10 +81,11 @@ func runController() int {
 	retryInterval := 10 * time.Second
 	for {
 		if err := registerController(logger, cfg, auth, oidcIssuer, metrics); err != nil {
-			logger.Printf("Controller registration failed, retrying in %s: %v", retryInterval, err)
+			logger.Warn("controller registration failed, retrying", "retryInterval", retryInterval, "error", err)
 			select {
 			case <-ctx.Done():
-				logger.Fatalf("Failed to register controller after %s: %v", timeout, err)
+				logger.Error("failed to register controller before timeout", "timeout", timeout, "error", err)
+				return 1
 			case <-time.After(retryInterval):
 				continue
 			}
@@ -93,20 +95,22 @@ func runController() int {
 
 	cryptoInstance, err := meshcrypto.NewCertBasedDecryptorWithValidation(cfg.Crypto.PrivateKey, []byte(cfg.Crypto.PublicKey))
 	if err != nil {
-		logger.Fatalf("Failed to initialize crypto for controller %s: %v", cfg.Uuid, err)
+		logger.Error("failed to initialize crypto for controller", "uuid", cfg.Uuid, "error", err)
+		return 1
 	}
-	logger.Printf("Initialized crypto for controller: %s (keys validated)", cfg.Uuid)
+	logger.Info("initialized crypto for controller (keys validated)", "uuid", cfg.Uuid)
 
-	jobDispatcher, err := k8sjob.NewKubernetesJobDispatcher(cfg.Config, cfg.Uuid, cfg.Api.Url, cryptoInstance, metrics, mgmtLog.With("component", "k8sjob"))
+	jobDispatcher, err := k8sjob.NewKubernetesJobDispatcher(cfg.Config, cfg.Uuid, cfg.Api.Url, cryptoInstance, metrics, logger.With("component", "k8sjob"))
 	if err != nil {
-		logger.Fatalf("Failed to create Kubernetes client: %v", err)
+		logger.Error("failed to create Kubernetes client", "error", err)
+		return 1
 	}
 
 	pollingInterval := 10
 	if cfg.PollingIntervalSeconds > 0 {
 		pollingInterval = cfg.PollingIntervalSeconds
 	}
-	logger.Printf("Polling interval: %d seconds", pollingInterval)
+	logger.Info("polling interval configured", "seconds", pollingInterval)
 
 	claimClient := dispatch.NewRunClaimClient(cfg.Api.Url, cfg.Uuid, controllerRequesterPrefix, auth, controllerIdentity(), metrics)
 
@@ -120,7 +124,7 @@ func runController() int {
 		StatusApi:  claimClient,
 		Classify:   dispatch.ControllerClaimClassifier,
 		Metrics:    metrics,
-		Logger:     mgmtLog.With("component", "dispatch"),
+		Logger:     logger.With("component", "dispatch"),
 	})
 
 	var wg sync.WaitGroup
@@ -147,9 +151,9 @@ func runController() int {
 // meshapi.RunnerClient (already shared, plan 03); the 404 "create it via the meshStack UI"
 // mapping and registration metrics are this persona's own startup orchestration (D11: only
 // main wires).
-func registerController(logger *log.Logger, cfg *controllerConfig, auth meshapi.AuthProvider, oidcIssuer string, metrics *dispatch.MetricsCollector) error {
+func registerController(logger *slog.Logger, cfg *controllerConfig, auth meshapi.AuthProvider, oidcIssuer string, metrics *dispatch.MetricsCollector) error {
 	if UseTestClient {
-		logger.Println("Test mode enabled - skipping controller registration")
+		logger.Info("test mode enabled - skipping controller registration")
 		return nil
 	}
 
@@ -168,7 +172,7 @@ func registerController(logger *log.Logger, cfg *controllerConfig, auth meshapi.
 		return fmt.Errorf("failed to marshal runner registration: %w", err)
 	}
 
-	logger.Printf("Registering controller %s with implementationType ALL...", cfg.Uuid)
+	logger.Info("registering controller with implementationType ALL", "uuid", cfg.Uuid)
 	runnerClient := meshapi.NewRunnerClient(cfg.Api.Url, auth)
 	statusCode, err := runnerClient.Update(cfg.Uuid, jsonBody)
 	if err != nil {
@@ -181,6 +185,6 @@ func registerController(logger *log.Logger, cfg *controllerConfig, auth meshapi.
 	}
 
 	metrics.IncRegistrationSuccess(cfg.Uuid)
-	logger.Println("Controller registered successfully")
+	logger.Info("controller registered successfully")
 	return nil
 }

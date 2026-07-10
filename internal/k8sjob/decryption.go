@@ -130,13 +130,3 @@ func decryptRunDetails(runJsonBase64 string, cryptoInstance *meshcrypto.MeshCert
 	// Re-encode to base64
 	return base64.StdEncoding.EncodeToString(decryptedJsonBytes), nil
 }
-
-// decryptFailure wraps a decrypt error so Loop recognizes it as a SilentDispatchFailure
-// (the controller's pre-existing, D9-pinned quirk: a claimed run with an undecryptable
-// payload is left for the coordinator's own timeout rather than actively failed -- see
-// PLAN_DETAIL_05_dispatcher.md §10.2/§16.8).
-type decryptFailure struct{ err error }
-
-func (e *decryptFailure) Error() string          { return e.err.Error() }
-func (e *decryptFailure) Unwrap() error          { return e.err }
-func (e *decryptFailure) SilentDispatchFailure() {}

@@ -334,21 +334,7 @@ linters:
             - github.com/prometheus/client_golang
             - github.com/stretchr/testify
 
-  exclusions:
-    rules:
-      # --- Temporary legacy exclusions (PLAN_DETAIL_00_guardrails.md §5.3 category 2) ---
-      # Phase 0 adopts the linter set without changing behavior (D13: bugs pinned, fixed
-      # in phase 2/2b/3). Each block below silences findings that would require altering
-      # an executed production code path if fixed now; the comment names the phase that
-      # owns removing the block by actually fixing the underlying code.
-
-      # Former go-meshapi-client debt, reparented to the internal/* paths after the phase-4
-      # module consolidation (paths only; same files, same justifications). The former
-      # internal/controller entry here is gone with the package itself (phase 5 dissolution,
-      # PLAN_DETAIL_05 §5) -- its one surviving errcheck finding was fixed at the callsite
-      # instead of carried forward (internal/k8sjob/cluster.go).
-      - path: ^internal/(meshapi|crypto|config|report|meshapitest)/
-        linters:
-          - errcheck
-          - forcetypeassert
-          - makezero
+  # No temporary exclusion blocks remain: the phase-0 legacy debt block (errcheck/
+  # forcetypeassert/makezero on internal/(meshapi|crypto|config|report|meshapitest)) was
+  # paid off by fixing the underlying code in phase 7 (PLAN_DETAIL_07 §10 step 1 / L6), not
+  # carried forward. Only permanent linter configuration lives above.

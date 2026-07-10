@@ -59,16 +59,18 @@ func LoadConfig(log *slog.Logger, buildVersion string, singleRun bool) (Config, 
 		log.Warn("ignoring manual-only blockrunner.debugMode key for the github runner", "key", "blockrunner.debugMode")
 	}
 	if cfg.BlockRunner.PrivateKey != "" {
+		config.WarnDeprecated(log, "blockrunner.privateKey", "privateKey")
 		cfg.PrivateKey = cfg.BlockRunner.PrivateKey
 	}
 	if cfg.BlockRunner.PrivateKeyFile != "" {
+		config.WarnDeprecated(log, "blockrunner.privateKeyFile", "privateKeyFile or RUNNER_PRIVATE_KEY_FILE")
 		cfg.PrivateKeyFile = cfg.BlockRunner.PrivateKeyFile
 	}
 
 	// Env bindings win last (D7); literal shipped spellings (§6.2), no relaxed-binding variants.
 	loader.Env(log,
 		config.EnvBinding{Var: "RUNNER_UUID", Target: &cfg.Uuid},
-		config.EnvBinding{Var: "VERSION", Target: &cfg.Version},
+		config.EnvBinding{Var: "VERSION", Target: &cfg.Version, Deprecated: true, Canonical: "the compiled-in build version (ldflags)"},
 		config.EnvBinding{Var: "RUNNER_API_URL", Target: &cfg.Api.Url},
 		config.EnvBinding{Var: "RUNNER_API_USERNAME", Target: &cfg.Api.Username},
 		config.EnvBinding{Var: "RUNNER_API_PASSWORD", Target: &cfg.Api.Password},

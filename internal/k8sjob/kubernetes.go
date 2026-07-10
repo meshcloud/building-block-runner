@@ -82,15 +82,23 @@ func NewKubernetesJobDispatcherWithClient(clientset kubernetes.Interface, cfg Co
 
 // Dispatch decrypts the claimed run and creates its Kubernetes Job. Order preserved from
 // the former controller.processNextRun (PLAN_DETAIL_05 §5): decrypt -> template lookup ->
-// size guard -> ServiceAccount/Secret/Job. A decrypt failure returns a
-// dispatch.SilentDispatchFailure (§10.2/§16.8 quirk, kept bit-for-bit); a missing template
-// returns *dispatch.UnhandledTypeError with the frozen message (D5/§10.1); any other job
-// creation error's Error() text is the exact FAILED-status message reported to meshfed.
+// size guard -> ServiceAccount/Secret/Job. A decrypt failure is now actively reported FAILED
+// with actionable key-mismatch guidance (L14/P5 -- the former silent "wait for the coordinator
+// timeout" quirk is gone) while still incrementing the decryption-error metric; a missing
+// template returns *dispatch.UnhandledTypeError with the frozen message (D5/§10.1); any other
+// job creation error's Error() text is the exact FAILED-status message reported to meshfed.
 func (k *KubernetesJobDispatcher) Dispatch(run dispatch.ClaimedRun) error {
 	decryptedRunJsonBase64, err := decryptRunDetails(run.RawJson, k.crypto)
 	if err != nil {
 		k.metrics.IncDecryptionError(k.runnerUuid)
-		return &decryptFailure{err: fmt.Errorf("failed to decrypt run details for run %s: %w", run.Id, err)}
+		// L14: report an actionable FAILED status (wording aligned with the tf runner's
+		// decrypt-failure guidance, internal/tf/run.go) instead of leaving the run to time
+		// out silently. Uses the already-accepted reportRunFailure wire shape (D9).
+		return dispatchError(fmt.Sprintf("Failed to decrypt run details for run %s: %s. "+
+			"This typically indicates a key mismatch - the private key configured for this "+
+			"runner does not match the public key used to encrypt the run in meshStack. Please "+
+			"verify that the runner's configured private key matches the public key registered "+
+			"for this runner in meshStack.", run.Id, err.Error()))
 	}
 
 	runnerType := string(run.Type)

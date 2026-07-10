@@ -23,7 +23,7 @@ import (
 	"context"
 	"errors"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path"
 	"testing"
@@ -100,7 +100,7 @@ func makeBugInventoryTfCmd(t *testing.T, buildingBlockId, suggestedWorkspace str
 		AppConfig.InitTimeoutMins = previousInit
 	})
 
-	lw, err := NewLogWrap(log.New(io.Discard, "[bug-inventory] ", log.LstdFlags), "/dev/null")
+	lw, err := NewLogWrap(slog.New(slog.NewTextHandler(io.Discard, nil)), "/dev/null")
 	require.NoError(t, err)
 
 	return &GenericTfCmd{
@@ -273,7 +273,7 @@ func Test_BugInventory_B5_SensitiveNonCodeLikeTypeIsDecrypted(t *testing.T) {
 // now returns a non-nil error when the log file cannot be opened, so its caller,
 // initRunContextInfo, can fail the run cleanly instead of nil-dereffing on the first log write.
 func Test_BugInventory_B7_NewLogWrapReturnsErrorOnOpenError(t *testing.T) {
-	lw, err := NewLogWrap(log.New(io.Discard, "", log.LstdFlags), "/nonexistent-dir/does-not-exist/x.log")
+	lw, err := NewLogWrap(slog.New(slog.NewTextHandler(io.Discard, nil)), "/nonexistent-dir/does-not-exist/x.log")
 
 	assert.Nil(t, lw)
 	require.Error(t, err, "fixed: a file-open failure now returns an error instead of a silent nil")
@@ -292,7 +292,7 @@ func Test_BugInventory_B7_InitRunContextInfoPropagatesLogWrapError(t *testing.T)
 	// wd's "logs" subdir is deliberately not created, so the outFile path
 	// ("<wd>/logs/logs-<runId>.txt") cannot be opened.
 	wd := t.TempDir()
-	rci, err := initRunContextInfo(run, "[bug-inventory] ", io.Discard, wd)
+	rci, err := initRunContextInfo(run, slog.New(slog.NewTextHandler(io.Discard, nil)), wd)
 
 	assert.Nil(t, rci)
 	require.Error(t, err, "fixed: the log-file-open error now surfaces instead of a nil-logwrap RunContextInfo")
@@ -362,7 +362,7 @@ func runToInitFailure(t *testing.T, behavior Behavior) string {
 	// NewLogWrap; worker.go/singlerunworker.go always os.Mkdir the "logs" subdir first
 	// (worker.go:103) — mirrored here so this harness matches production wiring.
 	require.NoError(t, os.Mkdir(path.Join(wd, "logs"), 0700))
-	runContextInfo, err := initRunContextInfo(run, "[bug-inventory] ", io.Discard, wd)
+	runContextInfo, err := initRunContextInfo(run, slog.New(slog.NewTextHandler(io.Discard, nil)), wd)
 	require.NoError(t, err)
 	run.Source.setLog(runContextInfo.logwrap)
 	ctx := context.Background()

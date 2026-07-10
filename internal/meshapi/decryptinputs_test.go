@@ -66,8 +66,11 @@ func TestDecryptInputs_TypeRules(t *testing.T) {
 	require.NoError(t, err)
 	byKey := map[string]any{}
 	for _, raw := range got {
-		m := raw.(map[string]any)
-		byKey[m["key"].(string)] = m["value"]
+		m, ok := raw.(map[string]any)
+		require.True(t, ok)
+		key, ok := m["key"].(string)
+		require.True(t, ok)
+		byKey[key] = m["value"]
 	}
 
 	require.Equal(t, "ENC(s)-decrypted", byKey["s"])

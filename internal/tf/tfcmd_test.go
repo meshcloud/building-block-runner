@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"io/fs"
-	"log"
+	"log/slog"
 	"os"
 	"path"
 	"regexp"
@@ -238,7 +238,7 @@ func Test_collectOutput(t *testing.T) {
 func makeTestGenericTfCmd(t *testing.T) *GenericTfCmd {
 	t.Helper()
 	wd := t.TempDir()
-	lw, err := NewLogWrap(log.New(io.Discard, "[tfCmd_test] ", log.LstdFlags), "/dev/null")
+	lw, err := NewLogWrap(slog.New(slog.NewTextHandler(io.Discard, nil)), "/dev/null")
 	require.NoError(t, err)
 	return &GenericTfCmd{
 		params: &TfCmdParams{

@@ -21,6 +21,14 @@ tasks:
     cmds:
       - go test -race ./...
 
+  test:e2e:
+    desc: >-
+      Run the opt-in e2e tests too (the real tofu/terraform binary download, gated behind the
+      `e2e` build tag; PLAN_DETAIL_07 §5.4 / L3). Hits the network; not part of default `task
+      test` or any PR gate — run locally or via the e2e.yml workflow.
+    cmds:
+      - go test -tags e2e ./...
+
   lint:
     desc: Lint with golangci-lint (govet runs inside; pass extra args after --, e.g. `task lint -- --fix`)
     cmds:

@@ -2,7 +2,7 @@ package tf
 
 import (
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path"
 	"testing"
@@ -38,7 +38,7 @@ func (suite *GitSourceTestSuite) SetupSuite() {
 
 	suite.wd = tmpWd
 	suite.logfile = f
-	lw, err := NewLogWrap(log.New(io.Discard, "", log.LstdFlags), f.Name())
+	lw, err := NewLogWrap(slog.New(slog.NewTextHandler(io.Discard, nil)), f.Name())
 	if err != nil {
 		panic(err)
 	}

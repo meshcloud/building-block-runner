@@ -62,6 +62,7 @@ type fakeStatusApi struct {
 	registeredSourceRunId RunId
 	updatedStatusRunId    RunId
 	updatedStatus         string
+	updatedMessage        string
 }
 
 func (f *fakeStatusApi) RegisterSource(runId RunId) error {
@@ -72,6 +73,7 @@ func (f *fakeStatusApi) RegisterSource(runId RunId) error {
 func (f *fakeStatusApi) UpdateRunStatus(runId RunId, status, summary, stepMessage string) error {
 	f.updatedStatusRunId = runId
 	f.updatedStatus = status
+	f.updatedMessage = summary
 	return f.updateStatusErr
 }
 
@@ -209,25 +211,30 @@ func TestProcessNextRun_UnhandledType_ReportsFailure(t *testing.T) {
 	}
 }
 
-// silentErr is a minimal SilentDispatchFailure implementation for tests -- the decrypt-
-// failure quirk (§10.2/§16.8) must never reach StatusApi.
-type silentErr struct{ msg string }
-
-func (e *silentErr) Error() string          { return e.msg }
-func (e *silentErr) SilentDispatchFailure() {}
-
-func TestProcessNextRun_SilentDispatchFailure_NeverReports(t *testing.T) {
+// TestProcessNextRun_DecryptStyleFailure_IsReported is the flipped L14 pin (was
+// TestProcessNextRun_SilentDispatchFailure_NeverReports): the former silent decrypt-failure
+// quirk is gone, so every dispatch error -- including one carrying decrypt-failure guidance --
+// now registers the source and reports FAILED with the error text (P5, never suppress
+// silently). See PLAN_DETAIL_07_cleanup.md §11 change #1.
+func TestProcessNextRun_DecryptStyleFailure_IsReported(t *testing.T) {
 	run := buildClaimedRun(t, "run-uuid-2")
 	claimer := &queueClaimer{queue: []ClaimedRun{run}}
 	status := &fakeStatusApi{}
-	dispatcher := &fakeDispatcher{dispatchErr: &silentErr{msg: "decrypt failed"}}
+	const msg = "Failed to decrypt run details for run run-uuid-2: key mismatch"
+	dispatcher := &fakeDispatcher{dispatchErr: errors.New(msg)}
 	l := newTestLoop(claimer, dispatcher, status, LoopConfig{MaxConcurrent: 10})
 
 	if got := l.processNextRun(); got != processFailed {
 		t.Errorf("expected processFailed, got %v", got)
 	}
-	if status.registeredSourceRunId != "" {
-		t.Error("expected no RegisterSource for a silent dispatch failure (§10.2/§16.8 quirk)")
+	if status.registeredSourceRunId != run.Id {
+		t.Errorf("expected RegisterSource for run %q, got %q", run.Id, status.registeredSourceRunId)
+	}
+	if status.updatedStatus != "FAILED" {
+		t.Errorf("expected FAILED, got %q", status.updatedStatus)
+	}
+	if status.updatedMessage != msg {
+		t.Errorf("expected message %q, got %q", msg, status.updatedMessage)
 	}
 }
 

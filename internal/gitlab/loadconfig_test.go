@@ -1,6 +1,8 @@
 package gitlab
 
 import (
+	"bytes"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -113,6 +115,23 @@ blockrunner:
 	require.Equal(t, "https://block.example", cfg.Api.Url)
 	require.Equal(t, "blockuser", cfg.Api.Username)
 	require.Equal(t, "block-inline-key", cfg.PrivateKeyPEM)
+}
+
+// TestLoadConfig_BlockRunnerCompat_DebugModeIgnoredWithWarning pins that a manual-only
+// blockrunner.debugMode key is inert but not silently dropped for the gitlab persona
+// (BlockRunnerCompat.DebugMode's own doc comment already promised this; the gitlab port
+// had not implemented it -- accumulated alias inventory audit, docs/DEPRECATIONS.md).
+func TestLoadConfig_BlockRunnerCompat_DebugModeIgnoredWithWarning(t *testing.T) {
+	absentBase(t)
+	writeConfig(t, "blockrunner:\n  debugMode: true\n")
+	t.Setenv("RUNNER_PRIVATE_KEY_FILE", filepath.Join(t.TempDir(), "no-such-key-file.pem"))
+
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+	_, err := LoadConfig(log, "build-v", true)
+	require.NoError(t, err)
+	require.Contains(t, buf.String(), "blockrunner.debugMode")
+	require.Contains(t, buf.String(), "ignoring")
 }
 
 func TestLoadConfig_FailsOnUnconsumedLegacyEnv(t *testing.T) {

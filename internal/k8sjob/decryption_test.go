@@ -3,7 +3,6 @@ package k8sjob
 import (
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"testing"
 
 	meshapi "github.com/meshcloud/building-block-runner/internal/meshapi"
@@ -116,19 +115,4 @@ func TestDecryptRunDetails_InvalidInputs(t *testing.T) {
 			}
 		})
 	}
-}
-
-// TestDecryptFailure_IsSilentDispatchFailure pins the marker used by KubernetesJobDispatcher
-// to signal Loop's decrypt-failure quirk (§10.2/§16.8): the wrapped error must still satisfy
-// the standard error contract (Error/Unwrap) as well as the marker method.
-func TestDecryptFailure_IsSilentDispatchFailure(t *testing.T) {
-	errBoom := errors.New("boom")
-	inner := &decryptFailure{err: errBoom}
-	if inner.Error() != errBoom.Error() {
-		t.Errorf("expected Error() to delegate to the wrapped error, got %q", inner.Error())
-	}
-	if !errors.Is(inner.Unwrap(), errBoom) {
-		t.Error("expected Unwrap() to return the wrapped error")
-	}
-	inner.SilentDispatchFailure() // must not panic; marker method only
 }

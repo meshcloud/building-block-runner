@@ -50,8 +50,10 @@ func (c *MeshSymmetricCrypto) EncryptSymmetric(plainText string) ([]byte, error)
 
 	data := c.aesgcm.Seal(nil, iv, []byte(plainText), nil)
 
-	cipher := make([]byte, 4)
-	binary.BigEndian.PutUint32(cipher[0:4], uint32(IV_LENGTH))
+	// Wire layout (unchanged): 4-byte big-endian IV length, then the IV, then the ciphertext.
+	// Built from a zero-length, pre-sized slice so the appends don't trip makezero.
+	cipher := make([]byte, 0, 4+len(iv)+len(data))
+	cipher = binary.BigEndian.AppendUint32(cipher, uint32(IV_LENGTH))
 	cipher = append(cipher, iv...)
 	cipher = append(cipher, data...)
 

@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -140,7 +140,7 @@ func (suite *WorkerTestSuite) SetupTest() {
 		workerIn:             make(chan workerToken, 2),
 		workerOut:            make(chan workerToken, 2),
 		runApi:               newScenarioRunApiClient("scenario-runner", scenarioAuth, testRoundTripper(suite.scenarioClientBehavior), dec),
-		log:                  log.New(io.Discard, "", log.LstdFlags),
+		log:                  slog.New(slog.NewTextHandler(io.Discard, nil)),
 		timeout:              30 * time.Second,
 		statusUpdateInterval: time.Second * 10,
 		dec:                  dec,

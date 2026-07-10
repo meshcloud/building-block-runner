@@ -1,6 +1,8 @@
 package manual
 
 import (
+	"bytes"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -68,6 +70,24 @@ blockrunner:
 	require.Equal(t, "https://block.example", cfg.Api.Url)
 	require.Equal(t, "blockuser", cfg.Api.Username)
 	require.True(t, cfg.DebugMode)
+}
+
+// TestLoadConfig_BlockRunnerCompat_PrivateKeyIgnoredWithWarning pins that a mounted
+// Kotlin-era key is inert for the manual persona (it never decrypts) but is not silently
+// dropped -- an operator relying on it for a sibling persona sharing the same file must see
+// a line, not nothing (accumulated alias inventory, docs/DEPRECATIONS.md).
+func TestLoadConfig_BlockRunnerCompat_PrivateKeyIgnoredWithWarning(t *testing.T) {
+	writeConfig(t, `blockrunner:
+  privateKey: BLOCK_PEM
+  privateKeyFile: /some/path
+`)
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+	_, err := LoadConfig(log, "build-v", false)
+	require.NoError(t, err)
+	require.Contains(t, buf.String(), "blockrunner.privateKey")
+	require.Contains(t, buf.String(), "blockrunner.privateKeyFile")
+	require.Contains(t, buf.String(), "ignoring")
 }
 
 // TestLoadConfig_FailsOnUnconsumedLegacyEnv pins §10.4/D7: a BLOCKRUNNER_* relaxed-binding

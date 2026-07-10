@@ -36,21 +36,21 @@ type BlockRunnerCompat struct {
 // value. DebugMode and the private-key fields are persona-specific and are read directly
 // off the struct by the personas that use them (manual: DebugMode; 06B–D: PrivateKey*).
 func (c BlockRunnerCompat) ApplyShared(log *slog.Logger, uuid, version *string, api *Api) {
-	apply := func(key string, target *string, val string) {
+	apply := func(key, canonical string, target *string, val string) {
 		if val == "" || target == nil {
 			return
 		}
-		log.Warn("using deprecated blockrunner: yaml key; prefer the flat config key", "key", key)
+		WarnDeprecated(log, key, canonical)
 		*target = val
 	}
 
-	apply("blockrunner.uuid", uuid, c.Uuid)
-	apply("blockrunner.version", version, c.Version)
+	apply("blockrunner.uuid", "uuid", uuid, c.Uuid)
+	apply("blockrunner.version", "version", version, c.Version)
 	if api != nil {
-		apply("blockrunner.api.url", &api.Url, c.Api.Url)
-		apply("blockrunner.auth.username", &api.Username, c.Auth.Username)
-		apply("blockrunner.auth.password", &api.Password, c.Auth.Password)
-		apply("blockrunner.auth.api-key.client-id", &api.ClientId, c.Auth.ApiKey.ClientId)
-		apply("blockrunner.auth.api-key.client-secret", &api.ClientSecret, c.Auth.ApiKey.ClientSecret)
+		apply("blockrunner.api.url", "api.url", &api.Url, c.Api.Url)
+		apply("blockrunner.auth.username", "api.username", &api.Username, c.Auth.Username)
+		apply("blockrunner.auth.password", "api.password", &api.Password, c.Auth.Password)
+		apply("blockrunner.auth.api-key.client-id", "api.clientId", &api.ClientId, c.Auth.ApiKey.ClientId)
+		apply("blockrunner.auth.api-key.client-secret", "api.clientSecret", &api.ClientSecret, c.Auth.ApiKey.ClientSecret)
 	}
 }

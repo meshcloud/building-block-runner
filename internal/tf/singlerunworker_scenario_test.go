@@ -21,7 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -144,7 +144,7 @@ func (suite *SingleRunWorkerTestSuite) newWorker(runToken string) *SingleRunWork
 		timeout:              30 * time.Second,
 		runApi:               api,
 		tfBinaries:           suite.tfBin,
-		log:                  log.New(io.Discard, "", log.LstdFlags),
+		log:                  slog.New(slog.NewTextHandler(io.Discard, nil)),
 		statusUpdateInterval: time.Second * 10,
 	}
 }
@@ -524,7 +524,7 @@ func Test_NewSingleRunWorker_SetsDefaults(t *testing.T) {
 	AppConfig = TfRunnerConfig{RunnerUuid: "ctor-pin-runner"}
 	t.Cleanup(func() { AppConfig = previous })
 
-	logger := log.New(io.Discard, "", 0)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	w := NewSingleRunWorker(logger, t.TempDir(), 7, nil, nil)
 
 	if w.statusUpdateInterval != 10*time.Second {
@@ -542,7 +542,7 @@ func Test_NewSingleRunWorker_SetsDefaults(t *testing.T) {
 // for the constructor used by the k8s single-run entrypoint, which supplies its own runToken-aware
 // RunApi instance rather than letting the constructor build one from AppConfig.
 func Test_NewSingleRunWorkerWithApi_SetsDefaults(t *testing.T) {
-	logger := log.New(io.Discard, "", 0)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	api := &RunApiClient{}
 	w := NewSingleRunWorkerWithApi(logger, t.TempDir(), 3, nil, api, nil)
 

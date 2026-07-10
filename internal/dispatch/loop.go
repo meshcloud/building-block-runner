@@ -88,8 +88,8 @@ const (
 	// noRunAvailable means there was no run to process (no-run claim outcome); nothing was claimed.
 	noRunAvailable
 	// processFailed means a run was claimed but could not be dispatched; it was reported as
-	// FAILED (or, for the decrypt-failure quirk, silently left for the coordinator's own
-	// timeout -- §10.2/§16.8).
+	// FAILED (every dispatch failure is reported since L14 -- the former decrypt-failure
+	// silent-timeout quirk is gone).
 	processFailed
 )
 
@@ -207,16 +207,10 @@ func (l *Loop) processNextRun() processResult {
 			return processFailed
 		}
 
-		var silent SilentDispatchFailure
-		if errors.As(err, &silent) {
-			// Kept for bit-identity with the controller's pre-existing quirk: the run is
-			// left for the coordinator's own timeout rather than actively failed
-			// (PLAN_DETAIL_05 §10.2/§16.8; the dispatcher itself is responsible for its own
-			// error-specific metrics, e.g. decryption failures).
-			l.logger.Error("dispatch failed silently (no status reported)", "run_id", run.Id, "error", err)
-			return processFailed
-		}
-
+		// Every dispatch failure is now reported (L14/P5: never suppress silently). The
+		// former decrypt-failure "silent, wait for the coordinator timeout" quirk is gone --
+		// the dispatcher authors an actionable FAILED message (e.g. the key-mismatch
+		// guidance) and fires its own error-specific metrics (e.g. decryption errors).
 		l.logger.Error("failed to dispatch run", "run_id", run.Id, "error", err)
 		l.reportRunFailure(run.Id, err.Error())
 		return processFailed

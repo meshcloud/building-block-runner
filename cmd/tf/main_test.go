@@ -11,7 +11,7 @@ package main
 import (
 	"encoding/json"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -99,7 +99,7 @@ func withTestAppConfig(t *testing.T, runApiUrl string) {
 func Test_ExecuteSingleRun_MissingRunJsonFilePathEnv_ExitsNonZero(t *testing.T) {
 	t.Setenv(ENV_RUN_JSON_FILE_PATH, "")
 	withTestAppConfig(t, "")
-	logger := log.New(io.Discard, "", 0)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	tfbin, err := tf.ForTestNewTfBin(t.TempDir(), io.Discard, nil)
 	require.NoError(t, err)
@@ -114,7 +114,7 @@ func Test_ExecuteSingleRun_MalformedRunJson_ExitsNonZero(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte("not valid json"), 0600))
 	t.Setenv(ENV_RUN_JSON_FILE_PATH, path)
 	withTestAppConfig(t, "")
-	logger := log.New(io.Discard, "", 0)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	tfbin, err := tf.ForTestNewTfBin(t.TempDir(), io.Discard, nil)
 	require.NoError(t, err)
@@ -130,7 +130,7 @@ func Test_ExecuteSingleRun_RegistrationFails_ExitsNonZero(t *testing.T) {
 
 	runJsonPath := writeRunJsonFixture(t, "/nonexistent/repo/does/not/matter/here")
 	t.Setenv(ENV_RUN_JSON_FILE_PATH, runJsonPath)
-	logger := log.New(io.Discard, "", 0)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	tfbin, err := tf.ForTestNewTfBin(t.TempDir(), io.Discard, nil)
 	require.NoError(t, err)
@@ -149,7 +149,7 @@ func Test_ExecuteSingleRun_RegistrationSucceedsThenSourceCloneFails_ExitsZero(t 
 	// automatically; see the B11 fix doc comment on executeSingleRun).
 	runJsonPath := writeRunJsonFixture(t, filepath.Join(t.TempDir(), "does-not-exist-as-a-repo"))
 	t.Setenv(ENV_RUN_JSON_FILE_PATH, runJsonPath)
-	logger := log.New(io.Discard, "", 0)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	tfbin, err := tf.ForTestNewTfBin(t.TempDir(), io.Discard, nil)
 	require.NoError(t, err)

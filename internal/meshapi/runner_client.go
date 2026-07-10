@@ -68,7 +68,7 @@ func (c *RunnerClient) Update(uuid string, jsonBody []byte) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("failed to execute PUT request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// 404 means the runner meshObject doesn't exist yet - caller decides what that means.
 	if resp.StatusCode == http.StatusNotFound {

@@ -2,8 +2,7 @@ package tf
 
 import (
 	"fmt"
-	"io"
-	"log"
+	"log/slog"
 	"path"
 )
 
@@ -28,11 +27,12 @@ type RunContextInfo struct {
 	meshstackBaseUrl string
 }
 
-func initRunContextInfo(run *Run, logPrefix string, logWriter io.Writer, wd string) (*RunContextInfo, error) {
-	log := log.New(logWriter, fmt.Sprintf("%s[%s] [%s] ", logPrefix, run.Behavior.str(), run.Id), log.LstdFlags)
+func initRunContextInfo(run *Run, logger *slog.Logger, wd string) (*RunContextInfo, error) {
+	// Run-scoped attributes replace the former "[behavior] [runId]" logger prefix (§8.4.3).
+	runLog := logger.With("behavior", run.Behavior.str(), "run", run.Id)
 	outFile := path.Join(wd, "logs", fmt.Sprintf("logs-%s.txt", run.Id))
 
-	logwrap, err := NewLogWrap(log, outFile)
+	logwrap, err := NewLogWrap(runLog, outFile)
 	if err != nil {
 		return nil, fmt.Errorf("initializing run context for run %s: %w", run.Id, err)
 	}

@@ -10,7 +10,7 @@ package tf
 
 import (
 	"io"
-	"log"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -25,7 +25,7 @@ func newTestManager() *DefaultRunManager {
 		workerIn:       make(chan workerToken, 4),
 		managerIn:      make(chan workerToken, 4),
 		defaultTimeout: time.Minute,
-		logger:         log.New(io.Discard, "", 0),
+		logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 }
 
@@ -46,7 +46,7 @@ func recvToken(t *testing.T, ch chan workerToken) workerToken {
 // channels are buffered, and shutdown starts false.
 func Test_NewManager_SetsDefaults(t *testing.T) {
 	AppConfig.TfCommandTimeoutMins = 7
-	rm, ok := NewManager(nil, nil, NoopMeter{}).(*DefaultRunManager)
+	rm, ok := NewManager(nil, nil, NoopMeter{}, slog.New(slog.NewTextHandler(io.Discard, nil))).(*DefaultRunManager)
 	require.True(t, ok, "NewManager must return *DefaultRunManager")
 
 	assert.Equal(t, 7*time.Minute, rm.defaultTimeout)

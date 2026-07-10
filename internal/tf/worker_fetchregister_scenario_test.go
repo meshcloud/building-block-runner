@@ -11,7 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -75,7 +75,7 @@ func (suite *WorkerTestSuite) Test_HandleFetchRunError() {
 				workerIn:     make(chan workerToken, 2),
 				workerOut:    make(chan workerToken, 2),
 				runApi:       newScenarioRunApiClient("cp2-fetcherr", auth, tc.transport, NoopDecryptor{}),
-				log:          log.New(io.Discard, "", 0),
+				log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 				meter:        meter,
 			}
 

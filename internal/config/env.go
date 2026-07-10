@@ -18,6 +18,7 @@ type EnvAlias struct {
 // regardless of whether it was set, matching Env's contract, since a config-file-path
 // var is a recognized/handled name either way.
 func (l *Loader) Path(log *slog.Logger, defaultFile string, aliases ...EnvAlias) string {
+	canonical := firstNonDeprecatedVar(aliases)
 	for _, alias := range aliases {
 		l.markConsumed(alias.Var)
 		v, ok := os.LookupEnv(alias.Var)
@@ -25,18 +26,36 @@ func (l *Loader) Path(log *slog.Logger, defaultFile string, aliases ...EnvAlias)
 			continue
 		}
 		if alias.Deprecated {
-			log.Warn("using deprecated env var for config file path; prefer the primary spelling", "var", alias.Var)
+			WarnDeprecated(log, alias.Var, canonical)
 		}
 		return v
 	}
 	return defaultFile
 }
 
-// EnvBinding binds one legacy/compat env var onto a string field, applied at the
-// highest precedence (over both YAML layers) by Env.
+// firstNonDeprecatedVar names the alias a deprecation warning should point operators at --
+// the first non-deprecated candidate, since that is the one Path tries first. Callers that
+// pass only deprecated aliases fall back to a generic description rather than fabricating a
+// var name that doesn't exist.
+func firstNonDeprecatedVar(aliases []EnvAlias) string {
+	for _, a := range aliases {
+		if !a.Deprecated {
+			return a.Var
+		}
+	}
+	return "the default config path"
+}
+
+// EnvBinding binds one env var onto a string field, applied at the highest precedence
+// (over both YAML layers) by Env. Deprecated marks a binding that is a legacy/compat
+// spelling kept working for compatibility (D7) -- using it logs a uniform deprecation
+// warning (Canonical describes the replacement) instead of the plain "using value from
+// environment" info line.
 type EnvBinding struct {
-	Var    string
-	Target *string
+	Var        string
+	Target     *string
+	Deprecated bool
+	Canonical  string // human-readable replacement description; required when Deprecated
 }
 
 // Env applies bindings on top of whatever Load already decoded, logging each one used
@@ -50,7 +69,11 @@ func (l *Loader) Env(log *slog.Logger, bindings ...EnvBinding) {
 		if !ok || v == "" {
 			continue
 		}
-		log.Info("using value from environment", "var", b.Var)
+		if b.Deprecated {
+			WarnDeprecated(log, b.Var, b.Canonical)
+		} else {
+			log.Info("using value from environment", "var", b.Var)
+		}
 		*b.Target = v
 	}
 }

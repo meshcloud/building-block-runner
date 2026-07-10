@@ -188,7 +188,12 @@ func TestDispatch_UnhandledType_ReturnsUnhandledTypeError(t *testing.T) {
 	}
 }
 
-func TestDispatch_DecryptFailure_IsSilentDispatchFailure(t *testing.T) {
+// TestDispatch_DecryptFailure_ReportsActionableMessage is the flipped L14 pin (was
+// TestDispatch_DecryptFailure_IsSilentDispatchFailure): a decrypt failure is no longer a
+// silent dispatch failure. It now returns an ordinary reportable error (Loop reports its
+// Error() text as the FAILED status, §11 change #1) carrying actionable key-mismatch
+// guidance, while still incrementing the decryption-error metric.
+func TestDispatch_DecryptFailure_ReportsActionableMessage(t *testing.T) {
 	cfg := Config{
 		Namespace:       "test-ns",
 		Implementations: map[string]JobSpecTemplate{"MANUAL": {Image: "manual-runner:latest"}},
@@ -198,9 +203,15 @@ func TestDispatch_DecryptFailure_IsSilentDispatchFailure(t *testing.T) {
 	run.RawJson = "not-valid-base64!!!"
 
 	err := d.Dispatch(run)
-	var silent dispatch.SilentDispatchFailure
-	if !errors.As(err, &silent) {
-		t.Fatalf("expected a dispatch.SilentDispatchFailure, got %v (%T)", err, err)
+	if err == nil {
+		t.Fatal("expected a decrypt failure error, got nil")
+	}
+	var unhandled *dispatch.UnhandledTypeError
+	if errors.As(err, &unhandled) {
+		t.Fatalf("decrypt failure must be a plain reportable error, not UnhandledTypeError: %v", err)
+	}
+	if !strings.Contains(err.Error(), "key mismatch") {
+		t.Errorf("expected actionable key-mismatch guidance in the reported message, got %q", err.Error())
 	}
 	if metrics.decryptionErrors != 1 {
 		t.Errorf("expected the decryption-error metric to be incremented once, got %d", metrics.decryptionErrors)

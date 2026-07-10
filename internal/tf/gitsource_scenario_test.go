@@ -8,7 +8,7 @@ package tf
 
 import (
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -83,7 +83,7 @@ func Test_LogDirectoryContentsForWorktreeUnstagedChangedError(t *testing.T) {
 	require.NoError(t, os.Mkdir(filepath.Join(dir, "a-dir"), 0o700))
 	require.NoError(t, os.Symlink(filepath.Join(dir, "a-file.tf"), filepath.Join(dir, "a-link")))
 
-	lw, err := NewLogWrap(log.New(io.Discard, "", 0), filepath.Join(dir, "update.log"))
+	lw, err := NewLogWrap(slog.New(slog.NewTextHandler(io.Discard, nil)), filepath.Join(dir, "update.log"))
 	require.NoError(t, err)
 	gs := &GitSource{log: lw}
 
@@ -112,7 +112,7 @@ func (g *vanishingTmpDirFacade) clone(a auth, url, targetdir string) (*git.Repos
 // nil-deref on *g.path, which is nil in exactly this case.
 func Test_CopyToTargetDir_NilPathMissingSourceDirDoesNotPanic(t *testing.T) {
 	dir := t.TempDir()
-	lw, err := NewLogWrap(log.New(io.Discard, "", 0), filepath.Join(dir, "update.log"))
+	lw, err := NewLogWrap(slog.New(slog.NewTextHandler(io.Discard, nil)), filepath.Join(dir, "update.log"))
 	require.NoError(t, err)
 
 	facade := &vanishingTmpDirFacade{MockedGitFacade: &MockedGitFacade{}}

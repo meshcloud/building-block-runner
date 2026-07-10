@@ -18,9 +18,10 @@ import (
 //	                       the same wiring the standalone cmd/<persona> binary runs
 //	bbrunner <unknown>  -> usage error, non-zero exit (P5 — never a silent default)
 //
-// This is wiring only (package main, D11-exempt). Each persona bootstrap keeps its own logger
-// prefix ([RUN CONTROLLER] / [TF RUNNER], §4.1) whether run as the default controller or forced
-// in-process via a subcommand.
+// This is wiring only (package main, D11-exempt). Each persona bootstrap constructs its own
+// slog.Logger carrying a persona attribute (§8: the former [RUN CONTROLLER] / [TF RUNNER]
+// prefixes are retired) whether run as the default controller or forced in-process via a
+// subcommand.
 
 // persona is a fit-persona subcommand token. Its value equals the canonical
 // meshapi.Identity.Name that persona stamps on its runner headers (frozen, §4.2) — the identity

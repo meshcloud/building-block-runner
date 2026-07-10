@@ -4,7 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -28,16 +28,18 @@ var hashicorpSecurityArmoredPublicKey string
 
 type TfBinaries struct {
 	dir      string
-	logger   *log.Logger
+	logger   *slog.Logger
 	mutex    sync.Mutex
 	testMode bool
 	tfMock   *MockedTfFacade
 }
 
+// NewTfBin takes an io.Writer (not a *slog.Logger) so the many real-download/adapter test
+// call sites keep passing io.Discard unchanged; the slog handler is built here from it.
 func NewTfBin(parentInstallDir string, writer io.Writer) (*TfBinaries, error) {
 	installer := &TfBinaries{
 		dir:      parentInstallDir,
-		logger:   log.New(writer, "[TfBinaries] ", log.LstdFlags),
+		logger:   slog.New(slog.NewTextHandler(writer, nil)).With("component", "tfBinaries"),
 		mutex:    sync.Mutex{},
 		testMode: false,
 		tfMock:   nil,
@@ -55,7 +57,7 @@ func NewTfBin(parentInstallDir string, writer io.Writer) (*TfBinaries, error) {
 func ForTestNewTfBin(parentInstallDir string, writer io.Writer, mock *MockedTfFacade) (*TfBinaries, error) {
 	installer := &TfBinaries{
 		dir:      parentInstallDir,
-		logger:   log.New(writer, "[TfBinaries] ", log.LstdFlags),
+		logger:   slog.New(slog.NewTextHandler(writer, nil)).With("component", "tfBinaries"),
 		mutex:    sync.Mutex{},
 		testMode: true,
 		tfMock:   mock,
@@ -98,7 +100,7 @@ func (bin *TfBinaries) GetTF(ctx context.Context, workingDir string, ver string)
 
 	// file exists, is no dir: we assume it's a previously installed tf binary
 	if err == nil && !file.IsDir() {
-		bin.logger.Printf("Using existing terraform binaries: %s\n", expectedExecPath)
+		bin.logger.Info("Using existing terraform binaries", "path", expectedExecPath)
 		return tfexec.NewTerraform(workingDir, expectedExecPath)
 
 	} else {
@@ -134,7 +136,7 @@ func (bin *TfBinaries) GetTF(ctx context.Context, workingDir string, ver string)
 				return nil, err
 			}
 
-			bin.logger.Printf("Installed new terraform binaries to %s\n", expectedExecPath)
+			bin.logger.Info("Installed new terraform binaries", "path", expectedExecPath)
 		} else {
 
 			// install tofu binaries
@@ -143,7 +145,7 @@ func (bin *TfBinaries) GetTF(ctx context.Context, workingDir string, ver string)
 				return nil, err
 			}
 
-			bin.logger.Printf("Installed new tofu binaries to %s\n", expectedExecPath)
+			bin.logger.Info("Installed new tofu binaries", "path", expectedExecPath)
 			execPath = expectedExecPath
 		}
 

@@ -2,11 +2,12 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 
 	"gopkg.in/yaml.v2"
 
+	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/internal/k8sjob"
 	meshapi "github.com/meshcloud/building-block-runner/internal/meshapi"
 )
@@ -60,7 +61,14 @@ type cryptoConfig struct {
 const (
 	defaultConfigFile = "runner-config.yml"
 
-	envConfigFile = "RUNCONTROLLER_CONFIG_FILE"
+	// envConfigFile is the canonical config-file-path override -- the same spelling every
+	// fit persona binary honors via internal/config.EnvAlias{Var: "RUNNER_CONFIG_FILE"}
+	// (D7: one config knob, one name, shared across personas).
+	envConfigFile = "RUNNER_CONFIG_FILE"
+	// envConfigFileDeprecated is the pre-consolidation controller-only spelling (accumulated
+	// alias inventory row 1, docs/DEPRECATIONS.md) -- kept working, deprecation-logged;
+	// envConfigFile wins when both are set.
+	envConfigFileDeprecated = "RUNCONTROLLER_CONFIG_FILE"
 
 	// Standard runner API-key env vars (shared with the standalone block runners). When set, they
 	// override the api.clientId / api.clientSecret values from runner-config.yml.
@@ -68,33 +76,49 @@ const (
 	envApiClientSecret = "RUNNER_API_CLIENT_SECRET"
 )
 
-func readControllerConfig(logger *log.Logger) *controllerConfig {
-	configPath := os.Getenv(envConfigFile)
-	if configPath == "" {
-		configPath = defaultConfigFile
+// resolveControllerConfigFile applies the RUNNER_CONFIG_FILE > RUNCONTROLLER_CONFIG_FILE
+// (deprecated) > defaultConfigFile precedence. It routes the deprecation warning through the
+// shared config.WarnDeprecated helper (§7.1) so the wording stays uniform with every other
+// alias; the controller persona's config loading (readInYmlConfig/yaml.v2) predates the shared
+// internal/config.Loader and is out of this cleanup pass's scope to rewrite wholesale -- only
+// the alias gap itself (docs/DEPRECATIONS.md row 1) is in scope.
+func resolveControllerConfigFile(logger *slog.Logger) string {
+	if v := os.Getenv(envConfigFile); v != "" {
+		return v
 	}
+	if v := os.Getenv(envConfigFileDeprecated); v != "" {
+		config.WarnDeprecated(logger, envConfigFileDeprecated, envConfigFile)
+		return v
+	}
+	return defaultConfigFile
+}
 
-	config, err := readInYmlConfig(configPath)
+func readControllerConfig(logger *slog.Logger) *controllerConfig {
+	configPath := resolveControllerConfigFile(logger)
+
+	cfg, err := readInYmlConfig(configPath)
 	if err != nil {
-		logger.Fatalf("Failed to read config file %s: %v\n", configPath, err)
+		logger.Error("failed to read config file", "path", configPath, "error", err)
+		os.Exit(1)
 	}
 
 	// Apply defaults for optional fields before validation/logging.
 	// A zero value means "not configured"; a negative value is an explicit opt-out (unlimited).
-	if config.MaxConcurrentJobs == 0 {
-		config.MaxConcurrentJobs = k8sjob.DefaultMaxConcurrentJobs
+	if cfg.MaxConcurrentJobs == 0 {
+		cfg.MaxConcurrentJobs = k8sjob.DefaultMaxConcurrentJobs
 	}
 
 	// Environment overrides take precedence over the config file.
-	applyApiKeyEnvOverrides(config, logger)
+	applyApiKeyEnvOverrides(cfg, logger)
 
-	if err := validateControllerConfig(config); err != nil {
-		logger.Fatalf("Invalid configuration: %v\n", err)
+	if err := validateControllerConfig(cfg); err != nil {
+		logger.Error("invalid configuration", "error", err)
+		os.Exit(1)
 	}
 
-	logControllerConfig(logger, config)
+	logControllerConfig(logger, cfg)
 
-	return config
+	return cfg
 }
 
 // applyApiKeyEnvOverrides applies the standard RUNNER_API_CLIENT_ID / RUNNER_API_CLIENT_SECRET
@@ -105,23 +129,24 @@ func readControllerConfig(logger *log.Logger) *controllerConfig {
 //
 // API key auth takes precedence over basic auth (see apiConfig.NewAuthProvider), so supplying these
 // is sufficient to authenticate even when the config file still carries username/password.
-func applyApiKeyEnvOverrides(config *controllerConfig, logger *log.Logger) {
+func applyApiKeyEnvOverrides(cfg *controllerConfig, logger *slog.Logger) {
 	clientId := os.Getenv(envApiClientId)
 	clientSecret := os.Getenv(envApiClientSecret)
 
 	// API key auth needs both halves; supplying only one via the environment is almost always a
 	// mistake (e.g. a typo'd secret name in the deployment), so warn loudly.
 	if (clientId != "") != (clientSecret != "") {
-		logger.Printf("Warning: only one of %s / %s is set in the environment; API key auth requires both. This is most likely a mistake.\n", envApiClientId, envApiClientSecret)
+		logger.Warn("only one of the API key env vars is set; API key auth requires both -- this is most likely a mistake",
+			"clientIdVar", envApiClientId, "clientSecretVar", envApiClientSecret)
 	}
 
 	if clientId != "" {
-		logger.Printf("Using %s from environment\n", envApiClientId)
-		config.Api.ClientId = clientId
+		logger.Info("using API client id from environment", "var", envApiClientId)
+		cfg.Api.ClientId = clientId
 	}
 	if clientSecret != "" {
-		logger.Printf("Using %s from environment\n", envApiClientSecret)
-		config.Api.ClientSecret = clientSecret
+		logger.Info("using API client secret from environment", "var", envApiClientSecret)
+		cfg.Api.ClientSecret = clientSecret
 	}
 }
 
@@ -182,36 +207,35 @@ func validateControllerConfig(config *controllerConfig) error {
 	return nil
 }
 
-// logControllerConfig logs the startup configuration.
-func logControllerConfig(logger *log.Logger, config *controllerConfig) {
-	logger.Println("--------------------------------------------------------------------")
-	logger.Printf("Kubernetes namespace: %s\n", config.Namespace)
-	if len(config.ImagePullSecrets) > 0 {
-		logger.Printf("Image pull secrets: %v\n", config.ImagePullSecrets)
+// logControllerConfig logs the startup configuration as one structured record plus one line
+// per configured implementation (slog, §8: the former [RUN CONTROLLER] banner is retired in
+// favor of the persona attribute carried by the injected logger).
+func logControllerConfig(logger *slog.Logger, cfg *controllerConfig) {
+	maxConcurrent := "unlimited"
+	if cfg.MaxConcurrentJobs >= 0 {
+		maxConcurrent = fmt.Sprintf("%d", cfg.MaxConcurrentJobs)
 	}
 
+	attrs := []any{
+		"namespace", cfg.Namespace,
+		"uuid", cfg.Uuid,
+		"maxConcurrentJobs", maxConcurrent,
+		"implementations", len(cfg.Implementations),
+	}
+	if len(cfg.ImagePullSecrets) > 0 {
+		attrs = append(attrs, "imagePullSecrets", cfg.ImagePullSecrets)
+	}
 	if UseTestClient {
-		logger.Printf("(!) Test mode enabled - not connecting to API\n")
+		attrs = append(attrs, "testMode", true)
 	} else {
-		logger.Printf("API URL: %s\n", config.Api.Url)
-		logger.Printf("API Username: %s\n", config.Api.Username)
+		attrs = append(attrs, "apiUrl", cfg.Api.Url, "apiUsername", cfg.Api.Username)
 	}
+	logger.Info("controller configuration", attrs...)
 
-	logger.Printf("Controller UUID: %s\n", config.Uuid)
-	if config.MaxConcurrentJobs < 0 {
-		logger.Printf("Max concurrent jobs: unlimited\n")
-	} else {
-		logger.Printf("Max concurrent jobs: %d\n", config.MaxConcurrentJobs)
+	for implType, spec := range cfg.Implementations {
+		logger.Info("implementation configured",
+			"type", implType, "image", spec.Image, "customEnvVars", len(spec.Env))
 	}
-	logger.Printf("Configured implementations: %d\n", len(config.Implementations))
-	for implType, spec := range config.Implementations {
-		logger.Printf("  %s: image=%s", implType, spec.Image)
-		if len(spec.Env) > 0 {
-			logger.Printf(" (%d custom env vars)", len(spec.Env))
-		}
-		logger.Println()
-	}
-	logger.Println("--------------------------------------------------------------------")
 }
 
 func readInYmlConfig(file string) (*controllerConfig, error) {

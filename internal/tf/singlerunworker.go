@@ -3,7 +3,7 @@ package tf
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path"
 	"sync"
@@ -17,13 +17,13 @@ type SingleRunWorker struct {
 	timeout              time.Duration
 	runApi               RunApi
 	tfBinaries           *TfBinaries
-	log                  *log.Logger
+	log                  *slog.Logger
 	statusUpdateInterval time.Duration
 	dec                  Decryptor
 }
 
 // NewSingleRunWorker creates a new single-run worker.
-func NewSingleRunWorker(logger *log.Logger, workerDir string, timeoutMins int, tfbin *TfBinaries, dec Decryptor) *SingleRunWorker {
+func NewSingleRunWorker(logger *slog.Logger, workerDir string, timeoutMins int, tfbin *TfBinaries, dec Decryptor) *SingleRunWorker {
 	return &SingleRunWorker{
 		workerDir:            workerDir,
 		timeout:              time.Minute * time.Duration(timeoutMins),
@@ -37,7 +37,7 @@ func NewSingleRunWorker(logger *log.Logger, workerDir string, timeoutMins int, t
 
 // NewSingleRunWorkerWithApi creates a new single-run worker with a provided API client
 // This is used in Kubernetes mode where the API client needs the runToken from the run spec.
-func NewSingleRunWorkerWithApi(logger *log.Logger, workerDir string, timeoutMins int, tfbin *TfBinaries, api RunApi, dec Decryptor) *SingleRunWorker {
+func NewSingleRunWorkerWithApi(logger *slog.Logger, workerDir string, timeoutMins int, tfbin *TfBinaries, api RunApi, dec Decryptor) *SingleRunWorker {
 	return &SingleRunWorker{
 		workerDir:            workerDir,
 		timeout:              time.Minute * time.Duration(timeoutMins),
@@ -51,7 +51,7 @@ func NewSingleRunWorkerWithApi(logger *log.Logger, workerDir string, timeoutMins
 
 // ExecuteRun executes a single run.
 func (w *SingleRunWorker) ExecuteRun(run *Run) error {
-	w.log.Printf("Start execution of run %s: %s %s\n", run.Id, run.Behavior.str(), run.BuildingBlockName)
+	w.log.Info("Start execution of run", "run", run.Id, "behavior", run.Behavior.str(), "buildingBlock", run.BuildingBlockName)
 
 	// Ensure working directory exists, this is required otherwise we cannot create temp dirs inside it
 	if err := os.MkdirAll(w.workerDir, 0777); err != nil {
@@ -73,7 +73,7 @@ func (w *SingleRunWorker) ExecuteRun(run *Run) error {
 
 	defer func() { _ = os.RemoveAll(cmdDir) }()
 
-	runContextInfo, err := initRunContextInfo(run, w.log.Prefix(), w.log.Writer(), cmdDir)
+	runContextInfo, err := initRunContextInfo(run, w.log, cmdDir)
 	if err != nil {
 		w.sendInitFail(run)
 		return fmt.Errorf("failed to initialize run context: %w", err)
@@ -104,7 +104,7 @@ func (w *SingleRunWorker) ExecuteRun(run *Run) error {
 
 	wg.Wait()
 
-	w.log.Printf("Finished execution of %s run %s: %s\n", run.Behavior.str(), run.Id, run.BuildingBlockName)
+	w.log.Info("Finished execution of run", "behavior", run.Behavior.str(), "run", run.Id, "buildingBlock", run.BuildingBlockName)
 
 	if registerErr != nil {
 		return fmt.Errorf("failed to register as a source for run %s: %w", run.Id, registerErr)
@@ -187,14 +187,14 @@ func (w *SingleRunWorker) observerRoutine(ctx context.Context, cancel context.Ca
 			}
 			reportStatus.Status = finalStatus
 
-			w.log.Printf("Sending final status update for run %s: %s", runContextInfo.runId, finalStatus.str())
+			w.log.Info("Sending final status update", "run", runContextInfo.runId, "status", finalStatus.str())
 			_, err := w.runApi.UpdateState(&reportStatus)
 
 			if err != nil {
-				w.log.Printf("ERROR: Failed to send final status for run %s: %v", runContextInfo.runId, err)
+				w.log.Error("Failed to send final status", "run", runContextInfo.runId, "error", err)
 				runContextInfo.logwrap.PrintlnToLocalLogs(fmt.Sprintf("Failed to set final state: %s\n", err.Error()))
 			} else {
-				w.log.Printf("Successfully sent final status for run %s: %s", runContextInfo.runId, finalStatus.str())
+				w.log.Info("Successfully sent final status", "run", runContextInfo.runId, "status", finalStatus.str())
 			}
 
 			return
@@ -210,7 +210,7 @@ func (w *SingleRunWorker) observerRoutine(ctx context.Context, cancel context.Ca
 
 				// in case the run should be aborted, cancel the work context
 				if abort {
-					w.log.Printf("Received flag to abort run. Cancelling run context.")
+					w.log.Info("Received flag to abort run. Cancelling run context.")
 					cancel()
 					ticker.Stop()
 				}
@@ -230,6 +230,6 @@ func (w *SingleRunWorker) sendInitFail(run *Run) {
 		},
 	)
 	if err != nil {
-		w.log.Printf("Failed to update initial state: %s\n", err.Error())
+		w.log.Error("Failed to update initial state", "error", err)
 	}
 }

@@ -60,12 +60,15 @@ func LoadConfig(log *slog.Logger, buildVersion string, singleRun bool) (Config, 
 	// configure the persona, §6.4); PrivateKey/PrivateKeyFile are read directly off the
 	// block (BlockRunnerCompat.ApplyShared only normalizes the cross-persona fields).
 	cfg.BlockRunner.ApplyShared(log, &cfg.Uuid, &cfg.Version, &cfg.Api)
+	if cfg.BlockRunner.DebugMode != nil {
+		log.Warn("ignoring manual-only blockrunner.debugMode key for the azdevops runner", "key", "blockrunner.debugMode")
+	}
 	if cfg.BlockRunner.PrivateKey != "" {
-		log.Warn("using deprecated blockrunner: yaml key; prefer the flat config key", "key", "blockrunner.privateKey")
+		config.WarnDeprecated(log, "blockrunner.privateKey", "privateKey")
 		cfg.PrivateKey = cfg.BlockRunner.PrivateKey
 	}
 	if cfg.BlockRunner.PrivateKeyFile != "" {
-		log.Warn("using deprecated blockrunner: yaml key; prefer the flat config key", "key", "blockrunner.privateKeyFile")
+		config.WarnDeprecated(log, "blockrunner.privateKeyFile", "privateKeyFile or RUNNER_PRIVATE_KEY_FILE")
 		cfg.PrivateKeyFile = cfg.BlockRunner.PrivateKeyFile
 	}
 
@@ -73,7 +76,7 @@ func LoadConfig(log *slog.Logger, buildVersion string, singleRun bool) (Config, 
 	// relaxed-binding variants are honored.
 	loader.Env(log,
 		config.EnvBinding{Var: "RUNNER_UUID", Target: &cfg.Uuid},
-		config.EnvBinding{Var: "VERSION", Target: &cfg.Version},
+		config.EnvBinding{Var: "VERSION", Target: &cfg.Version, Deprecated: true, Canonical: "the compiled-in build version (ldflags)"},
 		config.EnvBinding{Var: "RUNNER_API_URL", Target: &cfg.Api.Url},
 		config.EnvBinding{Var: "RUNNER_API_USERNAME", Target: &cfg.Api.Username},
 		config.EnvBinding{Var: "RUNNER_API_PASSWORD", Target: &cfg.Api.Password},

@@ -3,7 +3,7 @@ package tf
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path"
 	"strings"
@@ -21,7 +21,7 @@ type Worker struct {
 	workerOut            chan workerToken
 	runApi               RunApi
 	tfBinaries           *TfBinaries
-	log                  *log.Logger
+	log                  *slog.Logger
 	statusUpdateInterval time.Duration
 	dec                  Decryptor
 	// meter receives the D12 generic standalone-runner metrics (§4.3). A nil meter (the
@@ -41,7 +41,7 @@ func (w *Worker) meterOrNoop() Meter {
 }
 
 func (w *Worker) work() {
-	w.log.Println("Started")
+	w.log.Info("Started")
 
 	handleWork := true
 
@@ -50,7 +50,7 @@ func (w *Worker) work() {
 		switch token {
 
 		case stop:
-			w.log.Println("Stopped")
+			w.log.Info("Stopped")
 			w.workerOut <- stopped
 			handleWork = false
 
@@ -78,10 +78,10 @@ func (w *Worker) handleFetchRunError(err error) {
 		case he.IsNotFound():
 			w.workerOut <- norun
 		case he.IsConflict():
-			w.log.Printf("Conflict at coordinator-api.")
+			w.log.Info("Conflict at coordinator-api.")
 			w.workerOut <- norun
 		default:
-			w.log.Printf("unexpected error: %s\n", err.Error())
+			w.log.Error("unexpected error fetching run", "error", err)
 			w.meterOrNoop().PollError()
 			w.workerOut <- failed
 		}
@@ -92,7 +92,7 @@ func (w *Worker) handleFetchRunError(err error) {
 		if strings.Contains(err.Error(), "transport connection broken: too many transfer encodings: [\"chunked\" \"chunked\"]") {
 			w.workerOut <- norun
 		} else {
-			w.log.Printf("unexpected error: %s\n", err.Error())
+			w.log.Error("unexpected error fetching run", "error", err)
 			w.meterOrNoop().PollError()
 			w.workerOut <- failed
 		}
@@ -100,7 +100,7 @@ func (w *Worker) handleFetchRunError(err error) {
 }
 
 func (w *Worker) tfExecution(run *Run) {
-	w.log.Printf("Start execution of run %s: %s %s\n", run.Id, run.Behavior.str(), run.BuildingBlockName)
+	w.log.Info("Start execution of run", "run", run.Id, "behavior", run.Behavior.str(), "buildingBlock", run.BuildingBlockName)
 	claimedAt := time.Now()
 
 	// provide wd for this run
@@ -120,9 +120,9 @@ func (w *Worker) tfExecution(run *Run) {
 
 	defer func() { _ = os.RemoveAll(cmdDir) }()
 
-	runContextInfo, err := initRunContextInfo(run, w.log.Prefix(), w.log.Writer(), cmdDir)
+	runContextInfo, err := initRunContextInfo(run, w.log, cmdDir)
 	if err != nil {
-		w.log.Printf("Failed to initialize run context: %s\n", err.Error())
+		w.log.Error("Failed to initialize run context", "error", err)
 		w.sendInitFail(run)
 		w.meterOrNoop().RunFailed(time.Since(claimedAt))
 		return
@@ -158,8 +158,8 @@ func (w *Worker) tfExecution(run *Run) {
 		w.meterOrNoop().RunFailed(time.Since(claimedAt))
 	}
 
-	w.log.Printf("Finished execution of %s run %s: %s\n", run.Behavior.str(), run.Id, run.BuildingBlockName)
-	w.log.Println("-----")
+	w.log.Info("Finished execution of run", "behavior", run.Behavior.str(), "run", run.Id, "buildingBlock", run.BuildingBlockName)
+	w.log.Info("-----")
 }
 
 // this starts the actual tf command execution.
@@ -241,14 +241,14 @@ func (w *Worker) observerRoutine(ctx context.Context, cancel context.CancelFunc,
 			reportStatus.Status = finalStatus
 
 			// For the final update we do not care about the 'abort-run' flag
-			w.log.Printf("Sending final status update for run %s: %s", runContextInfo.runId, finalStatus.str())
+			w.log.Info("Sending final status update", "run", runContextInfo.runId, "status", finalStatus.str())
 			_, err := w.runApi.UpdateState(&reportStatus)
 
 			if err != nil {
-				w.log.Printf("ERROR: Failed to send final status for run %s: %v", runContextInfo.runId, err)
+				w.log.Error("Failed to send final status", "run", runContextInfo.runId, "error", err)
 				runContextInfo.logwrap.PrintlnToLocalLogs(fmt.Sprintf("Failed to set final state: %s\n", err.Error()))
 			} else {
-				w.log.Printf("Successfully sent final status for run %s: %s", runContextInfo.runId, finalStatus.str())
+				w.log.Info("Successfully sent final status", "run", runContextInfo.runId, "status", finalStatus.str())
 			}
 
 			return
@@ -267,7 +267,7 @@ func (w *Worker) observerRoutine(ctx context.Context, cancel context.CancelFunc,
 				// in case the run should be aborted, we cancel the work context,
 				// so that all tf commands will get the signal
 				if abort {
-					w.log.Printf("Received flag to abort run. Cancelling run context.")
+					w.log.Info("Received flag to abort run. Cancelling run context.")
 					cancel()
 					ticker.Stop()
 				}
@@ -287,7 +287,7 @@ func (w *Worker) sendInitFail(run *Run) {
 		},
 	)
 	if err != nil {
-		w.log.Printf("Failed to update initial state: %s\n", err.Error())
+		w.log.Error("Failed to update initial state", "error", err)
 	}
 }
 

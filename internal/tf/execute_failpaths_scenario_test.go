@@ -6,7 +6,7 @@ package tf
 
 import (
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"testing"
@@ -67,7 +67,7 @@ func Test_BuildTfEnv_SshSourceSetsGitSshCommand(t *testing.T) {
 	t.Cleanup(func() { AppConfig.SkipHostKeyValidation = prev })
 
 	wd := t.TempDir()
-	lw, err := NewLogWrap(log.New(io.Discard, "", 0), filepath.Join(wd, "log.txt"))
+	lw, err := NewLogWrap(slog.New(slog.NewTextHandler(io.Discard, nil)), filepath.Join(wd, "log.txt"))
 	require.NoError(t, err)
 	rci := &RunContextInfo{workingDirectory: wd, logwrap: lw}
 	tfcmd := &GenericTfCmd{

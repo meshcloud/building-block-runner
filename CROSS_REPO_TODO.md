@@ -90,9 +90,17 @@ so anything that pattern-matches the process command line needs updating too.
     shipped alongside the Dockerfile, deep-merged with the shared base
     `containers/runner-config.yml` per plan 03 §5.3/plan 04 §4.4) instead of the old
     `tf-block-runner/runner-config.yml` module-relative path.
-  - **Line 104** (readiness table) — no command/path change; just re-verify after editing
-    that the `[TF RUNNER]` log-line prefix still appears (it does — the persona keeps its
-    logger prefix regardless of how it's launched, plan 04 §4.1).
+  - **Line 104** (readiness table) — **CHANGED by the phase-7 slog migration
+    (plan 07 §8 / L22).** The tf persona no longer prints the `[TF RUNNER]` `log.Logger`
+    prefix; it now emits `log/slog` text-handler lines on stdout carrying a
+    `persona=tf-block-runner` attribute (e.g.
+    `time=... level=INFO msg="Running in polling mode" persona=tf-block-runner`). The
+    readiness marker must key on `persona=tf-block-runner` (or the stable message
+    `msg="Running in polling mode"`) instead of the old `[TF RUNNER]` prefix. Log format
+    was never a wire contract (umbrella §8), but the local-dev-stack readiness detection
+    is, hence this mandatory lock-step edit. Same applies to any per-run/worker line: the
+    former `[WORKER-nnn]`/`[behavior] [runId]` prefixes are now `worker=`, `behavior=`,
+    `run=` attributes.
   - **Manual-runner block, lines 64–71 (gradle):** leave untouched — that persona doesn't
     move until phase 6.
 - **No edit needed** (verified, listed for completeness): `meshfed-release` acceptance

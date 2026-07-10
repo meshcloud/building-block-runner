@@ -16,129 +16,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  jvm-runners-ci:
-    name: ${{ matrix.name }} - check
+  # Go-only CI (D14 — the JVM/Gradle legs die here with the last Kotlin module removed in
+  # this same phase): golangci-lint runs as its own job so it can gate independently of
+  # `test` (both are prerequisites of `images`, run in parallel, no `needs:` between them).
+  lint:
+    name: Go - lint
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: block-runner-core
-            gradle-task: :block-runner-core:check
-          - name: manual-block-runner
-            gradle-task: :manual-block-runner:check
-          - name: github-block-runner
-            gradle-task: :github-block-runner:check
-          - name: gitlab-block-runner
-            gradle-task: :gitlab-block-runner:check
-          - name: azure-devops-block-runner
-            gradle-task: :azure-devops-block-runner:check
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Set up Java
-        uses: actions/setup-java@v4
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
-          distribution: temurin
-          java-version: '21'
-          cache: gradle
+          go-version-file: go.mod
+          cache: false
 
-      - name: Run module check
-        run: ./gradlew ${{ matrix.gradle-task }}
-
-  # One job for PRs and main so the matrix always expands (no skipped jobs with unresolved
-  # ${{ matrix.* }} names). PRs only build (never push) to validate the Dockerfile; main pushes the
-  # floating :main tag. The git-describe version is baked into every build via the VERSION build-arg;
-  # the release workflow owns the immutable :<version> + :latest tags.
-  jvm-runners-image:
-    name: ${{ matrix.image }} - image
-    runs-on: ubuntu-latest
-    needs: jvm-runners-ci
-    permissions:
-      contents: read
-      packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - image: manual-block-runner
-            module: manual-block-runner
-          - image: github-block-runner
-            module: github-block-runner
-          - image: gitlab-block-runner
-            module: gitlab-block-runner
-          - image: azure-devops-block-runner
-            module: azure-devops-block-runner
-
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      # Pinned to the exact golangci-lint release the flake/dev-shell ships (nixos-25.11's
+      # golangci-lint, v2.12.2 — PLAN_DETAIL_00 §4) rather than the action's own
+      # `version: latest` + `only-new-issues: true` default: after phases 0-6 the tree is
+      # already clean under this config (`.golangci.yml`), so a full-run/fail-on-any gate
+      # is achievable now and `only-new-issues` would mask a regression on the next PR.
+      # Local (`task lint`) and CI intentionally track the same major/minor; a version bump
+      # here travels with a flake bump, not independently.
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          fetch-depth: 0      # full history + tags so `git describe` can derive the version
-
-      - name: Resolve version and image tags
-        id: meta
-        shell: bash
-        env:
-          IMAGE: ${{ matrix.image }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          # git describe -> e.g. v1.0.0 on a release commit, v1.0.0-10-g6ccdaf8 on commits after it.
-          VERSION="$(git describe --tags --always)"
-          echo "resolved version: ${VERSION}"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-
-          img="${REGISTRY}/${IMAGE_NAMESPACE}/${IMAGE}"
-          hub="${DOCKERHUB_REGISTRY}/${IMAGE_NAMESPACE}/${IMAGE}"
-          {
-            echo "tags<<EOF"
-            if [ "$GITHUB_REF" = "refs/heads/main" ]; then
-              # main pushes the floating :main tag plus the immutable :<sha> tag — meshcloud dev pins
-              # run-controller (and others) to a specific image SHA. The git-describe version is still
-              # baked into the binary via the VERSION build-arg below.
-              echo "${img}:main"
-              echo "${img}:${GITHUB_SHA}"
-              echo "${hub}:main"
-              echo "${hub}:${GITHUB_SHA}"
-            else
-              # PRs build but never push (see `push:` below); a local buildx tag name only.
-              echo "${img}:pr-${PR_NUMBER}"
-            fi
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
-
-      - name: Login to GHCR
-        if: github.repository_owner == 'meshcloud' && github.ref == 'refs/heads/main'
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Login to Docker Hub
-        if: github.repository_owner == 'meshcloud' && github.ref == 'refs/heads/main'
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
-        with:
-          registry: ${{ env.DOCKERHUB_REGISTRY }}
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push JVM runner image
-        if: github.repository_owner == 'meshcloud'
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
-        with:
-          context: .
-          file: containers/jvm.Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.ref == 'refs/heads/main' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          build-args: |
-            RUNNER_MODULE=${{ matrix.module }}
-            VERSION=${{ steps.meta.outputs.version }}
+          version: v2.12.2
 
   # Phase 4 (PLAN_DETAIL_04 §4.5): the three per-module legs (go-meshapi-client,
   # run-controller, tf-block-runner) collapse into one repo-root leg — module
@@ -146,7 +50,7 @@ jobs:
   # `cmd/*` + `internal/*` package, so a matrix no longer discriminates anything real.
   # -race stays on for the whole suite (it covered only the tf leg before; A6 required it
   # stay race-clean, and Taskfile's `task test` already runs the full suite with -race).
-  go-ci:
+  test:
     name: Go - test
     runs-on: ubuntu-latest
     permissions:
@@ -177,13 +81,16 @@ jobs:
           name: coverage
           path: coverage.out
 
-  # One job for PRs and main (see jvm-runners-image for the rationale): the matrix always expands, so
-  # there are no skipped jobs with unresolved ${{ matrix.* }} names. PRs only build (never push);
-  # main pushes the floating :main tag; the git-describe version is baked via -ldflags build.Version.
-  go-runners-image:
+  # One job for PRs and main so the matrix always expands (no skipped jobs with unresolved
+  # ${{ matrix.* }} names). PRs only build (never push) to validate the Dockerfile; main pushes the
+  # floating :main tag. The git-describe version is baked into every build via the VERSION build-arg;
+  # the release workflow owns the immutable :<version> + :latest tags. Six legs — every published
+  # image is now a fit Go binary (D8); the former jvm-runners-image job (containers/jvm.Dockerfile)
+  # is gone with the last Kotlin module.
+  images:
     name: ${{ matrix.app }} - image
     runs-on: ubuntu-latest
-    needs: go-ci
+    needs: [lint, test]
     permissions:
       contents: read
       packages: write
@@ -197,6 +104,16 @@ jobs:
             dockerfile: containers/run-controller/Dockerfile
           - app: tf-block-runner
             dockerfile: containers/tf-block-runner/Dockerfile
+          # manual/gitlab/azure-devops/github: fit Go persona binaries ported in phase 6
+          # (D8) — each links only its own handler, no k8s/go-git/tofu.
+          - app: manual-block-runner
+            dockerfile: containers/manual-block-runner/Dockerfile
+          - app: gitlab-block-runner
+            dockerfile: containers/gitlab-block-runner/Dockerfile
+          - app: azure-devops-block-runner
+            dockerfile: containers/azure-devops-block-runner/Dockerfile
+          - app: github-block-runner
+            dockerfile: containers/github-block-runner/Dockerfile
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2

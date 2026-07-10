@@ -2,18 +2,21 @@ package tf
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 )
 
 type logwrap struct {
-	logger       *log.Logger
+	// logger is process ("local") logging only. The wire-visible update log is written
+	// directly to updateLogger below via fmt.Sprint (never through slog), so migrating this
+	// field to slog cannot alter step SystemMessage bytes (§8.3 SystemMessage hazard).
+	logger       *slog.Logger
 	updateLogger *os.File
 	logSize      int64
 	callback     func()
 }
 
-func NewLogWrap(logger *log.Logger, logsFileName string) (*logwrap, error) {
+func NewLogWrap(logger *slog.Logger, logsFileName string) (*logwrap, error) {
 	outlog, err := os.OpenFile(logsFileName, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("opening update-logs file %q: %w", logsFileName, err)
@@ -40,7 +43,7 @@ func (l *logwrap) Write(p []byte) (int, error) {
 }
 
 func (l *logwrap) PrintlnToLocalLogs(v ...any) {
-	l.logger.Println(v...)
+	l.logger.Info(fmt.Sprint(v...))
 }
 
 func (l *logwrap) PrintlnToUpdateLogs(v ...any) (n int, err error) {

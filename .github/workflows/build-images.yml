@@ -31,18 +31,17 @@ jobs:
             dockerfile: containers/run-controller/Dockerfile
           - app: tf-block-runner
             dockerfile: containers/tf-block-runner/Dockerfile
+          # manual/gitlab/azure-devops/github: fit Go persona binaries ported in phase 6
+          # (D8); the former containers/jvm.Dockerfile + RUNNER_MODULE build-arg legs are
+          # gone with the last Kotlin module (D14).
           - app: manual-block-runner
-            dockerfile: containers/jvm.Dockerfile
-            runner-module: manual-block-runner
+            dockerfile: containers/manual-block-runner/Dockerfile
           - app: github-block-runner
-            dockerfile: containers/jvm.Dockerfile
-            runner-module: github-block-runner
+            dockerfile: containers/github-block-runner/Dockerfile
           - app: gitlab-block-runner
-            dockerfile: containers/jvm.Dockerfile
-            runner-module: gitlab-block-runner
+            dockerfile: containers/gitlab-block-runner/Dockerfile
           - app: azure-devops-block-runner
-            dockerfile: containers/jvm.Dockerfile
-            runner-module: azure-devops-block-runner
+            dockerfile: containers/azure-devops-block-runner/Dockerfile
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -89,4 +88,3 @@ jobs:
             ${{ env.DOCKERHUB_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:latest
           build-args: |
             VERSION=${{ steps.version.outputs.version }}
-            RUNNER_MODULE=${{ matrix.runner-module }}

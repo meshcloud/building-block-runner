@@ -38,9 +38,8 @@ type Dispatcher interface {
 	// Dispatch places run for execution. A non-nil *UnhandledTypeError means no
 	// handler/template exists for run.Type (D5 claim-and-fail-fast) and Loop reports its
 	// Message verbatim; any other non-nil error also fails the run, reported via its
-	// Error() text (dispatcher-authored, e.g. the frozen k8s job-creation messages).
-	// Implementations satisfying SilentDispatchFailure signal a failure that must NOT be
-	// reported back to meshfed at all (the decrypt-failure quirk, §10.2/§16.8).
+	// Error() text (dispatcher-authored, e.g. the frozen k8s job-creation messages, or the
+	// actionable decrypt-failure guidance, L14).
 	Dispatch(run ClaimedRun) error
 }
 
@@ -54,17 +53,6 @@ type UnhandledTypeError struct {
 }
 
 func (e *UnhandledTypeError) Error() string { return e.Message }
-
-// SilentDispatchFailure marks a Dispatch failure that must NOT be reported back to meshfed
-// as a FAILED status -- preserving the controller's pre-existing (D9-pinned, D13-tracked)
-// quirk where a claimed run with an undecryptable payload is silently left for the
-// coordinator's own timeout rather than actively failed (today: controller.go:180-184;
-// kept bit-for-bit, see PLAN_DETAIL_05_dispatcher.md §16.8). The marker method (rather than
-// a bare `error` interface) keeps this from structurally matching unrelated error types.
-type SilentDispatchFailure interface {
-	error
-	SilentDispatchFailure()
-}
 
 // ClaimOutcome classifies a claim (fetch) failure so Loop knows whether to log it and how
 // long to back off before claiming again.

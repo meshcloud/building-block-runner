@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,7 +34,7 @@ func makePreRunScriptTfCmd(t *testing.T, preRunScript *string, downloadTfBinarie
 	systemLogFileName := systemLogFile.Name()
 	_ = systemLogFile.Close()
 
-	lw, err := NewLogWrap(log.New(io.Discard, "[test] ", log.LstdFlags), systemLogFileName)
+	lw, err := NewLogWrap(slog.New(slog.NewTextHandler(io.Discard, nil)), systemLogFileName)
 	require.NoError(t, err)
 
 	// pick outdated tofu version intentionally as running tests locally might have newer Tofu version in PATH system-installed

@@ -9,7 +9,8 @@ package tf
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -43,7 +44,7 @@ func writeConfigFile(t *testing.T, yaml string) string {
 	return path
 }
 
-func discardLogger() *log.Logger { return log.New(os.NewFile(0, os.DevNull), "", 0) }
+func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 
 func Test_ReadConfig_FileOnly(t *testing.T) {
 	withSavedAppConfig(t)

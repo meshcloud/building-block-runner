@@ -1,3 +1,11 @@
+//go:build e2e
+
+// Test_GetTF drives the real tofu/terraform binary download (hc-install / opentofu releases)
+// over the network -- the only non-hermetic test left after phase 1 made everything else use
+// mocks or local testdata (PLAN_DETAIL_07 §5.4 / L3). It is gated behind the `e2e` build tag so
+// the default `task test` (and every PR CI run) stays offline and fast; run it via
+// `task test:e2e` or the opt-in e2e.yml workflow. tfbinaries.go is on the coverage exclusion
+// list (A4), so gating this file does not move the coverage-gate denominator.
 package tf
 
 import (

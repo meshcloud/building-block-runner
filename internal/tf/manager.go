@@ -1,8 +1,7 @@
 package tf
 
 import (
-	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -31,7 +30,7 @@ type DefaultRunManager struct {
 	// must be atomic (B6 fix — the former plain bool was a data race).
 	shutdownCalled atomic.Bool
 	tfbinaries     *TfBinaries
-	logger         *log.Logger
+	logger         *slog.Logger
 	dec            Decryptor
 	meter          Meter
 }
@@ -43,23 +42,24 @@ type RunManager interface {
 
 // NewManager wires the polling run manager. meter receives the D12 generic
 // standalone-runner metrics (§4.3); pass NoopMeter{} where no *mgmt.RunMetrics is
-// available (e.g. a caller that has not wired D12 yet).
-func NewManager(tfbin *TfBinaries, dec Decryptor, meter Meter) RunManager {
+// available (e.g. a caller that has not wired D12 yet). logger is the persona logger,
+// injected (P3) so worker/run-scoped children carry the persona attribute (§8.1).
+func NewManager(tfbin *TfBinaries, dec Decryptor, meter Meter, logger *slog.Logger) RunManager {
 	return &DefaultRunManager{
 		defaultTimeout: time.Minute * time.Duration(AppConfig.TfCommandTimeoutMins),
 		workerIn:       make(chan workerToken, 1),
 		managerIn:      make(chan workerToken, 1),
 		tfbinaries:     tfbin,
-		logger:         log.New(os.Stdout, "[RunManager] ", log.LstdFlags),
+		logger:         logger.With("component", "runManager"),
 		dec:            dec,
 		meter:          meter,
 	}
 }
 
 func (rm *DefaultRunManager) Start(wg *sync.WaitGroup) {
-	rm.logger.Println("Started")
+	rm.logger.Info("Started")
 	if err := os.MkdirAll(AppConfig.TfParentWorkingDir, 0777); err != nil {
-		rm.logger.Printf("failed to create working directory %q: %s", AppConfig.TfParentWorkingDir, err.Error())
+		rm.logger.Error("failed to create working directory", "dir", AppConfig.TfParentWorkingDir, "error", err)
 	}
 	go func() {
 		defer wg.Done()
@@ -82,7 +82,7 @@ func (rm *DefaultRunManager) run(timeout time.Duration) {
 			workerOut:            rm.managerIn,
 			runApi:               NewRunApi(rm.dec),
 			tfBinaries:           rm.tfbinaries,
-			log:                  log.New(os.Stdout, fmt.Sprintf("[WORKER-%03d] ", i+1), log.LstdFlags),
+			log:                  rm.logger.With("worker", i+1),
 			statusUpdateInterval: time.Second * 10,
 			dec:                  rm.dec,
 			meter:                rm.meter,
@@ -126,7 +126,7 @@ func (rm *DefaultRunManager) handleWorkers() {
 		}
 	}
 
-	rm.logger.Println("Stopped")
+	rm.logger.Info("Stopped")
 }
 
 func (rm *DefaultRunManager) handoutWorkerToken(delay time.Duration) {
@@ -144,5 +144,5 @@ func (rm *DefaultRunManager) handoutWorkerToken(delay time.Duration) {
 
 func (rm *DefaultRunManager) Stop() {
 	rm.shutdownCalled.Store(true)
-	rm.logger.Println("Shutdown initialized")
+	rm.logger.Info("Shutdown initialized")
 }

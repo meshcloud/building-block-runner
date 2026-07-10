@@ -44,7 +44,7 @@ func ManagementPort(log *slog.Logger, def Port, aliases ...EnvAlias) (Port, erro
 			continue
 		}
 		if alias.Deprecated {
-			log.Warn("using deprecated env var for the management port; prefer MANAGEMENT_PORT", "var", alias.Var)
+			WarnDeprecated(log, alias.Var, managementPortEnv)
 		}
 		port, err := parsePort(v)
 		if err != nil {

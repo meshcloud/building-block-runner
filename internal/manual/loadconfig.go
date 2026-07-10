@@ -58,15 +58,24 @@ func LoadConfig(log *slog.Logger, buildVersion string, singleRun bool) (Config, 
 	// the persona); DebugMode is the manual-only key read directly off the block.
 	cfg.BlockRunner.ApplyShared(log, &cfg.Uuid, &cfg.Version, &cfg.Api)
 	if cfg.BlockRunner.DebugMode != nil {
-		log.Warn("using deprecated blockrunner: yaml key; prefer the flat config key", "key", "blockrunner.debugMode")
+		config.WarnDeprecated(log, "blockrunner.debugMode", "debugMode")
 		cfg.DebugMode = *cfg.BlockRunner.DebugMode
+	}
+	// manual decrypts nothing, so a mounted Kotlin-era key is inert here -- warn-and-ignore
+	// (mirrors github's blockrunner.debugMode handling) rather than silently dropping it,
+	// so an operator relying on the key for a *different* persona in the same file notices.
+	if cfg.BlockRunner.PrivateKey != "" {
+		log.Warn("ignoring blockrunner.privateKey key for the manual runner; the manual runner never decrypts", "key", "blockrunner.privateKey")
+	}
+	if cfg.BlockRunner.PrivateKeyFile != "" {
+		log.Warn("ignoring blockrunner.privateKeyFile key for the manual runner; the manual runner never decrypts", "key", "blockrunner.privateKeyFile")
 	}
 
 	// Env bindings win last (D7). Names are the literal shipped spellings (§6.2); no Spring
 	// relaxed-binding variants are honored.
 	loader.Env(log,
 		config.EnvBinding{Var: "RUNNER_UUID", Target: &cfg.Uuid},
-		config.EnvBinding{Var: "VERSION", Target: &cfg.Version},
+		config.EnvBinding{Var: "VERSION", Target: &cfg.Version, Deprecated: true, Canonical: "the compiled-in build version (ldflags)"},
 		config.EnvBinding{Var: "RUNNER_API_URL", Target: &cfg.Api.Url},
 		config.EnvBinding{Var: "RUNNER_API_USERNAME", Target: &cfg.Api.Username},
 		config.EnvBinding{Var: "RUNNER_API_PASSWORD", Target: &cfg.Api.Password},

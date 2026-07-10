@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -101,7 +101,9 @@ func (a *ApiKeyAuth) AuthHeader() string {
 	}
 
 	if err := a.fetchToken(); err != nil {
-		log.Printf("[ApiKeyAuth] failed to fetch access token: %v", err)
+		// Deep transport-level path with no injected logger (mirrors runapi.go's slog.Default
+		// use, §8): the failure is surfaced as an empty header the caller treats as unauthorized.
+		slog.Error("failed to fetch access token", "component", "ApiKeyAuth", "error", err)
 		return ""
 	}
 	return "Bearer " + a.token
@@ -131,7 +133,7 @@ func (a *ApiKeyAuth) fetchToken() error {
 	if err != nil {
 		return fmt.Errorf("execute login request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)

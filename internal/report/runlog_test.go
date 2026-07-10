@@ -15,7 +15,7 @@ func TestNewRunLog_OpensFile(t *testing.T) {
 
 	l, err := NewRunLog(nil, path)
 	require.NoError(t, err)
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 
 	assert.FileExists(t, path)
 	assert.Equal(t, int64(0), l.Size())
@@ -36,7 +36,7 @@ func TestRunLog_WriteGrowsSize(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "run.log")
 	l, err := NewRunLog(nil, path)
 	require.NoError(t, err)
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 
 	n, err := l.Write([]byte("hello "))
 	require.NoError(t, err)
@@ -67,7 +67,7 @@ func TestRunLog_OnWrite_InvokedAfterEverySuccessfulWrite(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "run.log")
 	l, err := NewRunLog(nil, path)
 	require.NoError(t, err)
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 
 	calls := 0
 	l.OnWrite(func() { calls++ })
@@ -82,7 +82,7 @@ func TestRunLog_Segment(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "run.log")
 	l, err := NewRunLog(nil, path)
 	require.NoError(t, err)
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 
 	_, _ = l.Write([]byte("step one output\n"))
 	idxAfterStepOne := l.Size()

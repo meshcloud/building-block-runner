@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: run-controller
+  namespace: default
+  labels:
+    app: run-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: run-controller
+  template:
+    metadata:
+      labels:
+        app: run-controller
+    spec:
+      serviceAccountName: run-controller
+      containers:
+        - name: run-controller
+          image: ghcr.io/meshcloud/run-controller:main
+          imagePullPolicy: IfNotPresent
+          # The controller now serves /healthz and /metrics on MANAGEMENT_PORT (default 2112).
+          # Probes are left commented out because enabling them changes the reconcile behavior
+          # of any existing Deployment that was created from this example (a re-apply would add
+          # a restart trigger). Uncomment to opt in.
+          # ports:
+          #   - name: management
+          #     containerPort: 2112
+          # livenessProbe:
+          #   httpGet:
+          #     path: /healthz
+          #     port: management
+          #   initialDelaySeconds: 5
+          #   periodSeconds: 10
+          # readinessProbe:
+          #   httpGet:
+          #     path: /healthz
+          #     port: management
+          #   initialDelaySeconds: 5
+          #   periodSeconds: 10

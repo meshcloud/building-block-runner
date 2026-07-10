@@ -139,22 +139,30 @@ implementations:
   MANUAL:
     image: ghcr.io/meshcloud/manual-block-runner:main
     env:
-      SPRING_PROFILES_ACTIVE: kubernetes
+      # Activates single-run mode. The legacy SPRING_PROFILES_ACTIVE=kubernetes spelling
+      # is still honored (deprecated) -- see docs/DEPRECATIONS.md.
+      EXECUTION_MODE: single-run
 
   GITHUB_WORKFLOW:
     image: ghcr.io/meshcloud/github-block-runner:main
     env:
-      SPRING_PROFILES_ACTIVE: kubernetes
+      # Activates single-run mode. The legacy SPRING_PROFILES_ACTIVE=kubernetes spelling
+      # is still honored (deprecated) -- see docs/DEPRECATIONS.md.
+      EXECUTION_MODE: single-run
 
   GITLAB_PIPELINE:
     image: ghcr.io/meshcloud/gitlab-block-runner:main
     env:
-      SPRING_PROFILES_ACTIVE: kubernetes
+      # Activates single-run mode. The legacy SPRING_PROFILES_ACTIVE=kubernetes spelling
+      # is still honored (deprecated) -- see docs/DEPRECATIONS.md.
+      EXECUTION_MODE: single-run
 
   AZURE_DEVOPS_PIPELINE:
     image: ghcr.io/meshcloud/azure-devops-block-runner:main
     env:
-      SPRING_PROFILES_ACTIVE: kubernetes
+      # Activates single-run mode. The legacy SPRING_PROFILES_ACTIVE=kubernetes spelling
+      # is still honored (deprecated) -- see docs/DEPRECATIONS.md.
+      EXECUTION_MODE: single-run
 
   TERRAFORM:
     image: ghcr.io/meshcloud/tf-block-runner:main

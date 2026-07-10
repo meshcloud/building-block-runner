@@ -16,7 +16,7 @@ package tf
 import (
 	"context"
 	"io"
-	"log"
+	"log/slog"
 	"testing"
 
 	"github.com/hashicorp/terraform-exec/tfexec"
@@ -39,7 +39,7 @@ func newWorkspaceTestCmd(t *testing.T, buildingBlockId, suggestedWorkspace strin
 	mock := &MockedTfFacade{}
 	mock.initMockFuncs()
 
-	lw, err := NewLogWrap(log.New(io.Discard, "[workspace-naming] ", log.LstdFlags), "/dev/null")
+	lw, err := NewLogWrap(slog.New(slog.NewTextHandler(io.Discard, nil)), "/dev/null")
 	require.NoError(t, err)
 
 	cmd := &GenericTfCmd{

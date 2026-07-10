@@ -166,8 +166,12 @@ func readRSAPublicKeyFromString(keyStr []byte) (*rsa.PublicKey, error) {
 		cert, err := x509.ParseCertificate(block)
 		if err != nil {
 			continue
-		} else {
-			return cert.PublicKey.(*rsa.PublicKey), nil
+		}
+		// Checked assertion (forcetypeassert): a non-RSA certificate is skipped rather than
+		// panicking -- callers only ever supply RSA keys, so this preserves behavior for the
+		// real inputs while failing safe (P5) on an unexpected key type.
+		if pub, ok := cert.PublicKey.(*rsa.PublicKey); ok {
+			return pub, nil
 		}
 	}
 	return nil, errors.New("no public key block found")

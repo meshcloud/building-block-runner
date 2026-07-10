@@ -38,8 +38,7 @@ func SingleRunMode(log *slog.Logger) bool {
 	}
 	for _, profile := range strings.Split(os.Getenv(envSpringProfiles), ",") {
 		if strings.TrimSpace(profile) == springProfileKubernetes {
-			log.Warn("using deprecated env var to select single-run mode; prefer EXECUTION_MODE=single-run",
-				"var", envSpringProfiles, "value", springProfileKubernetes)
+			WarnDeprecated(log, envSpringProfiles+"="+springProfileKubernetes, envExecutionMode+"="+executionModeSingleRun)
 			return true
 		}
 	}

@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"log"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -22,13 +21,17 @@ const (
 )
 
 func main() {
-	logger := log.New(os.Stdout, "[TF RUNNER] ", log.LstdFlags)
+	// Persona identity carried as an attribute (§8.1) — replaces the former "[TF RUNNER]"
+	// log prefix; the local-dev-stack readiness marker now keys on persona=tf-block-runner
+	// (cross-repo lock-step, CROSS_REPO_TODO.md).
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil)).With("persona", "tf-block-runner")
 	// Runner identity is now passed per client (meshapi.Identity, §5.2.2); tf.NewRunApi
 	// stamps {"tf-block-runner", build.Version} at client construction.
-	logger.Printf("Build metadata: version=%s", build.Version)
+	logger.Info("Build metadata", "version", build.Version)
 
 	if err := tf.ReadConfig(logger); err != nil {
-		logger.Fatalf("cannot read config: %s", err.Error())
+		logger.Error("cannot read config", "error", err)
+		os.Exit(1)
 	}
 
 	// Check if running in single-run mode
@@ -43,11 +46,12 @@ func main() {
 		var cryptoErr error
 		dec, cryptoErr = tf.NewCertDecryptor(tf.AppConfig.PrivateKey)
 		if cryptoErr != nil {
-			logger.Fatalf("failed to initialize crypto: private key could not be loaded: %s", cryptoErr.Error())
+			logger.Error("failed to initialize crypto: private key could not be loaded", "error", cryptoErr)
+			os.Exit(1)
 		}
-		logger.Println("Crypto initialized for polling mode")
+		logger.Info("Crypto initialized for polling mode")
 	} else if singleRunMode {
-		logger.Println("Single-run mode: skipping crypto initialization (controller handles decryption)")
+		logger.Info("Single-run mode: skipping crypto initialization (controller handles decryption)")
 	}
 
 	// define tf binary provider
@@ -58,33 +62,35 @@ func main() {
 
 	// Check if running in single-run mode
 	if singleRunMode {
-		logger.Println("Running in single-run mode")
+		logger.Info("Running in single-run mode")
 		os.Exit(executeSingleRun(logger, tfBinaryProvider, dec))
 	}
 
 	// Standard polling mode
-	logger.Println("Running in polling mode")
+	logger.Info("Running in polling mode")
 
 	// D12 (§4.3): one listener serves /healthz + /metrics on MANAGEMENT_PORT, with PORT kept
 	// working as a deprecated tf-persona alias (D10 -- the image's ENV PORT=8080 must resolve
 	// unchanged). tf has no pre-existing default-registry metrics of its own, so it gets a
 	// fresh registry (mgmt.NewRegistry) instead of reaching for the global one.
-	mgmtLog := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	mgmtLog := logger.With("component", "mgmt")
 	mgmtPort, err := config.ManagementPort(mgmtLog, 8100, config.EnvAlias{Var: "PORT", Deprecated: true})
 	if err != nil {
-		logger.Fatalf("invalid management port configuration: %s", err.Error())
+		logger.Error("invalid management port configuration", "error", err)
+		os.Exit(1)
 	}
 	reg := mgmt.NewRegistry()
 	meter := mgmt.NewRunMetrics(reg, tf.AppConfig.RunnerUuid)
 	if err := mgmt.NewServer(mgmtLog, mgmtPort.Addr(), reg).Start(); err != nil {
-		logger.Fatalf("%s", err.Error())
+		logger.Error("management server failed to start", "error", err)
+		os.Exit(1)
 	}
 
 	var wg sync.WaitGroup
 	wg.Add(1)
 
 	// start run manager with workers
-	runManager := tf.NewManager(tfBinaryProvider, dec, meter)
+	runManager := tf.NewManager(tfBinaryProvider, dec, meter, logger)
 	runManager.Start(&wg)
 
 	// listen for os signals to be able to shutdown gracefully
@@ -117,41 +123,41 @@ func isSingleRunMode() bool {
 // make k8s re-run a failed terraform run once — a second, automatic APPLY/DESTROY against
 // real infrastructure. Re-triggering stateful terraform must stay a deliberate user action, so
 // only the pre-flight failure class (which never touched terraform) exits non-zero here.
-func executeSingleRun(logger *log.Logger, tfBinaryProvider *tf.TfBinaries, dec tf.Decryptor) int {
+func executeSingleRun(logger *slog.Logger, tfBinaryProvider *tf.TfBinaries, dec tf.Decryptor) int {
 	// Read RUN_JSON_FILE_PATH from environment - extract the file path of the K8S secret file that is mounted
 	runJsonFilePath := os.Getenv(ENV_RUN_JSON_FILE_PATH)
 	if runJsonFilePath == "" {
-		logger.Println("RUN_JSON_FILE_PATH environment variable is required in single-run mode")
+		logger.Error("RUN_JSON_FILE_PATH environment variable is required in single-run mode")
 		return 1
 	}
 
 	// Read JSON from file
 	runJsonBytes, err := os.ReadFile(runJsonFilePath)
 	if err != nil {
-		logger.Printf("Failed to read run JSON file from %s: %v", runJsonFilePath, err)
+		logger.Error("Failed to read run JSON file", "path", runJsonFilePath, "error", err)
 		return 1
 	}
 
 	// Parse JSON into RunDetailsDTO
 	var runDetails meshapi.RunDetailsDTO
 	if err := json.Unmarshal(runJsonBytes, &runDetails); err != nil {
-		logger.Printf("Failed to parse run JSON: %v", err)
+		logger.Error("Failed to parse run JSON", "error", err)
 		return 1
 	}
 
 	// Convert to internal Run structure (without decryption)
 	run, err := tf.ToInternalWithoutDecryption(&runDetails, dec)
 	if err != nil {
-		logger.Printf("Failed to convert run details: %v", err)
+		logger.Error("Failed to convert run details", "error", err)
 		return 1
 	}
 
-	logger.Printf("Executing single run: %s - %s", run.Id, run.BuildingBlockName)
+	logger.Info("Executing single run", "run", run.Id, "buildingBlock", run.BuildingBlockName)
 
 	// Create API client and set the runToken from the run spec
 	// In Kubernetes mode, the runToken is used for authentication instead of basic auth
 	api := tf.NewRunApi(dec)
-	logger.Println("Using runToken from run spec for authentication")
+	logger.Info("Using runToken from run spec for authentication")
 	api.SetRunToken(runDetails.Spec.RunToken)
 
 	// Execute the run using a single worker with the configured API client
@@ -166,10 +172,10 @@ func executeSingleRun(logger *log.Logger, tfBinaryProvider *tf.TfBinaries, dec t
 
 	exitCode := 0
 	if err := worker.ExecuteRun(run); err != nil {
-		logger.Printf("Run execution failed: %v", err)
+		logger.Error("Run execution failed", "error", err)
 		exitCode = 1
 	}
 
-	logger.Println("Single run completed")
+	logger.Info("Single run completed")
 	return exitCode
 }

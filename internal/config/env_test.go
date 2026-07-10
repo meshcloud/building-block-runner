@@ -94,6 +94,22 @@ func TestEnv_UnsetOrEmpty_LeavesTargetUntouched(t *testing.T) {
 	assert.Equal(t, "from-yaml-2", target2)
 }
 
+func TestEnv_DeprecatedBinding_SetsTarget_AndWarnsUniformly(t *testing.T) {
+	t.Setenv("TEST_ENV_DEPRECATED", "legacy-value")
+
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+
+	target := "compiled-in"
+	l := NewLoader()
+	l.Env(log, EnvBinding{Var: "TEST_ENV_DEPRECATED", Target: &target, Deprecated: true, Canonical: "the compiled-in default"})
+
+	assert.Equal(t, "legacy-value", target)
+	assert.Contains(t, buf.String(), "deprecated")
+	assert.Contains(t, buf.String(), "TEST_ENV_DEPRECATED")
+	assert.Contains(t, buf.String(), "the compiled-in default")
+}
+
 func TestEnv_MarksBindingsConsumedRegardless(t *testing.T) {
 	unsetEnv(t, "TEST_ENV_BINDING_NEVER_SET")
 

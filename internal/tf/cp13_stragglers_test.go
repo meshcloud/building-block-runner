@@ -12,7 +12,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -148,7 +148,7 @@ func Test_ReadUserMsgFile_MissingFile(t *testing.T) {
 // --- logwrapper write-error branch -----------------------------------------------------------
 
 func Test_LogWrap_WriteAfterCloseErrors(t *testing.T) {
-	lw, err := NewLogWrap(log.New(io.Discard, "", 0), filepath.Join(t.TempDir(), "log.txt"))
+	lw, err := NewLogWrap(slog.New(slog.NewTextHandler(io.Discard, nil)), filepath.Join(t.TempDir(), "log.txt"))
 	require.NoError(t, err)
 	lw.Close()
 	_, writeErr := lw.Write([]byte("after close"))

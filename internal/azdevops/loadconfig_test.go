@@ -1,6 +1,8 @@
 package azdevops
 
 import (
+	"bytes"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -68,6 +70,22 @@ func TestLoadConfig_BlockRunnerCompat_PrivateKey(t *testing.T) {
 	cfg, err := LoadConfig(testLog(), "build-v", false)
 	require.NoError(t, err)
 	require.Equal(t, pem, cfg.PrivateKey)
+}
+
+// TestLoadConfig_BlockRunnerCompat_DebugModeIgnoredWithWarning pins that a manual-only
+// blockrunner.debugMode key is inert but not silently dropped for the azdevops persona
+// (BlockRunnerCompat.DebugMode's own doc comment already promised this; the azdevops port
+// had not implemented it -- accumulated alias inventory audit, docs/DEPRECATIONS.md).
+func TestLoadConfig_BlockRunnerCompat_DebugModeIgnoredWithWarning(t *testing.T) {
+	pem := mustReadTestKeyHandler(t)
+	writeConfig(t, "privateKey: |\n  "+indentEachLine(pem, "  ")+"\nblockrunner:\n  debugMode: true\n")
+
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+	_, err := LoadConfig(log, "build-v", false)
+	require.NoError(t, err)
+	require.Contains(t, buf.String(), "blockrunner.debugMode")
+	require.Contains(t, buf.String(), "ignoring")
 }
 
 func TestLoadConfig_EnvOverrides(t *testing.T) {

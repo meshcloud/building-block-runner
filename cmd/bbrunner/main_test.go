@@ -92,6 +92,8 @@ func TestNewDispatcher_WiresRealBootstraps(t *testing.T) {
 	require.True(t, ok, "the tf fit persona subcommand must be registered")
 	_, ok = d.fit[personaManual]
 	require.True(t, ok, "the manual fit persona subcommand must be registered (phase 6a)")
+	_, ok = d.fit[personaGitlab]
+	require.True(t, ok, "the gitlab fit persona subcommand must be registered (phase 6b)")
 }
 
 // TestDispatcher_UsageListsTokensSorted keeps the usage line deterministic (sorted tokens) so the

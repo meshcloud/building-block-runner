@@ -133,3 +133,39 @@ The following remain for the human/PR that flips manual over to the Go image:
   (`internal/manual/*_test.go`) preserves the same observable behavior (M-P1–M-P8 twins) and
   is the surviving pin; the block-runner-core wire pins (C-P1–C-P7) likewise live as Go
   transcript twins in `internal/report`/`internal/meshapi` tests.
+
+## Phase 6b (gitlab Kotlin→Go port, PLAN_DETAIL_06B §9 step 10 / §12 / §15)
+
+This slice landed the **Go gitlab persona additively** (new `internal/gitlab`, `cmd/gitlab`,
+`meshapi.Decryptor`/`DecryptInputs`/`gitlab.ExternalCallError` — the umbrella-assigned
+shared artifacts this port ships first — the per-persona Dockerfile, and the shared
+top-level base `containers/runner-config.yml` this port introduces to carry the well-known
+dev private key, umbrella §10.5). It did **not** delete the Kotlin `gitlab-block-runner`
+module, flip its CI legs, or touch meshfed-release, for the same reason as 06A: those steps
+hinge on the §11 acceptance gate (side-by-side transcript equivalence + a manual smoke
+against a real GitLab) that cannot be executed in this environment. Per plan 06B §15,
+**gitlab has no mandatory cross-repo edits at all** (unlike 06A) — verified:
+`local-dev-stack/SKILL.md` has no gitlab-runner entry, the mux/acceptance suite is
+read-only, and `run-controller/runner-config.yml`'s sample stays valid unchanged.
+
+- **This repo, deferred to the removal PR:** `git rm -r gitlab-block-runner/`;
+  `settings.gradle` drop `include 'gitlab-block-runner'`; `.github/workflows/ci.yml` +
+  `build-images.yml` flip the gitlab JVM leg to
+  `dockerfile: containers/gitlab-block-runner/Dockerfile` and add a `./cmd/gitlab` build leg.
+  Kept intact here so CI stays green and the sibling ports (6c–6d) can stack on top.
+- **Kotlin pin tests (§3, G-P1–G-P13):** not added — gradle is not runnable in this
+  environment and the module is not being modified/removed in this commit. The Go scenario
+  suite (`internal/gitlab/*_test.go`) preserves the same observable behavior (the trigger
+  payload field set, the four error-classification rows, the always-async handover, the
+  secret-hygiene asymmetry/leak test, the k8s single-run wire) and is the surviving pin.
+  **Flagged for human follow-up:** unlike 06A, this gap was not even partially offset by an
+  attempt to run `./gradlew`; a reviewer who can run Gradle should add the G-pins to
+  `gitlab-block-runner`'s Kotlin test sources before this port's Kotlin module is deleted, so
+  the pinning-then-porting sequence (D6) is actually satisfied rather than skipped outright.
+- **Shared base private-key formatting (quirk, not a behavior change):** the Kotlin
+  classpath yaml bakes the dev private key as ONE unbroken base64 line (no PEM newlines);
+  Go's stdlib `encoding/pem` (unlike Kotlin's hand-rolled loader) refuses to parse that —
+  `containers/runner-config.yml` re-wraps the identical DER bytes into standard multi-line
+  PEM (verified byte-for-byte in `internal/config/basekey_test.go`). Azdevops/github (06C/06D)
+  reusing this same shared base file inherit the fix for free; noted here in case a reviewer
+  wonders why the checked-in key's textual form differs from the Kotlin source.

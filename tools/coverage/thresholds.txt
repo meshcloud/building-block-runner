@@ -46,3 +46,9 @@ github.com/meshcloud/building-block-runner/internal/k8sjob 90
 # no decryption — so no exclusion-list entries (umbrella §5.3). The persona polling wiring
 # lives in cmd/manual + cmd/bbrunner (package main, not gated).
 github.com/meshcloud/building-block-runner/internal/manual 90
+
+# Phase 6b (PLAN_DETAIL_06B_gitlab.md §10.3): the gitlab runner port. Whole package
+# hermetically testable via meshapitest (meshStack side) + httptest (the fake GitLab
+# trigger endpoint) -- no exclusion-list entries (umbrella §5.3). The persona polling
+# wiring lives in cmd/gitlab + cmd/bbrunner (package main, not gated).
+github.com/meshcloud/building-block-runner/internal/gitlab 90

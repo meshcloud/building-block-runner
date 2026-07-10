@@ -1,0 +1,30 @@
+# gitlab-block-runner default config (per-impl layer; deep-merges OVER the shared base
+# runner-config.yml -- base < per-impl < env, umbrella §5.4/§10.5). Effect-equivalent to
+# the Kotlin classpath defaults (gitlab-block-runner/src/main/resources/runner-config.yml)
+# in Go-native flat keys. Every value is overridable by its env var (shown after the colon).
+#
+# The legacy `blockrunner:` yaml block and Spring's SPRING_PROFILES_ACTIVE=kubernetes
+# single-run trigger keep working (config compat, §6.3/§6.4) -- a customer-mounted Kotlin-era
+# runner-config.yml still boots this image unchanged.
+#
+# The baked dev private key lives ONLY in the shared base ../runner-config.yml, not here
+# (umbrella §10.5) -- it is not duplicated per persona.
+
+# RUNNER_UUID -- the well-known local-dev gitlab runner uuid (meshfed magic-runner pair).
+uuid: bfe76555-7a69-48e8-8cc0-8e02eb76fc22
+# VERSION -- stamps X-Meshcloud-Runner-Version (defaults to the ldflags build version).
+version: dev
+
+api:
+  # RUNNER_API_URL -- the mux GITLAB_PIPELINE port for local-dev.
+  url: http://localhost:8303
+  # RUNNER_API_USERNAME / RUNNER_API_PASSWORD (Basic auth); blank client-id/secret below
+  # disables API-key auth and falls back to Basic.
+  username: bb-api
+  password: guest
+  clientId: ""
+  clientSecret: ""
+
+# No gitlab-specific config keys beyond the private key (shared base) -- GitLab
+# coordinates (base URL, projectId, refName, trigger token) arrive per run in the
+# implementation DTO, not via runner config.

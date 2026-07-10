@@ -253,6 +253,34 @@ linters:
             - github.com/prometheus/client_golang
             - github.com/stretchr/testify
 
+        # gitlab persona (internal/gitlab) + its wiring cmd/gitlab (phase 6b, reusing the
+        # 06A template): triggers a GitLab CI/CD pipeline via one external POST — shared
+        # client/report/config/dispatch + its own handler, NO k8s, NO go-git, NO tofu (D8).
+        # No new HTTP dependency: the multipart request is built with stdlib mime/multipart
+        # over the shared *http.Client seam (P2). prometheus is allowed for the persona's
+        # polling wiring (the D12 runner_* series + the dispatch loop's default-registry
+        # metrics), mirroring the manual group.
+        gitlab:
+          files:
+            - "internal/gitlab/**/*.go"
+            - "cmd/gitlab/**/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+        gitlab-test:
+          files:
+            - "internal/gitlab/**/*_test.go"
+            - "cmd/gitlab/**/*_test.go"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+            - github.com/stretchr/testify
+
   exclusions:
     rules:
       # --- Temporary legacy exclusions (PLAN_DETAIL_00_guardrails.md §5.3 category 2) ---

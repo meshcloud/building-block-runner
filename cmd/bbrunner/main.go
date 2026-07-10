@@ -30,7 +30,8 @@ type persona string
 const (
 	personaTf     persona = "tf"     // fit tf-block-runner persona, forced in-process (local-dev)
 	personaManual persona = "manual" // fit manual-block-runner persona (phase 6a)
-	// phase 6: personaGitlab/Github/Azdevops.
+	personaGitlab persona = "gitlab" // fit gitlab-block-runner persona (phase 6b)
+	// phase 6: personaGithub/Azdevops.
 )
 
 func main() {
@@ -56,6 +57,7 @@ func newDispatcher() dispatcher {
 		fit: map[persona]func() int{
 			personaTf:     runTfPolling,
 			personaManual: runManualPolling,
+			personaGitlab: runGitlabPolling,
 		},
 		usage: os.Stderr,
 	}

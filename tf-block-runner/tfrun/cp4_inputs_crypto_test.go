@@ -83,7 +83,7 @@ func generateMismatchedTestCrypto(t *testing.T) *meshcrypto.MeshCertBasedCrypto 
 // leak into either. Uses genuine encryption/decryption with the checked-in test key pair
 // (resources/test.pem/test.key), not ciphertext-shaped assertions.
 func (suite *WorkerTestSuite) Test_ApplySucceeded_DecryptsSensitiveStringAndFileInputsIntoWorkingDir() {
-	crypto := installTestCrypto(suite.T())
+	crypto := testCrypto(suite.T())
 
 	const secretValue = "s3cr3t-database-password"
 	secretCiphertext := encryptForTest(suite.T(), crypto, secretValue)
@@ -103,11 +103,10 @@ func (suite *WorkerTestSuite) Test_ApplySucceeded_DecryptsSensitiveStringAndFile
 
 	var tfvarsContent, writtenFileContent []byte
 	suite.tfMock.applyFunc = func(ctx context.Context, opts ...tfexec.ApplyOption) error {
-		rci := ctx.Value(runInfoContextKey).(*RunContextInfo)
 		var err error
-		tfvarsContent, err = os.ReadFile(path.Join(rci.workingDirectory, tfvarsFileName))
+		tfvarsContent, err = os.ReadFile(path.Join(suite.tfMock.workingDir, tfvarsFileName))
 		suite.Require().NoError(err, "reading generated tfvars file")
-		writtenFileContent, err = os.ReadFile(path.Join(rci.workingDirectory, "secret_file"))
+		writtenFileContent, err = os.ReadFile(path.Join(suite.tfMock.workingDir, "secret_file"))
 		suite.Require().NoError(err, "reading decrypted secret_file")
 		return nil
 	}
@@ -138,7 +137,8 @@ func (suite *WorkerTestSuite) Test_ApplySucceeded_DecryptsSensitiveStringAndFile
 // correspond to the runner's configured private key, the run FAILS and the input step's message
 // contains the key-mismatch guidance text — not just a generic decryption error.
 func (suite *WorkerTestSuite) Test_ApplyFailed_SensitiveInputDecryptFailure_KeyMismatchGuidance() {
-	installTestCrypto(suite.T()) // the runner is configured with resources/test.pem/test.key
+	// the runner's worker is wired with resources/test.pem/test.key (see WorkerTestSuite.SetupTest);
+	// the input below is encrypted with a different key pair, so decryption must fail.
 	other := generateMismatchedTestCrypto(suite.T())
 	ciphertext := encryptForTest(suite.T(), other, "top-secret-value") // encrypted with a different key pair
 
@@ -267,8 +267,6 @@ func Test_encodeVarValueForEnv_MultiSelectUnmarshalableValue_ReturnsError(t *tes
 // (tfcmd.go:481-484): a sensitive env-marked variable whose ciphertext fails to decrypt makes
 // buildTfEnv fail the whole call (not just skip that one variable).
 func Test_buildTfEnv_EnvVarDecryptFailure_ReturnsError(t *testing.T) {
-	installTestCrypto(t)
-
 	uut := makeTestGenericTfCmd(t)
 	uut.params.vars["SECRET_ENV"] = &Variable{
 		value:       "not-valid-base64!!",

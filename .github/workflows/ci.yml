@@ -160,6 +160,9 @@ jobs:
             go-dir: run-controller
           - app: tf-block-runner
             go-dir: tf-block-runner
+            # -race on the tf leg: phase 2 fixes the two data races (B6/B10) structurally and turns
+            # the detector on to keep them fixed (PLAN_HIGH_LEVEL.md D13, PLAN_DETAIL_02 §5.5).
+            test-flags: -race
     defaults:
       run:
         working-directory: ${{ matrix.go-dir }}
@@ -178,7 +181,7 @@ jobs:
           cache: false
 
       - name: Test
-        run: go test -coverprofile=coverage.out ./...
+        run: go test ${{ matrix.test-flags }} -coverprofile=coverage.out ./...
 
       # Report-only for now: tools/coverage/thresholds.txt ships empty (PLAN_HIGH_LEVEL.md
       # D6, Phase 0 exit criteria), so this never fails the build yet. Phase 1 turns the

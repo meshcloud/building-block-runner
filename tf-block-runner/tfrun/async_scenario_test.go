@@ -86,8 +86,7 @@ func (suite *WorkerTestSuite) Test_AsyncDestroy_AppliesBeforeDestroy() {
 func (suite *WorkerTestSuite) Test_AsyncDetect_FinalInProgress_ArtifactAttached() {
 	planBytes := []byte("async-detect-plan")
 	suite.tfMock.planFunc = func(ctx context.Context, opts ...tfexec.PlanOption) (bool, error) {
-		rci := ctx.Value(runInfoContextKey).(*RunContextInfo)
-		return true, os.WriteFile(rci.artifactFilePath, planBytes, 0600)
+		return true, os.WriteFile(suite.tfMock.artifactPath(), planBytes, 0600)
 	}
 
 	suite.calls.fetch = runDetailsFetchCall(withBehavior(DETECT.str()), withRepo(suite.repo.Path, suite.repoPath), withAsync())

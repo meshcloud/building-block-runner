@@ -136,7 +136,7 @@ func (suite *SingleRunWorkerTestSuite) scenarioClientBehavior(req *http.Request)
 // validateAuthConfig explicitly waives them in this mode).
 func (suite *SingleRunWorkerTestSuite) newWorker(runToken string) *SingleRunWorker {
 	auth := &runApiAuth{runToken: p(runToken)}
-	api := newScenarioRunApiClient("scenario-runner", auth, testRoundTripper(suite.scenarioClientBehavior))
+	api := newScenarioRunApiClient("scenario-runner", auth, testRoundTripper(suite.scenarioClientBehavior), NoopDecryptor{})
 
 	return &SingleRunWorker{
 		workerDir:            suite.workerDir,
@@ -153,7 +153,7 @@ func (suite *SingleRunWorkerTestSuite) newWorker(runToken string) *SingleRunWork
 // it via ToInternalWithoutDecryption — never runDTOToInternal, which decrypts again (D9 pin 16a).
 func (suite *SingleRunWorkerTestSuite) buildRun(opts ...runDetailsOption) *Run {
 	dto := runDetailsDTO(opts...)
-	run, err := ToInternalWithoutDecryption(dto)
+	run, err := ToInternalWithoutDecryption(dto, NoopDecryptor{})
 	suite.Require().NoError(err)
 	return run
 }
@@ -229,8 +229,7 @@ func (suite *SingleRunWorkerTestSuite) Test_ExecuteRun_DetectSucceeded_ArtifactI
 	planFuncCalled := false
 	suite.tfMock.planFunc = func(ctx context.Context, opts ...tfexec.PlanOption) (bool, error) {
 		planFuncCalled = true
-		rci := ctx.Value(runInfoContextKey).(*RunContextInfo)
-		return true, os.WriteFile(rci.artifactFilePath, planBytes, 0600)
+		return true, os.WriteFile(suite.tfMock.artifactPath(), planBytes, 0600)
 	}
 
 	w := suite.newWorker("single-run-token-detect-ok")
@@ -493,8 +492,7 @@ func (suite *SingleRunWorkerTestSuite) Test_ExecuteRun_AppliesSavedPlanArtifact(
 	var planOnDisk []byte
 	suite.tfMock.applyFunc = func(ctx context.Context, opts ...tfexec.ApplyOption) error {
 		applyOptCount = len(opts)
-		rci := ctx.Value(runInfoContextKey).(*RunContextInfo)
-		planOnDisk, _ = os.ReadFile(rci.artifactFilePath)
+		planOnDisk, _ = os.ReadFile(suite.tfMock.artifactPath())
 		return nil
 	}
 
@@ -521,7 +519,7 @@ func Test_NewSingleRunWorker_SetsDefaults(t *testing.T) {
 	t.Cleanup(func() { AppConfig = previous })
 
 	logger := log.New(io.Discard, "", 0)
-	w := NewSingleRunWorker(logger, t.TempDir(), 7, nil)
+	w := NewSingleRunWorker(logger, t.TempDir(), 7, nil, nil)
 
 	if w.statusUpdateInterval != 10*time.Second {
 		t.Errorf("statusUpdateInterval = %v, want 10s", w.statusUpdateInterval)
@@ -540,7 +538,7 @@ func Test_NewSingleRunWorker_SetsDefaults(t *testing.T) {
 func Test_NewSingleRunWorkerWithApi_SetsDefaults(t *testing.T) {
 	logger := log.New(io.Discard, "", 0)
 	api := &RunApiClient{}
-	w := NewSingleRunWorkerWithApi(logger, t.TempDir(), 3, nil, api)
+	w := NewSingleRunWorkerWithApi(logger, t.TempDir(), 3, nil, api, nil)
 
 	if w.statusUpdateInterval != 10*time.Second {
 		t.Errorf("statusUpdateInterval = %v, want 10s", w.statusUpdateInterval)

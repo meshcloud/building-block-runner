@@ -223,7 +223,7 @@ func (suite *ApiTestSuite) Test_RegisterSource() {
 			Status:           IN_PROGRESS,
 			Summary:          nil,
 			CurrentStepIndex: 0,
-			Steps: []*StepStatus{
+			Steps: []StepStatus{
 				{
 					Name:        "step1",
 					DisplayName: "display1",
@@ -297,7 +297,7 @@ func (suite *ApiTestSuite) Test_UpdateState() {
 			Status:           IN_PROGRESS,
 			Summary:          message("run summary"),
 			CurrentStepIndex: 1,
-			Steps: []*StepStatus{
+			Steps: []StepStatus{
 				{
 					Name:          "step1",
 					DisplayName:   "display1",
@@ -382,7 +382,7 @@ func (suite *ApiTestSuite) Test_UpdateStateOutputs() {
 			Status:           IN_PROGRESS,
 			Summary:          message("run summary"),
 			CurrentStepIndex: 1,
-			Steps: []*StepStatus{
+			Steps: []StepStatus{
 				{
 					Name:          "step1",
 					DisplayName:   "display1",
@@ -545,7 +545,7 @@ func (suite *ApiTestSuite) Test_UseCustomPredicate_V2MediaType() {
 			Status:           IN_PROGRESS,
 			Summary:          nil,
 			CurrentStepIndex: 0,
-			Steps: []*StepStatus{
+			Steps: []StepStatus{
 				{
 					Name:        "step1",
 					DisplayName: "display1",
@@ -589,7 +589,7 @@ func (suite *ApiTestSuite) Test_UseCustomPredicate_Null_UsesV1MediaType() {
 			Status:           IN_PROGRESS,
 			Summary:          nil,
 			CurrentStepIndex: 0,
-			Steps: []*StepStatus{
+			Steps: []StepStatus{
 				{
 					Name:        "step1",
 					DisplayName: "display1",
@@ -634,7 +634,7 @@ func (suite *ApiTestSuite) Test_UseCustomPredicate_Empty_UsesV1MediaType() {
 			Status:           IN_PROGRESS,
 			Summary:          nil,
 			CurrentStepIndex: 0,
-			Steps: []*StepStatus{
+			Steps: []StepStatus{
 				{
 					Name:        "step1",
 					DisplayName: "display1",
@@ -678,7 +678,7 @@ func (suite *ApiTestSuite) Test_FetchRunDetails_UseCustomPredicate_UsesCreateEnd
 	}
 
 	// Create new API client with updated config
-	api := NewRunApi()
+	api := NewRunApi(nil)
 
 	// Temporarily replace the server handler to capture URL details
 	cleanup, capturedURL, capturedQuery := suite.setupRequestCapture()
@@ -722,7 +722,7 @@ func (suite *ApiTestSuite) Test_FetchRunDetails_NoCustomPredicate_UsesDefaultEnd
 	}
 
 	// Create new API client with updated config
-	api := NewRunApi()
+	api := NewRunApi(nil)
 
 	// Temporarily replace the server handler to capture URL details
 	cleanup, capturedURL, capturedQuery := suite.setupRequestCapture()

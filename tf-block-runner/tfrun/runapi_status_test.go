@@ -32,7 +32,7 @@ func TestUpdateState_ErrorHandling(t *testing.T) {
 
 	status := &RunStatus{
 		RunId: "test-run-id",
-		Steps: []*StepStatus{},
+		Steps: []StepStatus{},
 	}
 
 	abort, err := api.UpdateState(status)
@@ -70,7 +70,7 @@ func TestRegister_ErrorHandling(t *testing.T) {
 
 	status := &RunStatus{
 		RunId: "test-run-id",
-		Steps: []*StepStatus{},
+		Steps: []StepStatus{},
 	}
 
 	err := api.Register(status)
@@ -104,7 +104,7 @@ func TestRegister_409Conflict_ReturnsNil(t *testing.T) {
 
 	status := &RunStatus{
 		RunId: "test-run-id",
-		Steps: []*StepStatus{},
+		Steps: []StepStatus{},
 	}
 
 	err := api.Register(status)

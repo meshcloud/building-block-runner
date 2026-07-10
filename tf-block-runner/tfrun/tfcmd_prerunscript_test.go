@@ -53,11 +53,12 @@ func makePreRunScriptTfCmd(t *testing.T, preRunScript *string, runMode string, d
 			bbId:          "test-bb",
 			runId:         "test-run",
 			runStatus: &RunStatus{
-				Steps: []*StepStatus{
+				Steps: []StepStatus{
 					{Name: "pre-run"},
 				},
 				CurrentStepIndex: 0,
 			},
+			progress: newProgress(RunStatus{}),
 		},
 		bin: &TfBinaries{
 			dir: "/tmp/terraform-bin",

@@ -71,7 +71,7 @@ func runBackendFallbackScenario(t *testing.T, repoFiles map[string]string, useMe
 	require.NoError(t, os.Mkdir(path.Join(wd, "logs"), 0700))
 	runContextInfo := initRunContextInfo(run, "[backend-fallback] ", io.Discard, wd)
 	run.Source.setLog(runContextInfo.logwrap)
-	ctx := context.WithValue(context.Background(), runInfoContextKey, runContextInfo)
+	ctx := context.Background()
 
 	params := &TfCmdParams{
 		dir:                wd,
@@ -94,7 +94,7 @@ func runBackendFallbackScenario(t *testing.T, repoFiles map[string]string, useMe
 	tfbin, err := ForTestNewTfBin(t.TempDir(), io.Discard, mock)
 	require.NoError(t, err)
 
-	tfCmd := ApplyCmd(ctx, params, tfbin, nil)
+	tfCmd := ApplyCmd(ctx, runContextInfo, params, tfbin, nil)
 	tfCmd.initRunSteps()
 	tfCmd.execute()
 

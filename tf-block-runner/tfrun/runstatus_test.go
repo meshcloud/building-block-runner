@@ -33,7 +33,7 @@ func makeTestRunStatus() *RunStatus {
 		Status:           IN_PROGRESS,
 		CurrentStepIndex: -1,
 		Summary:          nil,
-		Steps: []*StepStatus{
+		Steps: []StepStatus{
 			{
 				Name:          "step1",
 				DisplayName:   "Step 1",

@@ -265,7 +265,7 @@ func Test_ToInternalWithoutDecryption_MapsAllFieldsAndForcesNonSensitive(t *test
 		),
 	)
 
-	run, err := ToInternalWithoutDecryption(dto)
+	run, err := ToInternalWithoutDecryption(dto, NoopDecryptor{})
 	require.NoError(t, err)
 	assert.Equal(t, DETECT, run.Behavior)
 	assert.Equal(t, "rt", run.RunToken)
@@ -281,28 +281,28 @@ func Test_ToInternalWithoutDecryption_MapsAllFieldsAndForcesNonSensitive(t *test
 func Test_ToInternalWithoutDecryption_BadBehaviorReturnsError(t *testing.T) {
 	dto := runDetailsDTO()
 	dto.Spec.Behavior = "NONSENSE"
-	_, err := ToInternalWithoutDecryption(dto)
+	_, err := ToInternalWithoutDecryption(dto, NoopDecryptor{})
 	assert.Error(t, err)
 }
 
 func Test_ToInternalWithoutDecryption_UnparsableImplementationReturnsError(t *testing.T) {
 	dto := runDetailsDTO()
 	dto.Spec.Definition.Spec.Implementation = json.RawMessage(`{"terraformVersion": 12345}`) // wrong type
-	_, err := ToInternalWithoutDecryption(dto)
+	_, err := ToInternalWithoutDecryption(dto, NoopDecryptor{})
 	assert.Error(t, err)
 }
 
 func Test_RunDTOToInternal_BadBehaviorReturnsError(t *testing.T) {
 	dto := runDetailsDTO()
 	dto.Spec.Behavior = "NONSENSE"
-	_, err := runDTOToInternal(dto)
+	_, err := runDTOToInternal(dto, NoopDecryptor{})
 	assert.Error(t, err)
 }
 
 func Test_RunDTOToInternal_UnparsableImplementationReturnsError(t *testing.T) {
 	dto := runDetailsDTO()
 	dto.Spec.Definition.Spec.Implementation = json.RawMessage(`{"async": "not-a-bool"}`)
-	_, err := runDTOToInternal(dto)
+	_, err := runDTOToInternal(dto, NoopDecryptor{})
 	assert.Error(t, err)
 }
 
@@ -312,7 +312,7 @@ func Test_TerraformImplAuthMethod_SshBranch(t *testing.T) {
 		SshPrivateKey: &key,
 		KnownHost:     &meshapi.KnownHostDTO{Host: "h", KeyType: "ssh-rsa", KeyValue: "AAAA"},
 	}
-	auth, err := terraformImplAuthMethod(impl)
+	auth, err := terraformImplAuthMethod(impl, nil)
 	require.NoError(t, err)
 	sshAuth, ok := auth.(*SshAuth)
 	require.True(t, ok, "an implementation with an SSH private key must yield *SshAuth")
@@ -321,7 +321,7 @@ func Test_TerraformImplAuthMethod_SshBranch(t *testing.T) {
 	assert.Equal(t, "h", sshAuth.knownHostEntry.host)
 
 	// No key => NoAuth.
-	noAuth, err := terraformImplAuthMethod(&meshapi.TerraformImplementation{})
+	noAuth, err := terraformImplAuthMethod(&meshapi.TerraformImplementation{}, nil)
 	require.NoError(t, err)
 	assert.IsType(t, &NoAuth{}, noAuth)
 }
@@ -350,7 +350,7 @@ func Test_RunStatus_StepPointerErrorBranches(t *testing.T) {
 	require.Error(t, empty.firstStep(), "firstStep on a stepless run returns an error")
 	assert.Nil(t, empty.currentStepStatus(), "currentStepStatus out of range returns nil")
 
-	single := &RunStatus{Steps: []*StepStatus{{Name: "only"}}}
+	single := &RunStatus{Steps: []StepStatus{{Name: "only"}}}
 	require.NoError(t, single.firstStep())
 	assert.Equal(t, "only", single.currentStepStatus().Name)
 	assert.Error(t, single.nextStep(), "nextStep past the last step returns an error")

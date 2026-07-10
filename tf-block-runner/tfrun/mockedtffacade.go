@@ -3,6 +3,7 @@ package tfrun
 import (
 	"context"
 	"io"
+	"path"
 
 	"github.com/hashicorp/terraform-exec/tfexec"
 )
@@ -17,6 +18,11 @@ type MockedTfFacade struct {
 	stdOut      io.Writer
 	stdErr      io.Writer
 
+	// workingDir is the per-run working directory the (test) TfBinaries.GetTF was asked to run in.
+	// Scenario tests read it to locate generated files (tfvars, plan artifact) now that the run
+	// context is no longer smuggled through context.Value (D4/P3).
+	workingDir string
+
 	// setEnvFunc/workspace*Func are configurable seams (test-infra only, see
 	// PLAN_DETAIL_01_tf_characterization_tests.md CP4-CP6) so scenario tests can observe the
 	// subprocess env (cleanSystemEnv/TF_HTTP_* pins) and drive the workspace select/create/delete
@@ -28,6 +34,13 @@ type MockedTfFacade struct {
 	workspaceNewFunc    func(ctx context.Context, workspace string, opts ...tfexec.WorkspaceNewCmdOption) error
 	workspaceSelectFunc func(ctx context.Context, workspace string, opts ...tfexec.WorkspaceSelectOption) error
 	workspaceDeleteFunc func(ctx context.Context, workspace string, opts ...tfexec.WorkspaceDeleteCmdOption) error
+}
+
+// artifactPath returns the predecessor-plan artifact path for the captured working dir, mirroring
+// initRunContextInfo's <workingDir>/plan.tfplan, so scenario tests can locate the plan file without
+// reaching into the run context.
+func (tf *MockedTfFacade) artifactPath() string {
+	return path.Join(tf.workingDir, "plan.tfplan")
 }
 
 func (tf *MockedTfFacade) initMockFuncs() {

@@ -344,7 +344,7 @@ func buildingBlockInput(key string, value any, dataType string, opts ...building
 type buildingBlockInputOption func(*meshapi.BuildingBlockInputSpecDTO)
 
 // sensitiveInput marks the input as encrypted (Variable.decryptIfSensitive decrypts CODE/STRING/
-// FILE types via meshcrypto.Crypto — see installTestCrypto/encryptForTest to build a genuine
+// FILE types via the injected Decryptor — see testDecryptor/encryptForTest to build a genuine
 // ciphertext value for it).
 func sensitiveInput() buildingBlockInputOption {
 	return func(i *meshapi.BuildingBlockInputSpecDTO) { i.IsSensitive = true }
@@ -377,21 +377,12 @@ func testCrypto(t *testing.T) *meshcrypto.MeshCertBasedCrypto {
 	return crypto
 }
 
-// installTestCrypto points the package-level meshcrypto.Crypto (the polling decrypt path,
-// runDTOToInternal -> Variable.decryptIfSensitive, reads from) at a crypto instance able to both
-// encrypt (build fixture ciphertext) and decrypt (prove the round trip) with the checked-in test
-// key pair. meshcrypto.Crypto is a global; t.Cleanup restores whatever value predates the test so
-// suites stay independent of run order. This global is the phase-2 (D4) injection target — tests
-// use this seam only until then.
-func installTestCrypto(t *testing.T) *meshcrypto.MeshCertBasedCrypto {
+// testDecryptor wraps the checked-in test key pair as the injected polling-mode Decryptor (D4),
+// replacing the former installTestCrypto global seam. Scenario suites wire this into the worker /
+// run-API client so the real decrypt path runs end to end.
+func testDecryptor(t *testing.T) Decryptor {
 	t.Helper()
-
-	crypto := testCrypto(t)
-	previous := meshcrypto.Crypto
-	meshcrypto.Crypto = crypto
-	t.Cleanup(func() { meshcrypto.Crypto = previous })
-
-	return crypto
+	return certDecryptor{crypto: testCrypto(t)}
 }
 
 // encryptForTest encrypts plaintext with crypto, failing the test (rather than returning an error)
@@ -413,7 +404,7 @@ func encryptForTest(t *testing.T, crypto *meshcrypto.MeshCertBasedCrypto, plaint
 // connection, mirroring production wiring (NewRunApi/FetchRunDetails: same runApiAuth precedence,
 // same meshapi.Client construction) so the polling (WorkerTestSuite) and single-run
 // (SingleRunWorker) scenario suites share one construction path.
-func newScenarioRunApiClient(rid string, auth *runApiAuth, transport http.RoundTripper) *RunApiClient {
+func newScenarioRunApiClient(rid string, auth *runApiAuth, transport http.RoundTripper, dec Decryptor) *RunApiClient {
 	hc := &http.Client{Transport: transport}
 
 	return &RunApiClient{
@@ -422,6 +413,7 @@ func newScenarioRunApiClient(rid string, auth *runApiAuth, transport http.RoundT
 		auth:       auth,
 		client:     meshapi.NewClientWithHTTP("http://localhost", rid, auth, hc),
 		httpClient: hc,
+		dec:        dec,
 	}
 }
 
@@ -464,9 +456,9 @@ func Test_MakeLocalGitRepo(t *testing.T) {
 
 // Test_RunDetailsDTO_Options exercises every runDetailsOption and buildingBlockInputOption,
 // proving each mutates the fixture as documented, and proves the encrypted-input helpers
-// (testCrypto/installTestCrypto/encryptForTest) round-trip genuinely (not just ciphertext-shaped).
+// (testCrypto/encryptForTest) round-trip genuinely (not just ciphertext-shaped).
 func Test_RunDetailsDTO_Options(t *testing.T) {
-	crypto := installTestCrypto(t)
+	crypto := testCrypto(t)
 	ciphertext := encryptForTest(t, crypto, "s3cr3t")
 
 	knownHost := &meshapi.KnownHostDTO{Host: "example.com", KeyType: "ssh-rsa", KeyValue: "AAAA"}

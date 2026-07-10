@@ -21,22 +21,10 @@ import (
 	"testing"
 
 	gogitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
-	meshcrypto "github.com/meshcloud/building-block-runner/go-meshapi-client/crypto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
 )
-
-// cryptoGlobalSwap points the package-level meshcrypto.Crypto at c for the duration of the test,
-// restoring the prior value afterwards (the D4 injection target). Passing nil exercises the
-// single-run passthrough path where the cert arrives already decrypted.
-func cryptoGlobalSwap(t *testing.T, c *meshcrypto.MeshCertBasedCrypto) *meshcrypto.MeshCertBasedCrypto {
-	t.Helper()
-	previous := meshcrypto.Crypto
-	meshcrypto.Crypto = c
-	t.Cleanup(func() { meshcrypto.Crypto = previous })
-	return previous
-}
 
 func testLogwrap(t *testing.T) *logwrap {
 	t.Helper()
@@ -79,10 +67,7 @@ func testRemoteAddr() net.Addr { return &net.TCPAddr{IP: net.IPv4(192, 0, 2, 1),
 
 func Test_SshAuth_UnwrapCert(t *testing.T) {
 	t.Run("Crypto nil passthrough (single-run)", func(t *testing.T) {
-		// installTestCrypto restores whatever Crypto value predates the test; here we force it nil to
-		// exercise the single-run passthrough path.
-		previous := cryptoGlobalSwap(t, nil)
-		_ = previous
+		// A nil decryptor is the single-run passthrough path where the cert arrives already decrypted.
 		sshAuth := &SshAuth{certStr: "already-decrypted"}
 		got, err := sshAuth.unwrapCert()
 		require.NoError(t, err)
@@ -90,17 +75,16 @@ func Test_SshAuth_UnwrapCert(t *testing.T) {
 	})
 
 	t.Run("genuine decrypt (polling)", func(t *testing.T) {
-		crypto := installTestCrypto(t)
+		crypto := testCrypto(t)
 		ciphertext := encryptForTest(t, crypto, "the-real-key")
-		sshAuth := &SshAuth{certStr: ciphertext}
+		sshAuth := &SshAuth{certStr: ciphertext, dec: certDecryptor{crypto: crypto}}
 		got, err := sshAuth.unwrapCert()
 		require.NoError(t, err)
 		assert.Equal(t, "the-real-key", got)
 	})
 
 	t.Run("decrypt error", func(t *testing.T) {
-		installTestCrypto(t)
-		sshAuth := &SshAuth{certStr: "not-valid-ciphertext"}
+		sshAuth := &SshAuth{certStr: "not-valid-ciphertext", dec: certDecryptor{crypto: testCrypto(t)}}
 		_, err := sshAuth.unwrapCert()
 		assert.Error(t, err)
 	})
@@ -111,7 +95,7 @@ func Test_SshAuth_Name(t *testing.T) {
 }
 
 func Test_SshAuth_Prepare(t *testing.T) {
-	cryptoGlobalSwap(t, nil) // certStr already decrypted
+	// nil decryptor: certStr already decrypted (single-run passthrough)
 	_, keyType, keyB64 := genHostKey(t)
 
 	dir := t.TempDir()
@@ -137,8 +121,8 @@ func Test_SshAuth_Prepare(t *testing.T) {
 }
 
 func Test_SshAuth_Prepare_UnwrapCertError(t *testing.T) {
-	installTestCrypto(t) // polling mode: prepare decrypts the cert first
-	sshAuth := &SshAuth{certStr: "not-valid-ciphertext"}
+	// polling mode: prepare decrypts the cert first
+	sshAuth := &SshAuth{certStr: "not-valid-ciphertext", dec: certDecryptor{crypto: testCrypto(t)}}
 	err := sshAuth.prepare(t.TempDir(), testLogwrap(t))
 	assert.Error(t, err, "an undecryptable cert must fail prepare before any file is written")
 }
@@ -153,7 +137,6 @@ func Test_SshAuth_CheckKnownHostsEnv_BrokenFile(t *testing.T) {
 }
 
 func Test_SshAuth_Prepare_WriteFailure(t *testing.T) {
-	cryptoGlobalSwap(t, nil)
 	// A prepDir that does not exist makes the cert WriteFile fail.
 	sshAuth := &SshAuth{certStr: "k"}
 	err := sshAuth.prepare(filepath.Join(t.TempDir(), "does", "not", "exist"), testLogwrap(t))
@@ -161,7 +144,6 @@ func Test_SshAuth_Prepare_WriteFailure(t *testing.T) {
 }
 
 func Test_SshAuth_ToTransport(t *testing.T) {
-	cryptoGlobalSwap(t, nil)
 	_, keyType, keyB64 := genHostKey(t)
 
 	dir := t.TempDir()
@@ -179,7 +161,6 @@ func Test_SshAuth_ToTransport(t *testing.T) {
 }
 
 func Test_SshAuth_ToTransport_GarbageKey(t *testing.T) {
-	cryptoGlobalSwap(t, nil)
 	dir := t.TempDir()
 	sshAuth := &SshAuth{certStr: "not a pem key"}
 	require.NoError(t, sshAuth.prepare(dir, testLogwrap(t)))

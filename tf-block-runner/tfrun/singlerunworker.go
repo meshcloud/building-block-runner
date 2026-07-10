@@ -19,23 +19,25 @@ type SingleRunWorker struct {
 	tfBinaries           *TfBinaries
 	log                  *log.Logger
 	statusUpdateInterval time.Duration
+	dec                  Decryptor
 }
 
 // NewSingleRunWorker creates a new single-run worker.
-func NewSingleRunWorker(logger *log.Logger, workerDir string, timeoutMins int, tfbin *TfBinaries) *SingleRunWorker {
+func NewSingleRunWorker(logger *log.Logger, workerDir string, timeoutMins int, tfbin *TfBinaries, dec Decryptor) *SingleRunWorker {
 	return &SingleRunWorker{
 		workerDir:            workerDir,
 		timeout:              time.Minute * time.Duration(timeoutMins),
-		runApi:               NewRunApi(),
+		runApi:               NewRunApi(dec),
 		tfBinaries:           tfbin,
 		log:                  logger,
 		statusUpdateInterval: time.Second * 10,
+		dec:                  dec,
 	}
 }
 
 // NewSingleRunWorkerWithApi creates a new single-run worker with a provided API client
 // This is used in Kubernetes mode where the API client needs the runToken from the run spec.
-func NewSingleRunWorkerWithApi(logger *log.Logger, workerDir string, timeoutMins int, tfbin *TfBinaries, api RunApi) *SingleRunWorker {
+func NewSingleRunWorkerWithApi(logger *log.Logger, workerDir string, timeoutMins int, tfbin *TfBinaries, api RunApi, dec Decryptor) *SingleRunWorker {
 	return &SingleRunWorker{
 		workerDir:            workerDir,
 		timeout:              time.Minute * time.Duration(timeoutMins),
@@ -43,6 +45,7 @@ func NewSingleRunWorkerWithApi(logger *log.Logger, workerDir string, timeoutMins
 		tfBinaries:           tfbin,
 		log:                  logger,
 		statusUpdateInterval: time.Second * 10,
+		dec:                  dec,
 	}
 }
 
@@ -77,15 +80,15 @@ func (w *SingleRunWorker) ExecuteRun(run *Run) error {
 	// create context with timeout settings
 	parentCtx, cancel := context.WithTimeout(context.Background(), w.timeout)
 	defer cancel()
-	workCtx, workCancel := context.WithCancel(context.WithValue(parentCtx, runInfoContextKey, runContextInfo))
+	workCtx, workCancel := context.WithCancel(parentCtx)
 
 	// prep wait group and signalling channel
 	var wg sync.WaitGroup
 	wg.Add(2)
 	workDoneChannel := make(chan bool)
 
-	go w.workRoutine(workCtx, run, &wg, workDoneChannel)
-	go w.observerRoutine(workCtx, workCancel, run, &wg, workDoneChannel)
+	go w.workRoutine(workCtx, run, runContextInfo, &wg, workDoneChannel)
+	go w.observerRoutine(workCtx, workCancel, run, runContextInfo, &wg, workDoneChannel)
 
 	wg.Wait()
 
@@ -95,11 +98,10 @@ func (w *SingleRunWorker) ExecuteRun(run *Run) error {
 }
 
 // workRoutine starts the actual tf command execution.
-func (w *SingleRunWorker) workRoutine(ctx context.Context, run *Run, wg *sync.WaitGroup, doneSignallingChan chan bool) {
+func (w *SingleRunWorker) workRoutine(ctx context.Context, run *Run, runContextInfo *RunContextInfo, wg *sync.WaitGroup, doneSignallingChan chan bool) {
 	defer wg.Done()
 	defer func() { doneSignallingChan <- true }()
 
-	runContextInfo := ctx.Value(runInfoContextKey).(*RunContextInfo)
 	params := &TfCmdParams{
 		dir:                w.workerDir,
 		buildingBlockId:    run.BuildingBlockId,
@@ -111,17 +113,18 @@ func (w *SingleRunWorker) workRoutine(ctx context.Context, run *Run, wg *sync.Wa
 		preRunScript:       run.PreRunScript,
 		runMode:            run.Behavior.str(),
 		planArtifactUrl:    run.PlanArtifactUrl,
+		dec:                w.dec,
 	}
 
 	var tfCommand TfCmd
 
 	switch run.Behavior {
 	case APPLY:
-		tfCommand = ApplyCmd(ctx, params, w.tfBinaries, w.runApi)
+		tfCommand = ApplyCmd(ctx, runContextInfo, params, w.tfBinaries, w.runApi)
 	case DETECT:
-		tfCommand = PlanCmd(ctx, params, w.tfBinaries)
+		tfCommand = PlanCmd(ctx, runContextInfo, params, w.tfBinaries)
 	case DESTROY:
-		tfCommand = DestroyCmd(ctx, params, w.tfBinaries)
+		tfCommand = DestroyCmd(ctx, runContextInfo, params, w.tfBinaries)
 	}
 
 	tfCommand.initRunSteps()
@@ -132,7 +135,7 @@ func (w *SingleRunWorker) workRoutine(ctx context.Context, run *Run, wg *sync.Wa
 		// Explicitly mark as FAILED so the observer sends the correct final status.
 		// Without this, IN_PROGRESS would be sent as the final status, leaving
 		// the run stuck until the coordinator eventually times it out.
-		runContextInfo.reportStatus.Status = FAILED
+		runContextInfo.progress.setStatus(FAILED)
 	} else {
 		runContextInfo.logwrap.PrintlnToLocalLogs(fmt.Sprintf("Registered '%s' as a source for runId: %s", AppConfig.RunnerUuid, runContextInfo.runId))
 		tfCommand.execute()
@@ -140,13 +143,11 @@ func (w *SingleRunWorker) workRoutine(ctx context.Context, run *Run, wg *sync.Wa
 }
 
 // observerRoutine periodically sends out status updates.
-func (w *SingleRunWorker) observerRoutine(ctx context.Context, cancel context.CancelFunc, run *Run, wg *sync.WaitGroup, doneSignallingChan chan bool) {
+func (w *SingleRunWorker) observerRoutine(ctx context.Context, cancel context.CancelFunc, run *Run, runContextInfo *RunContextInfo, wg *sync.WaitGroup, doneSignallingChan chan bool) {
 	defer wg.Done()
 
 	ticker := time.NewTicker(w.statusUpdateInterval)
 	defer ticker.Stop()
-
-	runContextInfo := ctx.Value(runInfoContextKey).(*RunContextInfo)
 
 	for {
 		select {
@@ -159,12 +160,11 @@ func (w *SingleRunWorker) observerRoutine(ctx context.Context, cancel context.Ca
 
 			// If we are an async run and we finished here with SUCCEEDED we still will signal a IN_PROGRESS
 			// to the coordinator as we basically just handed over execution to the external pipeline.
-			finalStatus := runContextInfo.reportStatus.Status
-			if run.IsAsync && runContextInfo.reportStatus.Status == SUCCEEDED {
+			reportStatus := runContextInfo.progress.Snapshot()
+			finalStatus := reportStatus.Status
+			if run.IsAsync && reportStatus.Status == SUCCEEDED {
 				finalStatus = IN_PROGRESS
 			}
-
-			reportStatus := runContextInfo.reportStatus
 			reportStatus.Status = finalStatus
 
 			w.log.Printf("Sending final status update for run %s: %s", runContextInfo.runId, finalStatus.str())
@@ -181,8 +181,9 @@ func (w *SingleRunWorker) observerRoutine(ctx context.Context, cancel context.Ca
 
 		// send out updates as liveliness update
 		case <-ticker.C:
-			if !runContextInfo.reportStatus.Status.isTerminalState() {
-				abort, err := w.runApi.UpdateState(&runContextInfo.reportStatus)
+			reportStatus := runContextInfo.progress.Snapshot()
+			if !reportStatus.Status.isTerminalState() {
+				abort, err := w.runApi.UpdateState(&reportStatus)
 				if err != nil {
 					runContextInfo.logwrap.PrintlnToLocalLogs(fmt.Sprintf("Failed to update state: %s", err.Error()))
 				}

@@ -19,8 +19,10 @@ type RunContextInfo struct {
 	logFile_name           string
 	logwrap                *logwrap
 	runStatus              *RunStatus
-	// the reportStatus is an atomic version of the runStatus, meaning the reportStatus is safe to use in the worker / observer routine
-	reportStatus     RunStatus
+	// progress is the concurrency-safe published view of runStatus, read by the observer
+	// goroutine while the work goroutine mutates runStatus (B10 fix — replaces the former
+	// shallow-copy reportStatus).
+	progress         *progress
 	artifactFilePath string
 	runToken         string
 	meshstackBaseUrl string
@@ -51,7 +53,7 @@ func initRunContextInfo(run *Run, logPrefix string, logWriter io.Writer, wd stri
 		workingDirectory:       wd,
 		artifactFilePath:       path.Join(wd, "plan.tfplan"),
 		runStatus:              status,
-		reportStatus:           *status,
+		progress:               newProgress(*status),
 		logFile_name:           outFile,
 		logwrap:                NewLogWrap(log, outFile),
 		runToken:               run.RunToken,

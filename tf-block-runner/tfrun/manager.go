@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -26,9 +27,12 @@ type DefaultRunManager struct {
 	workerIn       chan workerToken // commands towards worker routines
 	managerIn      chan workerToken // channel is read by run manager
 	defaultTimeout time.Duration
-	shutdownCalled bool
+	// shutdownCalled is read by the handout goroutine and written by Stop concurrently, so it
+	// must be atomic (B6 fix — the former plain bool was a data race).
+	shutdownCalled atomic.Bool
 	tfbinaries     *TfBinaries
 	logger         *log.Logger
+	dec            Decryptor
 }
 
 type RunManager interface {
@@ -36,14 +40,14 @@ type RunManager interface {
 	Stop()
 }
 
-func NewManager(tfbin *TfBinaries) RunManager {
+func NewManager(tfbin *TfBinaries, dec Decryptor) RunManager {
 	return &DefaultRunManager{
 		defaultTimeout: time.Minute * time.Duration(AppConfig.TfCommandTimeoutMins),
 		workerIn:       make(chan workerToken, 1),
 		managerIn:      make(chan workerToken, 1),
-		shutdownCalled: false,
 		tfbinaries:     tfbin,
 		logger:         log.New(os.Stdout, "[RunManager] ", log.LstdFlags),
+		dec:            dec,
 	}
 }
 
@@ -69,10 +73,11 @@ func (rm *DefaultRunManager) run(timeout time.Duration) {
 			timeout:              timeout,
 			workerIn:             rm.workerIn,
 			workerOut:            rm.managerIn,
-			runApi:               NewRunApi(),
+			runApi:               NewRunApi(rm.dec),
 			tfBinaries:           rm.tfbinaries,
 			log:                  log.New(os.Stdout, fmt.Sprintf("[WORKER-%03d] ", i+1), log.LstdFlags),
 			statusUpdateInterval: time.Second * 10,
+			dec:                  rm.dec,
 		}
 		go worker.work()
 	}
@@ -117,11 +122,11 @@ func (rm *DefaultRunManager) handleWorkers() {
 }
 
 func (rm *DefaultRunManager) handoutWorkerToken(delay time.Duration) {
-	if rm.shutdownCalled {
+	if rm.shutdownCalled.Load() {
 		rm.workerIn <- stop
 	} else {
 		time.Sleep(delay)
-		if rm.shutdownCalled {
+		if rm.shutdownCalled.Load() {
 			rm.workerIn <- stop
 		} else {
 			rm.workerIn <- work
@@ -130,6 +135,6 @@ func (rm *DefaultRunManager) handoutWorkerToken(delay time.Duration) {
 }
 
 func (rm *DefaultRunManager) Stop() {
-	rm.shutdownCalled = true
+	rm.shutdownCalled.Store(true)
 	rm.logger.Println("Shutdown initialized")
 }

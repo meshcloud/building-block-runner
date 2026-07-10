@@ -36,6 +36,8 @@ type RunApiClient struct {
 	auth       *runApiAuth
 	client     *meshapi.Client
 	httpClient *http.Client
+	// dec decrypts sensitive inputs + SSH key while mapping a fetched run (polling mode).
+	dec Decryptor
 }
 
 const (
@@ -53,7 +55,7 @@ type RunApi interface {
 	DownloadPredecessorArtifact(url string, w io.Writer) error
 }
 
-func NewRunApi() RunApi {
+func NewRunApi(dec Decryptor) RunApi {
 	auth := &runApiAuth{
 		runToken: nil,
 		baseAuth: AppConfig.RunApiBackend.NewAuthProvider(),
@@ -66,6 +68,7 @@ func NewRunApi() RunApi {
 		auth:       auth,
 		client:     meshapi.NewClient(AppConfig.RunApiBackend.Url, AppConfig.RunnerUuid, auth),
 		httpClient: httpClient,
+		dec:        dec,
 	}
 }
 
@@ -97,7 +100,7 @@ func (api *RunApiClient) FetchRunDetails(nodePostfix string) (*Run, error) {
 	// Extract and store the runToken for subsequent API calls
 	api.SetRunToken(dto.Spec.RunToken)
 
-	return runDTOToInternal(dto)
+	return runDTOToInternal(dto, api.dec)
 }
 
 func (api *RunApiClient) Register(runStatus *RunStatus) error {

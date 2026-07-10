@@ -8,9 +8,7 @@ type TfDestroyCommand struct {
 	GenericTfCmd
 }
 
-func DestroyCmd(ctx context.Context, params *TfCmdParams, tfbin *TfBinaries) *TfDestroyCommand {
-	runContextInfo := ctx.Value(runInfoContextKey).(*RunContextInfo)
-
+func DestroyCmd(ctx context.Context, runContextInfo *RunContextInfo, params *TfCmdParams, tfbin *TfBinaries) *TfDestroyCommand {
 	return &TfDestroyCommand{
 		GenericTfCmd{
 			ctx:            ctx,
@@ -23,7 +21,7 @@ func DestroyCmd(ctx context.Context, params *TfCmdParams, tfbin *TfBinaries) *Tf
 
 func (tfcmd *TfDestroyCommand) initRunSteps() {
 	if tfcmd.runContextInfo.asyncRun {
-		tfcmd.runContextInfo.runStatus.Steps = []*StepStatus{
+		tfcmd.runContextInfo.runStatus.Steps = []StepStatus{
 			{
 				Name:          StepTrigger,
 				DisplayName:   "Prepare Run",
@@ -35,7 +33,7 @@ func (tfcmd *TfDestroyCommand) initRunSteps() {
 			},
 		}
 	} else {
-		tfcmd.runContextInfo.runStatus.Steps = []*StepStatus{
+		tfcmd.runContextInfo.runStatus.Steps = []StepStatus{
 			{
 				Name:          StepSources,
 				DisplayName:   "Prepare Run and download Sources",

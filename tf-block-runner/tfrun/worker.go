@@ -23,14 +23,8 @@ type Worker struct {
 	tfBinaries           *TfBinaries
 	log                  *log.Logger
 	statusUpdateInterval time.Duration
+	dec                  Decryptor
 }
-
-// defining custom type for context key is best practice
-// to avoid possible collisions downstream.
-// unlikely in our case, though.
-type contextKey struct{}
-
-var runInfoContextKey = contextKey{}
 
 func (w *Worker) work() {
 	w.log.Println("Started")
@@ -115,16 +109,16 @@ func (w *Worker) tfExecution(run *Run) {
 	// create context with timeout settings
 	parentCtx, cancel := context.WithTimeout(context.Background(), w.timeout)
 	defer cancel()
-	workCtx, workCancel := context.WithCancel(context.WithValue(parentCtx, runInfoContextKey, runContextInfo))
+	workCtx, workCancel := context.WithCancel(parentCtx)
 
 	// prep wait group and signalling channel
 	var wg sync.WaitGroup
 	wg.Add(2)
 	workDoneChannel := make(chan bool)
 
-	go w.workRoutine(workCtx, run, &wg, workDoneChannel)
+	go w.workRoutine(workCtx, run, runContextInfo, &wg, workDoneChannel)
 
-	go w.observerRoutine(workCtx, workCancel, run, &wg, workDoneChannel)
+	go w.observerRoutine(workCtx, workCancel, run, runContextInfo, &wg, workDoneChannel)
 
 	wg.Wait()
 
@@ -134,11 +128,10 @@ func (w *Worker) tfExecution(run *Run) {
 
 // this starts the actual tf command execution.
 // sends out a done signal via the signalling channel, once terminated (status independent).
-func (w *Worker) workRoutine(ctx context.Context, run *Run, wg *sync.WaitGroup, doneSignallingChan chan bool) {
+func (w *Worker) workRoutine(ctx context.Context, run *Run, runContextInfo *RunContextInfo, wg *sync.WaitGroup, doneSignallingChan chan bool) {
 	defer wg.Done()
 	defer func() { doneSignallingChan <- true }()
 
-	runContextInfo := ctx.Value(runInfoContextKey).(*RunContextInfo)
 	params := &TfCmdParams{
 		dir:                w.workerDir,
 		buildingBlockId:    run.BuildingBlockId,
@@ -150,6 +143,7 @@ func (w *Worker) workRoutine(ctx context.Context, run *Run, wg *sync.WaitGroup, 
 		preRunScript:       run.PreRunScript,
 		runMode:            run.Behavior.str(),
 		planArtifactUrl:    run.PlanArtifactUrl,
+		dec:                w.dec,
 	}
 
 	var tfCommand TfCmd
@@ -157,13 +151,13 @@ func (w *Worker) workRoutine(ctx context.Context, run *Run, wg *sync.WaitGroup, 
 	switch run.Behavior {
 
 	case APPLY:
-		tfCommand = ApplyCmd(ctx, params, w.tfBinaries, w.runApi)
+		tfCommand = ApplyCmd(ctx, runContextInfo, params, w.tfBinaries, w.runApi)
 
 	case DETECT:
-		tfCommand = PlanCmd(ctx, params, w.tfBinaries)
+		tfCommand = PlanCmd(ctx, runContextInfo, params, w.tfBinaries)
 
 	case DESTROY:
-		tfCommand = DestroyCmd(ctx, params, w.tfBinaries)
+		tfCommand = DestroyCmd(ctx, runContextInfo, params, w.tfBinaries)
 	}
 
 	tfCommand.initRunSteps()
@@ -174,7 +168,7 @@ func (w *Worker) workRoutine(ctx context.Context, run *Run, wg *sync.WaitGroup, 
 		// Explicitly mark as FAILED so the observer sends the correct final status.
 		// Without this, IN_PROGRESS would be sent as the final status, leaving
 		// the run stuck until the coordinator eventually times it out.
-		runContextInfo.reportStatus.Status = FAILED
+		runContextInfo.progress.setStatus(FAILED)
 	} else {
 		runContextInfo.logwrap.PrintlnToLocalLogs(fmt.Sprintf("Registered '%s' as a source for runId: %s", AppConfig.RunnerUuid, runContextInfo.runId))
 		tfCommand.execute()
@@ -183,13 +177,11 @@ func (w *Worker) workRoutine(ctx context.Context, run *Run, wg *sync.WaitGroup, 
 
 // this routine periodically sends out the status updates and finishes, once the workRoutine sends its done signal.
 // then we send out a final status update.
-func (w *Worker) observerRoutine(ctx context.Context, cancel context.CancelFunc, run *Run, wg *sync.WaitGroup, doneSignallingChan chan bool) {
+func (w *Worker) observerRoutine(ctx context.Context, cancel context.CancelFunc, run *Run, runContextInfo *RunContextInfo, wg *sync.WaitGroup, doneSignallingChan chan bool) {
 	defer wg.Done()
 
 	ticker := time.NewTicker(w.statusUpdateInterval)
 	defer ticker.Stop()
-
-	runContextInfo := ctx.Value(runInfoContextKey).(*RunContextInfo)
 
 	for {
 		select {
@@ -205,12 +197,11 @@ func (w *Worker) observerRoutine(ctx context.Context, cancel context.CancelFunc,
 
 			// If we are an async run and we finished here with SUCCEEDED we still will signal a IN_PROGRESS
 			// to the coordinator as we basically just handed over execution to the external pipeline.
-			finalStatus := runContextInfo.reportStatus.Status
-			if run.IsAsync && runContextInfo.reportStatus.Status == SUCCEEDED {
+			reportStatus := runContextInfo.progress.Snapshot()
+			finalStatus := reportStatus.Status
+			if run.IsAsync && reportStatus.Status == SUCCEEDED {
 				finalStatus = IN_PROGRESS
 			}
-
-			reportStatus := runContextInfo.reportStatus
 			reportStatus.Status = finalStatus
 
 			// For the final update we do not care about the 'abort-run' flag
@@ -230,8 +221,9 @@ func (w *Worker) observerRoutine(ctx context.Context, cancel context.CancelFunc,
 		// do NOT send in case we are in a terminal state, to prevent duplicate "final updates",
 		// as this is handled in the previous case block (workRoutine done)
 		case <-ticker.C:
-			if !runContextInfo.reportStatus.Status.isTerminalState() {
-				abort, err := w.runApi.UpdateState(&runContextInfo.reportStatus)
+			reportStatus := runContextInfo.progress.Snapshot()
+			if !reportStatus.Status.isTerminalState() {
+				abort, err := w.runApi.UpdateState(&reportStatus)
 				if err != nil {
 					runContextInfo.logwrap.PrintlnToLocalLogs(fmt.Sprintf("Failed to update state: %s", err.Error()))
 				}

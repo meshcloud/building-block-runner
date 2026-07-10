@@ -25,7 +25,6 @@ func newTestManager() *DefaultRunManager {
 		workerIn:       make(chan workerToken, 4),
 		managerIn:      make(chan workerToken, 4),
 		defaultTimeout: time.Minute,
-		shutdownCalled: false,
 		logger:         log.New(io.Discard, "", 0),
 	}
 }
@@ -47,11 +46,11 @@ func recvToken(t *testing.T, ch chan workerToken) workerToken {
 // channels are buffered, and shutdown starts false.
 func Test_NewManager_SetsDefaults(t *testing.T) {
 	AppConfig.TfCommandTimeoutMins = 7
-	rm, ok := NewManager(nil).(*DefaultRunManager)
+	rm, ok := NewManager(nil, nil).(*DefaultRunManager)
 	require.True(t, ok, "NewManager must return *DefaultRunManager")
 
 	assert.Equal(t, 7*time.Minute, rm.defaultTimeout)
-	assert.False(t, rm.shutdownCalled)
+	assert.False(t, rm.shutdownCalled.Load())
 	assert.NotNil(t, rm.workerIn)
 	assert.NotNil(t, rm.managerIn)
 	assert.Equal(t, 1, cap(rm.workerIn))
@@ -84,7 +83,7 @@ func Test_HandleWorkers_DoneHandsOutWork(t *testing.T) {
 // is told to stop rather than handed more work.
 func Test_HandleWorkers_DoneWhileShuttingDown(t *testing.T) {
 	rm := newTestManager()
-	rm.shutdownCalled = true
+	rm.shutdownCalled.Store(true)
 
 	loopDone := make(chan struct{})
 	go func() {
@@ -109,7 +108,7 @@ func Test_HandleWorkers_DoneWhileShuttingDown(t *testing.T) {
 func Test_HandoutWorkerToken_Branches(t *testing.T) {
 	t.Run("shutdown at entry hands out stop", func(t *testing.T) {
 		rm := newTestManager()
-		rm.shutdownCalled = true
+		rm.shutdownCalled.Store(true)
 		go rm.handoutWorkerToken(0)
 		assert.Equal(t, stop, recvToken(t, rm.workerIn))
 	})
@@ -123,11 +122,11 @@ func Test_HandoutWorkerToken_Branches(t *testing.T) {
 	t.Run("shutdown observed after the delay hands out stop", func(t *testing.T) {
 		rm := newTestManager()
 		// A small non-zero delay lets us flip shutdownCalled while handoutWorkerToken sleeps, so the
-		// post-sleep re-check (manager.go:124) takes the stop branch. -race stays off (A5/B6), so the
-		// unsynchronized shutdownCalled write here is acceptable per the pin-don't-fix policy.
+		// post-sleep re-check takes the stop branch. shutdownCalled is now an atomic.Bool (B6 fixed
+		// structurally in phase 2), so this concurrent write/read is race-free under -race.
 		go rm.handoutWorkerToken(50 * time.Millisecond)
 		time.Sleep(10 * time.Millisecond)
-		rm.shutdownCalled = true
+		rm.shutdownCalled.Store(true)
 		assert.Equal(t, stop, recvToken(t, rm.workerIn))
 	})
 }
@@ -143,7 +142,7 @@ func Test_Manager_DelayConstants(t *testing.T) {
 // race — A5).
 func Test_Manager_Stop(t *testing.T) {
 	rm := newTestManager()
-	assert.False(t, rm.shutdownCalled)
+	assert.False(t, rm.shutdownCalled.Load())
 	rm.Stop()
-	assert.True(t, rm.shutdownCalled)
+	assert.True(t, rm.shutdownCalled.Load())
 }

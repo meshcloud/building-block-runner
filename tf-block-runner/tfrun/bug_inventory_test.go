@@ -278,7 +278,7 @@ func Test_BugInventory_B5_SensitiveNonDecryptableTypeKeepsCiphertext(t *testing.
 
 	v := Variable{value: ciphertext, isSensitive: true, Type: DATA_TYPE_BOOLEAN}
 
-	result, err := v.decryptIfSensitive(crypto)
+	result, err := v.decryptIfSensitive(certDecryptor{crypto: crypto})
 
 	require.NoError(t, err)
 	assert.Equal(t, ciphertext, result,
@@ -363,7 +363,7 @@ func runToInitFailure(t *testing.T, behavior Behavior) string {
 	require.NoError(t, os.Mkdir(path.Join(wd, "logs"), 0700))
 	runContextInfo := initRunContextInfo(run, "[bug-inventory] ", io.Discard, wd)
 	run.Source.setLog(runContextInfo.logwrap)
-	ctx := context.WithValue(context.Background(), runInfoContextKey, runContextInfo)
+	ctx := context.Background()
 
 	params := &TfCmdParams{
 		dir:                wd,
@@ -387,11 +387,11 @@ func runToInitFailure(t *testing.T, behavior Behavior) string {
 	var tfCmd TfCmd
 	switch behavior {
 	case APPLY:
-		tfCmd = ApplyCmd(ctx, params, tfbin, nil)
+		tfCmd = ApplyCmd(ctx, runContextInfo, params, tfbin, nil)
 	case DETECT:
-		tfCmd = PlanCmd(ctx, params, tfbin)
+		tfCmd = PlanCmd(ctx, runContextInfo, params, tfbin)
 	case DESTROY:
-		tfCmd = DestroyCmd(ctx, params, tfbin)
+		tfCmd = DestroyCmd(ctx, runContextInfo, params, tfbin)
 	default:
 		t.Fatalf("unsupported behavior %v", behavior)
 	}

@@ -15,10 +15,6 @@ const (
 	RSK_LENGTH = 16
 )
 
-// Crypto is a package-level default instance, used by the tf-block-runner in polling mode.
-// It is nil in single-run mode where the controller pre-decrypts all sensitive fields.
-var Crypto *MeshCertBasedCrypto = nil
-
 //
 // This is designed to decrypt MeshCertBasedEncryption-encrypted
 // stuff. The plaintext has been encrypted with help of our public key

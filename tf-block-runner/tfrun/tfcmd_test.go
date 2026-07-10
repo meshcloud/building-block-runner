@@ -239,6 +239,7 @@ func makeTestGenericTfCmd(t *testing.T) *GenericTfCmd {
 	return &GenericTfCmd{
 		params: &TfCmdParams{
 			vars: make(map[string]*Variable),
+			dec:  certDecryptor{crypto: testCrypto(t)},
 		},
 		runContextInfo: &RunContextInfo{
 			workingDirectory: wd,
@@ -248,7 +249,7 @@ func makeTestGenericTfCmd(t *testing.T) *GenericTfCmd {
 			bbId:          "test-building-block-id",
 			runId:         "test-run-id",
 			runStatus: &RunStatus{
-				Steps: []*StepStatus{
+				Steps: []StepStatus{
 					{Name: "Test"},
 				},
 				CurrentStepIndex: 0,

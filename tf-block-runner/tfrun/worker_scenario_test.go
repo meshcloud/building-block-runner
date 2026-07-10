@@ -124,15 +124,20 @@ func (suite *WorkerTestSuite) SetupTest() {
 
 	scenarioAuth := &runApiAuth{baseAuth: meshapi.BasicAuth{Username: "test-user", Password: "test-pass"}}
 
+	// Wire the injected decryptor (D4) with the checked-in test key pair so the decrypt path runs
+	// end to end for sensitive-input scenarios (cp4), replacing the former meshcrypto.Crypto global.
+	dec := testDecryptor(suite.T())
+
 	suite.w = &Worker{
 		workerNumber:         1,
 		tfBinaries:           suite.tfBin,
 		workerIn:             make(chan workerToken, 2),
 		workerOut:            make(chan workerToken, 2),
-		runApi:               newScenarioRunApiClient("scenario-runner", scenarioAuth, testRoundTripper(suite.scenarioClientBehavior)),
+		runApi:               newScenarioRunApiClient("scenario-runner", scenarioAuth, testRoundTripper(suite.scenarioClientBehavior), dec),
 		log:                  log.New(io.Discard, "", log.LstdFlags),
 		timeout:              30 * time.Second,
 		statusUpdateInterval: time.Second * 10,
+		dec:                  dec,
 	}
 }
 

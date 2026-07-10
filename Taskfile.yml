@@ -34,10 +34,10 @@ tasks:
       - go test ./...
 
   test:tf-block-runner:
-    desc: Run tf-block-runner tests
+    desc: Run tf-block-runner tests (with -race; phase 2 fixed the B6/B10 data races structurally)
     dir: tf-block-runner
     cmds:
-      - go test ./...
+      - go test -race ./...
 
   lint:
     desc: Lint all modules with golangci-lint (govet runs inside; pass extra args after --, e.g. `task lint -- --fix`)

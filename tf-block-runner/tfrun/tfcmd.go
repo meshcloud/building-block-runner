@@ -17,7 +17,6 @@ import (
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclwrite"
 	"github.com/hashicorp/terraform-exec/tfexec"
-	meshcrypto "github.com/meshcloud/building-block-runner/go-meshapi-client/crypto"
 	"github.com/zclconf/go-cty/cty"
 
 	"github.com/meshcloud/building-block-runner/tf-block-runner/util"
@@ -48,6 +47,9 @@ type TfCmdParams struct {
 	runMode            string
 	// planArtifactUrl is copied from Run.PlanArtifactUrl; empty means plain apply.
 	planArtifactUrl string
+	// dec decrypts sensitive inputs. Injected per run (D4): certDecryptor in polling mode,
+	// NoopDecryptor in single-run mode. Nil is treated as passthrough.
+	dec Decryptor
 }
 
 // GenericTfCmd implements generic functionality all TF commands re-use.
@@ -470,7 +472,7 @@ func (tfcmd *GenericTfCmd) buildTfEnv() (map[string]string, error) {
 	for varName, variable := range tfcmd.params.vars {
 		// Note: TF_VAR_ prefixed env vars from Building Blocks are passed in as *.auto.tfvars file (see vars() method)
 		if variable.env && !strings.HasPrefix(varName, TfVarEnvPrefix) {
-			val, err := variable.decryptIfSensitive(meshcrypto.Crypto)
+			val, err := variable.decryptIfSensitive(tfcmd.params.dec)
 			if err == nil {
 				encodedValue, err := encodeVarValueForEnv(val, variable.Type)
 				if err != nil {
@@ -532,7 +534,7 @@ func (tfcmd *GenericTfCmd) saveInputFiles() (savedFiles int, err error) {
 			return savedFiles, err
 		}
 
-		value, err := v.decryptIfSensitive(meshcrypto.Crypto)
+		value, err := v.decryptIfSensitive(tfcmd.params.dec)
 		if err != nil {
 			tfcmd.Printfln("Failed to decrypt file input '%s'", k)
 			tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(fmt.Sprintf("Failed to decrypt file input '%s': %s", k, err.Error()))
@@ -597,7 +599,7 @@ func (tfcmd *GenericTfCmd) vars() error {
 			continue
 		}
 
-		decryptedValue, err := variable.decryptIfSensitive(meshcrypto.Crypto)
+		decryptedValue, err := variable.decryptIfSensitive(tfcmd.params.dec)
 		if err != nil {
 			tfcmd.Printfln("Failed to decrypt input '%s'", varName)
 			_, _ = tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(fmt.Sprintf("Failed to decrypt input '%s': %s", varName, err.Error()))
@@ -828,7 +830,7 @@ func (tfcmd *GenericTfCmd) setRunStatus(e ExecutionStatus) {
 }
 
 func (tfcmd *GenericTfCmd) commitStatus() {
-	tfcmd.runContextInfo.reportStatus = *(tfcmd.runContextInfo.runStatus)
+	tfcmd.runContextInfo.progress.publish(*tfcmd.runContextInfo.runStatus)
 }
 
 // startRun activates the first step and marks the overall run as IN_PROGRESS.

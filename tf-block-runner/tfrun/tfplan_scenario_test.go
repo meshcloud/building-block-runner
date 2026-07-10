@@ -21,12 +21,11 @@ func (suite *WorkerTestSuite) Test_DetectSucceeded_ArtifactInStatusUpdate() {
 	planFuncCalled := false
 
 	// Write the plan file when Plan() is called so that execute() can read it back.
-	// The plan file path is always <workingDirectory>/plan.tfplan; we extract workingDirectory
-	// from the context injected via runInfoContextKey.
+	// The plan file path is always <workingDirectory>/plan.tfplan; the mock exposes it via
+	// artifactPath() using the working dir captured in GetTF.
 	suite.tfMock.planFunc = func(ctx context.Context, opts ...tfexec.PlanOption) (bool, error) {
 		planFuncCalled = true
-		rci := ctx.Value(runInfoContextKey).(*RunContextInfo)
-		return true, os.WriteFile(rci.artifactFilePath, planBytes, 0600)
+		return true, os.WriteFile(suite.tfMock.artifactPath(), planBytes, 0600)
 	}
 
 	suite.calls.fetch = mockValidRunDetailsFetchCall(DETECT.str(), suite.repo.Path, suite.repoPath)
@@ -90,8 +89,7 @@ func (suite *WorkerTestSuite) Test_ApplyWithPlanArtifact_DownloadsAndAppliesSave
 	var planOnDisk []byte
 	suite.tfMock.applyFunc = func(ctx context.Context, opts ...tfexec.ApplyOption) error {
 		applyOptCount = len(opts)
-		rci := ctx.Value(runInfoContextKey).(*RunContextInfo)
-		planOnDisk, _ = os.ReadFile(rci.artifactFilePath)
+		planOnDisk, _ = os.ReadFile(suite.tfMock.artifactPath())
 		return nil
 	}
 

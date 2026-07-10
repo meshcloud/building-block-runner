@@ -16,9 +16,7 @@ type TfApplyCommand struct {
 	runApi RunApi
 }
 
-func ApplyCmd(ctx context.Context, params *TfCmdParams, tfbin *TfBinaries, runApi RunApi) *TfApplyCommand {
-	runContextInfo := ctx.Value(runInfoContextKey).(*RunContextInfo)
-
+func ApplyCmd(ctx context.Context, runContextInfo *RunContextInfo, params *TfCmdParams, tfbin *TfBinaries, runApi RunApi) *TfApplyCommand {
 	return &TfApplyCommand{
 		GenericTfCmd: GenericTfCmd{
 			ctx:            ctx,
@@ -32,7 +30,7 @@ func ApplyCmd(ctx context.Context, params *TfCmdParams, tfbin *TfBinaries, runAp
 
 func (tfcmd *TfApplyCommand) initRunSteps() {
 	if tfcmd.runContextInfo.asyncRun {
-		tfcmd.runContextInfo.runStatus.Steps = []*StepStatus{
+		tfcmd.runContextInfo.runStatus.Steps = []StepStatus{
 			{
 				Name:          StepTrigger,
 				DisplayName:   "Prepare Run",
@@ -44,7 +42,7 @@ func (tfcmd *TfApplyCommand) initRunSteps() {
 			},
 		}
 	} else {
-		tfcmd.runContextInfo.runStatus.Steps = []*StepStatus{
+		tfcmd.runContextInfo.runStatus.Steps = []StepStatus{
 			{
 				Name:          StepSources,
 				DisplayName:   "Prepare Run and download Sources",

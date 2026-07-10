@@ -72,7 +72,7 @@ func (suite *WorkerTestSuite) Test_HandleFetchRunError() {
 				workerNumber: 1,
 				workerIn:     make(chan workerToken, 2),
 				workerOut:    make(chan workerToken, 2),
-				runApi:       newScenarioRunApiClient("cp2-fetcherr", auth, tc.transport),
+				runApi:       newScenarioRunApiClient("cp2-fetcherr", auth, tc.transport, NoopDecryptor{}),
 				log:          log.New(io.Discard, "", 0),
 			}
 

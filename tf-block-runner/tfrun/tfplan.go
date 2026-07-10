@@ -12,9 +12,7 @@ type TfPlanCommand struct {
 	GenericTfCmd
 }
 
-func PlanCmd(ctx context.Context, params *TfCmdParams, tfbin *TfBinaries) *TfPlanCommand {
-	runContextInfo := ctx.Value(runInfoContextKey).(*RunContextInfo)
-
+func PlanCmd(ctx context.Context, runContextInfo *RunContextInfo, params *TfCmdParams, tfbin *TfBinaries) *TfPlanCommand {
 	return &TfPlanCommand{
 		GenericTfCmd{
 			ctx:            ctx,
@@ -27,7 +25,7 @@ func PlanCmd(ctx context.Context, params *TfCmdParams, tfbin *TfBinaries) *TfPla
 
 func (tfcmd *TfPlanCommand) initRunSteps() {
 	if tfcmd.runContextInfo.asyncRun {
-		tfcmd.runContextInfo.runStatus.Steps = []*StepStatus{
+		tfcmd.runContextInfo.runStatus.Steps = []StepStatus{
 			{
 				Name:          StepTrigger,
 				DisplayName:   "Prepare Run",
@@ -39,7 +37,7 @@ func (tfcmd *TfPlanCommand) initRunSteps() {
 			},
 		}
 	} else {
-		tfcmd.runContextInfo.runStatus.Steps = []*StepStatus{
+		tfcmd.runContextInfo.runStatus.Steps = []StepStatus{
 			{
 				Name:          StepSources,
 				DisplayName:   "Prepare Run and download Sources",

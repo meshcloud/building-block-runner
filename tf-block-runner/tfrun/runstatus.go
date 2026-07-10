@@ -5,7 +5,7 @@ import "errors"
 type RunStatus struct {
 	RunId            string
 	Status           ExecutionStatus
-	Steps            []*StepStatus
+	Steps            []StepStatus
 	CurrentStepIndex int
 	Summary          *string
 	// Artifact holds an optional binary artifact produced by this run.
@@ -26,7 +26,7 @@ type StepStatus struct {
 
 func (r *RunStatus) currentStepStatus() *StepStatus {
 	if r.CurrentStepIndex >= 0 && r.CurrentStepIndex < len(r.Steps) {
-		return r.Steps[r.CurrentStepIndex]
+		return &r.Steps[r.CurrentStepIndex]
 	} else {
 		return nil
 	}
@@ -51,13 +51,28 @@ func (r *RunStatus) nextStep() error {
 }
 
 func (r *RunStatus) failRunAndNotFinishedSteps() {
-	for idx, s := range r.Steps {
+	for idx := range r.Steps {
 		if idx >= r.CurrentStepIndex {
-			s.Status = FAILED
+			r.Steps[idx].Status = FAILED
 		}
 		if idx > r.CurrentStepIndex {
-			s.SystemMessage = message("Aborted due to failure in an earlier step")
+			r.Steps[idx].SystemMessage = message("Aborted due to failure in an earlier step")
 		}
 	}
 	r.Status = FAILED
+}
+
+// clone returns a copy safe to hand to the observer goroutine: the Steps and Artifact slices are
+// reallocated so the work goroutine's in-place step-field reassignments cannot race a concurrent
+// marshal of the snapshot (B10 fix). StepStatus fields are value/pointer-reassigned (never mutated
+// in place), so a value copy of each element is sufficient.
+func (r RunStatus) clone() RunStatus {
+	c := r
+	if r.Steps != nil {
+		c.Steps = append([]StepStatus(nil), r.Steps...)
+	}
+	if r.Artifact != nil {
+		c.Artifact = append([]byte(nil), r.Artifact...)
+	}
+	return c
 }

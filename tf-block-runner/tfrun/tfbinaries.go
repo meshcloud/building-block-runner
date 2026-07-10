@@ -80,10 +80,12 @@ func (bin *TfBinaries) GetTF(ctx context.Context, workingDir string, ver string)
 	// in testMode provide a mocked TfFacade, either the specified one or a default mock
 	if bin.testMode {
 		if bin.tfMock != nil {
+			bin.tfMock.workingDir = workingDir
 			return bin.tfMock, nil
 		} else {
 			mock := &MockedTfFacade{}
 			mock.initMockFuncs()
+			mock.workingDir = workingDir
 			return mock, nil
 		}
 	}

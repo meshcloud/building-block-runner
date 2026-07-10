@@ -9,8 +9,9 @@ import (
 )
 
 // runDTOToInternal converts a RunDetailsDTO to an internal Run.
-// It decrypts sensitive inputs using the package-level crypto (polling mode).
-func runDTOToInternal(dto *meshapi.RunDetailsDTO) (*Run, error) {
+// The injected Decryptor decrypts sensitive inputs and the SSH key: certDecryptor in polling
+// mode, NoopDecryptor in single-run mode (values already decrypted by the controller).
+func runDTOToInternal(dto *meshapi.RunDetailsDTO, dec Decryptor) (*Run, error) {
 	behavior, err := DetermineBehavior(dto.Spec.Behavior)
 	if err != nil {
 		return nil, err
@@ -21,7 +22,7 @@ func runDTOToInternal(dto *meshapi.RunDetailsDTO) (*Run, error) {
 		return nil, err
 	}
 
-	source, err := terraformImplToGitSource(&impl)
+	source, err := terraformImplToGitSource(&impl, dec)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +61,7 @@ func runDTOToInternal(dto *meshapi.RunDetailsDTO) (*Run, error) {
 
 // ToInternalWithoutDecryption converts a RunDetailsDTO to an internal Run without decrypting sensitive values.
 // This is used when the run JSON has already been decrypted at the controller level.
-func ToInternalWithoutDecryption(dto *meshapi.RunDetailsDTO) (*Run, error) {
+func ToInternalWithoutDecryption(dto *meshapi.RunDetailsDTO, dec Decryptor) (*Run, error) {
 	behavior, err := DetermineBehavior(dto.Spec.Behavior)
 	if err != nil {
 		return nil, err
@@ -71,7 +72,7 @@ func ToInternalWithoutDecryption(dto *meshapi.RunDetailsDTO) (*Run, error) {
 		return nil, err
 	}
 
-	source, err := terraformImplToGitSource(&impl)
+	source, err := terraformImplToGitSource(&impl, dec)
 	if err != nil {
 		return nil, err
 	}
@@ -174,18 +175,19 @@ func (status RunStatus) toExternal() (meshapi.RunStatusUpdateDTO, error) {
 	}, nil
 }
 
-func terraformImplAuthMethod(impl *meshapi.TerraformImplementation) (auth, error) {
+func terraformImplAuthMethod(impl *meshapi.TerraformImplementation, dec Decryptor) (auth, error) {
 	if impl.SshPrivateKey == nil {
 		return &NoAuth{}, nil
 	}
 	return &SshAuth{
 		certStr:        *impl.SshPrivateKey,
 		knownHostEntry: knownHostsToInternal(impl.KnownHost),
+		dec:            dec,
 	}, nil
 }
 
-func terraformImplToGitSource(impl *meshapi.TerraformImplementation) (*GitSource, error) {
-	auth, err := terraformImplAuthMethod(impl)
+func terraformImplToGitSource(impl *meshapi.TerraformImplementation, dec Decryptor) (*GitSource, error) {
+	auth, err := terraformImplAuthMethod(impl, dec)
 	if err != nil {
 		return nil, err
 	}

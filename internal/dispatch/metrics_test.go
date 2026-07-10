@@ -3,8 +3,45 @@ package dispatch
 import (
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
+
+// TestNewMetricsCollectorWithRegistry_IsolatesRegistries proves the PLAN_DETAIL_03 §5.6
+// injectable seam: two collectors built on two fresh registries do not share counters (so a
+// test never has to fight the NewMetricsCollector sync.Once), and each registry actually
+// carries the frozen run_controller_* series -- exercised end-to-end via Gather so the
+// registration (not just the struct wiring) is asserted.
+func TestNewMetricsCollectorWithRegistry_IsolatesRegistries(t *testing.T) {
+	regA := prometheus.NewRegistry()
+	regB := prometheus.NewRegistry()
+	a := NewMetricsCollectorWithRegistry(regA)
+	b := NewMetricsCollectorWithRegistry(regB)
+
+	a.IncRunsFetchError("uuid-a", ErrorTypeFetchAPI)
+
+	if got := testutil.ToFloat64(a.runsFetchErrors.WithLabelValues("uuid-a", ErrorTypeFetchAPI)); got != 1 {
+		t.Errorf("collector A: expected 1, got %v", got)
+	}
+	// The isolation guarantee: incrementing A must not bleed into B's independent registry.
+	if got := testutil.ToFloat64(b.runsFetchErrors.WithLabelValues("uuid-a", ErrorTypeFetchAPI)); got != 0 {
+		t.Errorf("collector B leaked A's increment: expected 0, got %v", got)
+	}
+
+	mfs, err := regA.Gather()
+	if err != nil {
+		t.Fatalf("gather regA: %v", err)
+	}
+	var found bool
+	for _, mf := range mfs {
+		if mf.GetName() == "run_controller_runs_fetch_errors_total" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("run_controller_runs_fetch_errors_total not registered on the injected registry")
+	}
+}
 
 // TestMetricsCollector_ExportedMethodsIncrementTheRightSeries exercises every exported
 // method on the frozen run_controller_* series (D12) -- this is the surface internal/k8sjob

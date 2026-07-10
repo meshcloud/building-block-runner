@@ -66,105 +66,126 @@ type MetricsCollector struct {
 	activeRunners            prometheus.Gauge
 }
 
-// NewMetricsCollector creates and registers all Prometheus metrics.
-// Uses singleton pattern to prevent duplicate registration panics.
+// NewMetricsCollector creates and registers all Prometheus metrics against the process
+// default registry (prometheus.DefaultRegisterer). Uses a singleton so the three historic
+// call sites (controller, claim client, registration path) share one instance and repeated
+// construction never trips a duplicate-registration panic -- the customer-facing behavior
+// preserved for every persona wiring that does not pass its own registry.
+//
+// It is a thin default-registry wrapper over NewMetricsCollectorWithRegistry (the PLAN_
+// DETAIL_03 §5.6 injectable seam): production wiring that wants the run_controller_* series
+// on a dedicated, process-local registry (e.g. the tf persona's mgmt.NewRegistry) or a test
+// that wants an isolated registry calls NewMetricsCollectorWithRegistry directly.
 func NewMetricsCollector() *MetricsCollector {
 	metricsOnce.Do(func() {
-		metricsInstance = &MetricsCollector{
-			runsFetchErrors: promauto.NewCounterVec(
-				prometheus.CounterOpts{
-					Name: "run_controller_runs_fetch_errors_total",
-					Help: "Total number of errors while fetching building block runs",
-				},
-				[]string{"controller_uuid", "error_type"},
-			),
-			runsFetchDuration: promauto.NewHistogramVec(
-				prometheus.HistogramOpts{
-					Name:    "run_controller_runs_fetch_duration_seconds",
-					Help:    "Duration of run fetch operations in seconds",
-					Buckets: prometheus.DefBuckets,
-				},
-				[]string{"controller_uuid"},
-			),
-			jobsCreatedTotal: promauto.NewCounterVec(
-				prometheus.CounterOpts{
-					Name: "run_controller_jobs_created_total",
-					Help: "Total number of Kubernetes jobs created for building block runs",
-				},
-				[]string{"controller_uuid"},
-			),
-			jobCreationErrors: promauto.NewCounterVec(
-				prometheus.CounterOpts{
-					Name: "run_controller_job_creation_errors_total",
-					Help: "Total number of errors while creating Kubernetes jobs",
-				},
-				[]string{"controller_uuid", "error_type"},
-			),
-			jobCreationDuration: promauto.NewHistogramVec(
-				prometheus.HistogramOpts{
-					Name:    "run_controller_job_creation_duration_seconds",
-					Help:    "Duration of Kubernetes job creation operations in seconds",
-					Buckets: prometheus.DefBuckets,
-				},
-				[]string{"controller_uuid"},
-			),
-			jobsAtCapacitySkips: promauto.NewCounterVec(
-				prometheus.CounterOpts{
-					Name: "run_controller_jobs_at_capacity_skips_total",
-					Help: "Total number of polling cycles skipped because the controller was at its max concurrent jobs limit",
-				},
-				[]string{"controller_uuid"},
-			),
-			serviceAccountsCreatedTotal: promauto.NewCounterVec(
-				prometheus.CounterOpts{
-					Name: "run_controller_service_accounts_created_total",
-					Help: "Total number of Kubernetes service accounts created for workload identity",
-				},
-				[]string{"controller_uuid"},
-			),
-			serviceAccountCreationErrors: promauto.NewCounterVec(
-				prometheus.CounterOpts{
-					Name: "run_controller_service_account_creation_errors_total",
-					Help: "Total number of errors while creating Kubernetes service accounts",
-				},
-				[]string{"controller_uuid", "error_type"},
-			),
-			decryptionErrors: promauto.NewCounterVec(
-				prometheus.CounterOpts{
-					Name: "run_controller_decryption_errors_total",
-					Help: "Total number of errors while decrypting run details",
-				},
-				[]string{"controller_uuid"},
-			),
-			runnerRegistrationSuccess: promauto.NewCounterVec(
-				prometheus.CounterOpts{
-					Name: "run_controller_runner_registration_success_total",
-					Help: "Total number of successful runner registrations on startup",
-				},
-				[]string{"controller_uuid"},
-			),
-			runnerRegistrationErrors: promauto.NewCounterVec(
-				prometheus.CounterOpts{
-					Name: "run_controller_runner_registration_errors_total",
-					Help: "Total number of runner registration errors on startup",
-				},
-				[]string{"controller_uuid", "error_type"},
-			),
-			controllerLoopIterations: promauto.NewCounter(
-				prometheus.CounterOpts{
-					Name: "run_controller_loop_iterations_total",
-					Help: "Total number of controller polling loop iterations",
-				},
-			),
-			activeRunners: promauto.NewGauge(
-				prometheus.GaugeOpts{
-					Name: "run_controller_active_runners",
-					Help: "Number of active runners configured in the controller",
-				},
-			),
-		}
+		metricsInstance = NewMetricsCollectorWithRegistry(prometheus.DefaultRegisterer)
 	})
 	return metricsInstance
+}
+
+// NewMetricsCollectorWithRegistry is the D12 injectable metrics seam PLAN_DETAIL_03 §5.6
+// promised phase 4: it builds and registers the run_controller_* series against reg -- any
+// prometheus.Registerer, not necessarily the process default (see mgmt.NewRegistry for the
+// per-persona dedicated registry, and prometheus.NewRegistry for the isolated per-test one
+// that removes the reliance on NewMetricsCollector's sync.Once). Metric names, labels and
+// help strings are byte-identical to the singleton (scrape-visible surface, D12); only the
+// registry the series land on is injectable. Unlike NewMetricsCollector this returns a fresh
+// collector every call, so two independent registries never share counters.
+func NewMetricsCollectorWithRegistry(reg prometheus.Registerer) *MetricsCollector {
+	factory := promauto.With(reg)
+	return &MetricsCollector{
+		runsFetchErrors: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "run_controller_runs_fetch_errors_total",
+				Help: "Total number of errors while fetching building block runs",
+			},
+			[]string{"controller_uuid", "error_type"},
+		),
+		runsFetchDuration: factory.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "run_controller_runs_fetch_duration_seconds",
+				Help:    "Duration of run fetch operations in seconds",
+				Buckets: prometheus.DefBuckets,
+			},
+			[]string{"controller_uuid"},
+		),
+		jobsCreatedTotal: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "run_controller_jobs_created_total",
+				Help: "Total number of Kubernetes jobs created for building block runs",
+			},
+			[]string{"controller_uuid"},
+		),
+		jobCreationErrors: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "run_controller_job_creation_errors_total",
+				Help: "Total number of errors while creating Kubernetes jobs",
+			},
+			[]string{"controller_uuid", "error_type"},
+		),
+		jobCreationDuration: factory.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "run_controller_job_creation_duration_seconds",
+				Help:    "Duration of Kubernetes job creation operations in seconds",
+				Buckets: prometheus.DefBuckets,
+			},
+			[]string{"controller_uuid"},
+		),
+		jobsAtCapacitySkips: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "run_controller_jobs_at_capacity_skips_total",
+				Help: "Total number of polling cycles skipped because the controller was at its max concurrent jobs limit",
+			},
+			[]string{"controller_uuid"},
+		),
+		serviceAccountsCreatedTotal: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "run_controller_service_accounts_created_total",
+				Help: "Total number of Kubernetes service accounts created for workload identity",
+			},
+			[]string{"controller_uuid"},
+		),
+		serviceAccountCreationErrors: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "run_controller_service_account_creation_errors_total",
+				Help: "Total number of errors while creating Kubernetes service accounts",
+			},
+			[]string{"controller_uuid", "error_type"},
+		),
+		decryptionErrors: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "run_controller_decryption_errors_total",
+				Help: "Total number of errors while decrypting run details",
+			},
+			[]string{"controller_uuid"},
+		),
+		runnerRegistrationSuccess: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "run_controller_runner_registration_success_total",
+				Help: "Total number of successful runner registrations on startup",
+			},
+			[]string{"controller_uuid"},
+		),
+		runnerRegistrationErrors: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "run_controller_runner_registration_errors_total",
+				Help: "Total number of runner registration errors on startup",
+			},
+			[]string{"controller_uuid", "error_type"},
+		),
+		controllerLoopIterations: factory.NewCounter(
+			prometheus.CounterOpts{
+				Name: "run_controller_loop_iterations_total",
+				Help: "Total number of controller polling loop iterations",
+			},
+		),
+		activeRunners: factory.NewGauge(
+			prometheus.GaugeOpts{
+				Name: "run_controller_active_runners",
+				Help: "Number of active runners configured in the controller",
+			},
+		),
+	}
 }
 
 // The methods below are the exported surface internal/k8sjob and the cmd/bbrunner wiring

@@ -12,8 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-
 	"github.com/meshcloud/building-block-runner/internal/build"
 	"github.com/meshcloud/building-block-runner/internal/config"
 	meshcrypto "github.com/meshcloud/building-block-runner/internal/crypto"
@@ -54,10 +52,16 @@ func runController() int {
 		return 1
 	}
 
-	metrics := dispatch.NewMetricsCollector()
+	// D12/§5.6: main constructs exactly one MetricsCollector against an injected registry and
+	// threads it into the loop, claim client, k8s dispatcher and registration path (rather
+	// than three call sites aliasing a process-global singleton). A dedicated mgmt.NewRegistry
+	// keeps the run_controller_* series + the standard Go/process collectors byte-identical on
+	// the wire while removing the reliance on prometheus.DefaultRegisterer/DefaultGatherer.
+	reg := mgmt.NewRegistry()
+	metrics := dispatch.NewMetricsCollectorWithRegistry(reg)
 	metrics.SetActiveRunners(1)
 
-	if err := mgmt.NewServer(logger.With("component", "mgmt"), mgmtPort.Addr(), prometheus.DefaultGatherer).Start(); err != nil {
+	if err := mgmt.NewServer(logger.With("component", "mgmt"), mgmtPort.Addr(), reg).Start(); err != nil {
 		logger.Error("failed to start management listener", "error", err)
 		return 1
 	}

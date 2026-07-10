@@ -104,3 +104,32 @@ so anything that pattern-matches the process command line needs updating too.
   was checked too (behavioral references only: mux `:8300`, `/tmp/tf-runner.log`, no
   path/command dependency) — **no edit needed** there either; not this repo's concern to
   action, noted here only so the meshfed-release owner doesn't have to re-derive it.
+
+## Phase 6a (manual Kotlin→Go port, PLAN_DETAIL_06A §9 step 10 / §12 / §15)
+
+This slice landed the **Go manual persona and every phase-6 template artifact additively**
+(new `internal/manual`, `cmd/manual`, the `report.NewReporter` event seam, the `config`
+compat helpers, `dispatch.StandaloneClaimClassifier`, the per-persona Dockerfile). It did
+**not** delete the Kotlin `manual-block-runner` module, flip its CI legs, or edit
+meshfed-release, because those steps hinge on the §11 acceptance gate (local-dev-stack run +
+k8s single-run smoke against a live meshStack) that cannot be executed in this environment.
+The following remain for the human/PR that flips manual over to the Go image:
+
+- **meshfed-release `.agents/skills/local-dev-stack/SKILL.md` (lock-step, §15):** replace the
+  manual-runner block (`./gradlew :manual-block-runner:bootRun`, lines ~64-71) with the Go
+  start `nohup go run . manual manual-block-runner`… actually `go run ./cmd/manual` (or
+  `go run ./cmd/bbrunner manual`) from the repo root, env
+  `RUNNER_API_URL=http://localhost:8301` + `RUNNER_CONFIG_FILE=containers/manual-block-runner/runner-config.yml`;
+  update the readiness marker (`Started BlockRunnerApplication` → the Go slog "starting
+  manual-block-runner" line) and the pgrep hint (`BlockRunnerApplication` → `manual`). Only
+  when the JVM manual image is actually retired.
+- **This repo, deferred to the removal PR:** `git rm -r manual-block-runner/`;
+  `settings.gradle` drop `include 'manual-block-runner'`; `.github/workflows/ci.yml` +
+  `build-images.yml` flip the manual JVM leg to
+  `dockerfile: containers/manual-block-runner/Dockerfile` and add a `./cmd/manual` build leg.
+  Kept intact here so CI stays green and the sibling ports (6b–6d) can stack on the template.
+- **Kotlin pin tests (§3):** not added — gradle is not runnable in this environment and the
+  module is not being modified/removed in this commit. The Go scenario suite
+  (`internal/manual/*_test.go`) preserves the same observable behavior (M-P1–M-P8 twins) and
+  is the surviving pin; the block-runner-core wire pins (C-P1–C-P7) likewise live as Go
+  transcript twins in `internal/report`/`internal/meshapi` tests.

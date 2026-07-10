@@ -227,6 +227,32 @@ linters:
             - golang.org/x/crypto
             - gopkg.in/yaml.v2
 
+        # manual persona (internal/manual) + its wiring cmd/manual (phase 6a, the Kotlin-port
+        # template): an HTTP-only echo runner — shared client/report/config/dispatch + its own
+        # handler, NO k8s, NO go-git, NO tofu (D8). prometheus is allowed for the persona's
+        # RunPolling wiring (the D12 runner_* series + the dispatch loop's default-registry
+        # metrics). The 06B–D personas add their own analogous groups.
+        manual:
+          files:
+            - "internal/manual/**/*.go"
+            - "cmd/manual/**/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+        manual-test:
+          files:
+            - "internal/manual/**/*_test.go"
+            - "cmd/manual/**/*_test.go"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+            - github.com/stretchr/testify
+
   exclusions:
     rules:
       # --- Temporary legacy exclusions (PLAN_DETAIL_00_guardrails.md §5.3 category 2) ---

@@ -28,8 +28,9 @@ import (
 type persona string
 
 const (
-	personaTf persona = "tf" // fit tf-block-runner persona, forced in-process (local-dev)
-	// phase 6: personaManual/Gitlab/Github/Azdevops.
+	personaTf     persona = "tf"     // fit tf-block-runner persona, forced in-process (local-dev)
+	personaManual persona = "manual" // fit manual-block-runner persona (phase 6a)
+	// phase 6: personaGitlab/Github/Azdevops.
 )
 
 func main() {
@@ -53,7 +54,8 @@ func newDispatcher() dispatcher {
 	return dispatcher{
 		controller: runController,
 		fit: map[persona]func() int{
-			personaTf: runTfPolling,
+			personaTf:     runTfPolling,
+			personaManual: runManualPolling,
 		},
 		usage: os.Stderr,
 	}

@@ -40,3 +40,9 @@ github.com/meshcloud/building-block-runner/internal/mgmt 90
 # cluster-connection file excluded (exclusions.txt).
 github.com/meshcloud/building-block-runner/internal/dispatch 90
 github.com/meshcloud/building-block-runner/internal/k8sjob 90
+
+# Phase 6a (PLAN_DETAIL_06A_manual.md §10.3): the manual runner port (D6 Kotlin corollary).
+# Whole package hermetically testable via meshapitest (meshStack side) — no external system,
+# no decryption — so no exclusion-list entries (umbrella §5.3). The persona polling wiring
+# lives in cmd/manual + cmd/bbrunner (package main, not gated).
+github.com/meshcloud/building-block-runner/internal/manual 90

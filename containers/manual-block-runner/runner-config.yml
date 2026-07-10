@@ -1,0 +1,29 @@
+# manual-block-runner default config (per-impl layer; deep-merges over any shared base
+# runner-config.yml, base < per-impl < env — umbrella §5.4). Effect-equivalent to the
+# Kotlin classpath defaults (manual-block-runner/src/main/resources/runner-config.yml) in
+# Go-native flat keys. Every value is overridable by its env var (shown after the colon).
+#
+# The legacy `blockrunner:` yaml block and Spring's SPRING_PROFILES_ACTIVE=kubernetes
+# single-run trigger keep working (config compat, §6.3/§6.4) — a customer-mounted Kotlin-era
+# runner-config.yml still boots this image unchanged.
+
+# RUNNER_UUID — the well-known local-dev manual runner uuid (meshfed magic-runner pair).
+uuid: d943b032-7836-4fef-a4a0-158817beecf3
+# VERSION — stamps X-Meshcloud-Runner-Version (defaults to the ldflags build version).
+version: dev
+# blockrunner.debugMode — dev-only: simulate randomly failing runs with nonsense updates.
+debugMode: false
+
+api:
+  # RUNNER_API_URL — the mux MANUAL port for local-dev.
+  url: http://localhost:8301
+  # RUNNER_API_USERNAME / RUNNER_API_PASSWORD (Basic auth); blank client-id/secret below
+  # disables API-key auth and falls back to Basic.
+  username: bb-api
+  password: guest
+  clientId: ""
+  clientSecret: ""
+
+# Manual needs no private key: it never decrypts (standalone echoes ciphertext; in k8s
+# single-run the controller already decrypted). The well-known dev key lives only in the
+# shared base for the 06B–D personas (umbrella §10.5).

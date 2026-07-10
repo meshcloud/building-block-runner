@@ -90,6 +90,8 @@ func TestNewDispatcher_WiresRealBootstraps(t *testing.T) {
 	require.NotNil(t, d.controller, "the default controller bootstrap must be wired")
 	_, ok := d.fit[personaTf]
 	require.True(t, ok, "the tf fit persona subcommand must be registered")
+	_, ok = d.fit[personaManual]
+	require.True(t, ok, "the manual fit persona subcommand must be registered (phase 6a)")
 }
 
 // TestDispatcher_UsageListsTokensSorted keeps the usage line deterministic (sorted tokens) so the

@@ -583,11 +583,11 @@ until step 9.
 | 1 | **Kotlin pins (tests only).** §3.2 G-P1–G-P13 in `gitlab-block-runner` (wiremock GitLab + captured meshStack updates; k8s capture scenario in the manual style). Resolve STOP-F from G-P1's capture. | Kotlin test files only | `./gradlew :gitlab-block-runner:check` green; `git diff -- ':!*Test*' ':!*Scenario*'` empty |
 | 2 | **`meshapi.DecryptInputs`** (§4.4) + the `Decryptor` empty-string guard (T8) if missing. | `internal/meshapi` | table-driven tests: STRING/CODE/FILE decrypted, other-sensitive-type skip+warn, non-sensitive untouched, impl secret untouched, unknown-field passthrough, `UseNumber` fidelity, NoOp identity; cross-checked against a `MeshCertDecryptionServiceTest` fixture ciphertext (umbrella A9 style); `meshapi` stays ≥90 |
 | 3 | **`internal/gitlab` package:** `ExternalCallError` (§4.5), `sanitizeBaseUrl`, error classification, `valueString`, `buildTriggerForm`, `triggerPipeline`. | `internal/gitlab` | unit tests for the pure functions (sanitize table = `UrlSanitizerServiceTest` port, classification table, stringify table incl. G-P8 rows); fake-GitLab transcript tests for the multipart request (G-P1/G-P2 twins) and response taxonomy (G-P3–G-P5, G-P10 twins) |
-| 4 | **Handler.** `gitlab.Config`, `NewHandler`, `Execute` flow (§4.1). | `internal/gitlab` | Go scenario suite (§10.1): run JSON in → fake meshStack + fake GitLab transcripts out, matching the Kotlin pins |
+| 4 | **Handler.** `gitlab.Config`, `NewHandler`, `Execute` flow (§4.1). | `internal/gitlab` | Go scenario suite (§10.1): run JSON in → `meshapitest` (plan 03 §5.7) + `httptest` GitLab transcripts out, matching the Kotlin pins |
 | 5 | **Persona wiring, polling.** `cmd/gitlab/main.go` + register the gitlab handler in the `cmd/bbrunner` superset; mgmt on 8103; loop + classifier + metrics; cert decryptor from resolved key. | `cmd/gitlab/main.go`, `cmd/bbrunner/main.go` | loop-wiring scenario (claim→register→trigger→handover→immediate re-claim→404); `cmd/bbrunner` subcommand-dispatch row; alias-precedence test (`MANAGEMENT_PORT`>`PORT`>8103); key-resolution failure = actionable startup error |
 | 6 | **Single-run mode.** `SingleRunMode` activation, file source, NoOp decryptor, R12 exit tail. | `cmd/gitlab/main.go` (+ glue) | single-run scenario twin of G-P12 (pre-decrypted fixture ⇒ captured wire equal to the Kotlin capture modulo sanctioned deltas); exit-condition tests (G-P13 twins incl. the flagged tightening) |
 | 7 | **Gate + tooling.** `thresholds.txt` += `internal/gitlab 90` (no exclusions); depguard: `gitlab` imports `dispatch`/`meshapi`/`report`/`config` + stdlib only; nothing imports `gitlab` but main. | `tools/coverage/*`, `.golangci.yml` | induced-failure check; `task coverage` green |
-| 8 | **Image.** `containers/gitlab-block-runner/Dockerfile` + `containers/gitlab-block-runner/runner-config.yml` (§8, incl. dev key §6.3). | containers/ | `docker build -f containers/gitlab-block-runner/Dockerfile`; container smoke: healthz `OK` on 8080, boots to claim loop against a stub |
+| 8 | **Image.** `containers/gitlab-block-runner/Dockerfile` + `containers/gitlab-block-runner/runner-config.yml` (§8, incl. dev key §6.3). | containers/ | `docker build -f containers/gitlab-block-runner/Dockerfile`; mock-backed container smoke (umbrella §5.6): `docker run` against a `meshapitest` server (plan 03 §5.7, `RUNNER_API_URL`→mock), seed a run, assert the claim→report cycle — not just healthz `OK` on 8080 |
 | 9 | **Acceptance gate (§11).** Side-by-side transcripts + manual smoke against a real GitLab; outer local-dev-stack/acceptance net green. | — | STOP-E lives here; evidence in the PR description |
 | 10 | **Removal.** Delete `gitlab-block-runner/`; `settings.gradle:6` include dropped; CI legs flipped per §8; grep gate. | module dir, gradle, workflows | full CI green incl. the flipped image leg; remaining modules' `./gradlew check` green |
 
@@ -629,7 +629,7 @@ temp files, test keypair).
 ### 10.3 Gate
 
 `tools/coverage/thresholds.txt` += `…/internal/gitlab 90`; **no exclusion
-entries** (whole package hermetic — fake meshStack + `httptest` GitLab). Touched
+entries** (whole package hermetic — `meshapitest` (plan 03 §5.7) + `httptest` GitLab). Touched
 shared packages (`meshapi`, `config`) stay ≥90 via step-2/3 tests. The package is
 ~350 lines of trigger/payload/error logic fully driven by the scenario suite;
 shortfall = STOP-C (add scenario cases, never exclusions). `-race` on. Keep-as-unit

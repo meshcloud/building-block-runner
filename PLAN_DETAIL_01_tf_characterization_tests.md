@@ -79,10 +79,10 @@ until 2b, or D13 gets a reviewed exception for data races.
   description of the existing suites as "hermetic" (§2, D6) — flagged, not silently deviated from.
   CP1 uses bare git repos in `testdata` with per-testcase branches (pattern copyable from
   `terraform-provider-meshstack`). Phase 1 keeps the fake `http.RoundTripper` to pin behavior
-  with minimal diff; replacing it with a reusable `net/http/httptest` meshfed-API **server**
-  mock package shared across runner types is structural churn deferred to phase 2/3 (plan 03,
-  shared core). Phase-1 fixtures are authored as replayable request/response transcripts so
-  they port onto that server mock without rewriting the scenarios.
+  with minimal diff; the reusable `net/http/httptest` meshfed-API **server** mock is built in
+  phase 3 as the `meshapitest` package (plan 03 §5.7) and reused by phases 4–7. Phase-1
+  fixtures are authored as replayable request/response transcripts so they port onto that
+  server mock without rewriting the scenarios.
 - **F2 — D9's "same-origin URL" artifact pin is stale.** Commit `88d67d4` ("fix: revert the
   artifact url same origin check", 2026-07-02) deleted the check from
   `go-meshapi-client/meshapi/client.go` and its tests. Only the 128MiB cap remains

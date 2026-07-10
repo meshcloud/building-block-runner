@@ -213,7 +213,9 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
   package** built on the
   stdlib `net/http/httptest` server (a real HTTP server the client dials) over a
   hand-rolled fake `http.RoundTripper` — it exercises the client's real transport and is
-  shared across every runner type's integration tests. Where feasible, git-clone steps
+  shared across every runner type's integration tests. Built in phase 3 as the `meshapitest`
+  package (plan 03 §5.7) and reused by the phase-5 concurrency suite, the phase-6 per-persona
+  tests, and the phase-7 opt-in controller e2e. Where feasible, git-clone steps
   pull from a **bare git repo in `testdata`** with per-testcase remote branches (the
   pattern `terraform-provider-meshstack` already uses, copyable here) instead of a mocked
   `GitFacade`, so cloning is exercised end to end. The `TfFacade`/`GitFacade` mocks remain

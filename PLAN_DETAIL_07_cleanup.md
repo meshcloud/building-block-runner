@@ -213,7 +213,7 @@ follow-up register, §9.1 — post-refactor work, out of this refactor per high-
 |---|---|---|---|
 | L1 | CI lint job (golangci-lint) — deliberately absent until now | 00 §5.2/§5.5, D14 | **DO** — §5.2 |
 | L2 | Go-only CI reshape + docker builds consolidation | D14, 04 §4.5 ("minimum edits only"), 06 §2 | **DO** — §5 |
-| L3 | Opt-in real-tofu/real-git e2e split (network tests out of default CI) | 01 §2 ("phase 0/7 CI concern"), 00 §11.3 | **DO** — `e2e` build tag + `task test:e2e` + opt-in workflow, §5.4 |
+| L3 | Opt-in real-tofu/real-git e2e split (network tests out of default CI) **+ the long-standing in-repo controller-e2e gap** — the controller had "no automated end-to-end anywhere" | 01 §2 ("phase 0/7 CI concern"), 00 §11.3; **inherited gap: plan 03 §12.3 / plan 05 §13** | **DO** — `e2e` build tag + `task test:e2e` + opt-in workflow, §5.4; the controller-e2e half stands up a **kind** cluster and drives `run-controller` → real k8s Job against a `meshapitest` coordinator (`task test:e2e:controller`, §5.4 part c) |
 | L4 | `go-meshapi-client` CI matrix leg (flagged reviewer decision) | 00 §11.1 | **VERIFY** — moot since phase 4 consolidated the module; confirm the single `runner` leg covers everything |
 | L5 | `FIXME(bug)` leftovers — must be zero after 2b | 01 §6, 02 §7 R13 | **VERIFY** — `grep -rc "FIXME(bug)"` = 0 repo-wide (A5); a hit is a STOP (2b exit criterion violated) |
 | L6 | Temporary `.golangci.yml` exclusion blocks (owned by 2/2b/3) | 00 §5.3/§12 | **VERIFY** — zero remain (A5) |
@@ -270,7 +270,7 @@ it does **not** depend on `task` or nix (phase-0 decision carried forward).
 | `ci.yml` | Three jobs: `lint` (§5.2) · `test` (§5.3) · `images` (§5.5). Triggers/concurrency unchanged (`push: main`, `pull_request`, cancel-in-progress). |
 | `build-images.yml` | Already six legs post-06D (A9), each `containers/<app>/Dockerfile` with a direct entrypoint, no `target:`; the five fit legs build `./cmd/<persona>` and the `run-controller` leg builds `./cmd/bbrunner` (the superset — there is no `./cmd/controller`). Phase-7 delta: none expected; verify no `RUNNER_MODULE` residue and that the ldflags `VERSION` build-arg path is `…/internal/build.Version`. |
 | `release.yml` / `release-check.yml` / `pr-cleanup.yml` | **Unchanged** — they operate on tags and image names only (§3.2). Verified, not edited. |
-| `e2e.yml` (new) | Opt-in real-I/O tests (§5.4): `workflow_dispatch` + weekly `schedule`; never a PR gate. |
+| `e2e.yml` (new) | Opt-in real-I/O tests (§5.4): `workflow_dispatch` + weekly `schedule`; never a PR gate. Two jobs: `e2e` (real-tofu/real-git) and `e2e-controller` (stands up a **kind** cluster, deploys `run-controller` against a `meshapitest` coordinator, runs the §5.4 part-c controller e2e — closes the plan 03 §12.3 / plan 05 §13 gap). |
 
 ### 5.2 `lint` job (L1)
 
@@ -301,15 +301,37 @@ plan 00 §11.3 resolved).
 - `//go:build e2e` on `internal/tofu/tfbinaries_test.go` (the real-download
   suite — the only network consumer left after plan 01 CP1 made everything else
   hermetic) and on any real-git test that survived in `gitsource`.
-- `task test:e2e` = `go test -tags e2e ./internal/tofu/... ./internal/gitsource/...`;
-  plain `task test` stays tag-free.
-- `e2e.yml`: workflow_dispatch + `schedule: cron weekly`, runs `test:e2e` equivalent
-  directly (`go test -tags e2e …`), non-blocking (no branch protection), failure
-  notifies via the release-check pattern (`release-check.yml` slack/issue mechanism —
-  reuse whatever it uses; verified at implementation).
+- `task test:e2e` = `go test -tags e2e ./internal/tofu/... ./internal/gitsource/...`
+  (real-tofu/real-git); plain `task test` stays tag-free. The controller e2e (part c,
+  below) carries a `kind` prerequisite and lives in a **separate**
+  `task test:e2e:controller`, so the cluster-less real-tofu/real-git run stays runnable
+  on a bare workstation.
+- **Controller e2e (part c) — closes the plan 03 §12.3 / plan 05 §13 in-repo
+  controller-e2e gap** (the controller had "no automated end-to-end anywhere", plan 03
+  §12.3, carried by plan 05 §13). A `//go:build e2e` test that stands up a real cluster
+  and drives the `run-controller` persona end to end:
+  - Spin up a **kind** cluster in-CI (minikube acceptable). meshfed-release has **no
+    turnkey minikube** (its local-dev is docker-compose), so we provision the cluster
+    ourselves; pattern source = the meshfed-release replicator's fabric8 kubernetes
+    acceptance tests (`KubernetesTestData`) — cited for harness shape only, not reused.
+  - Deploy the `run-controller` image (the `cmd/bbrunner` superset, A1) into the
+    cluster; point it at a `meshapitest` server (the shared meshfed-API mock, plan 03
+    §5.7) as the coordinator it polls; seed one claimed run there.
+  - Assert `run-controller` **auto-detects in-cluster** (`rest.InClusterConfig()` /
+    `KUBERNETES_SERVICE_HOST`, A1) ⇒ picks KubernetesJobDispatcher and creates a
+    **real k8s Job**; the dispatched fit `tf-block-runner` image runs **single-run** to
+    terminal and PATCHes the seeded run back through `meshapitest`.
+  - Runs under `task test:e2e:controller` (kind prerequisite; separate from the
+    cluster-less `task test:e2e`); its own `e2e.yml` job (§5.1).
+- `e2e.yml`: workflow_dispatch + `schedule: cron weekly`, non-blocking (no branch
+  protection), failure notifies via the release-check pattern (`release-check.yml`
+  slack/issue mechanism — reuse whatever it uses; verified at implementation). **Two
+  jobs:** the real-tofu/real-git run (`go test -tags e2e …`) and the kind controller
+  e2e (`task test:e2e:controller`, the part-c test above); §5.1 lists both.
 - Coverage math: the tagged file is already on the exclusion list (A4) — the gate
   denominator is unchanged whether or not the tag is set. Verified by running
-  `task coverage` before/after tagging (identical totals).
+  `task coverage` before/after tagging (identical totals). The controller e2e adds no
+  gated package (it is a `//go:build e2e` black-box test).
 
 ### 5.5 `images` job (consolidation of `go-runners-image` + the per-port legs)
 
@@ -614,7 +636,7 @@ additions after the code they gate is clean, docs last (so they describe reality
 | 3 | **slog: dispatch/k8sjob/tf + personas + main.** Loop/dispatcher/engine process logging; persona attr replaces prefixes; per-run attr replaces `[RUN-<id>]` (§8.4.3); delete the `slog.NewLogLogger` bridges; §8.5 depguard deny. | rest of the tree | suite green incl. every characterization pin (SystemMessage bytes unchanged — §8.3); `grep -rn '"log"$' internal` hits only the §8.2 allow |
 | 4 | **Controller decrypt-failure fix (L14) — after STOP-D review.** `k8sjob.Dispatch` decrypt error path gains `reportRunFailure` with the actionable key-mismatch message; metric unchanged; flip the transcript-empty pin to assert register+FAILED-PATCH. | `internal/k8sjob` + its pin | new transcript pin green; all other controller goldens byte-identical |
 | 5 | **Single-run unification (L15) — STOP-E guarded.** `cmd/tf/main.go` single-run tail becomes: read file → `ClaimedRun` → tf handler with NoOp decryptor + provided runToken; the parallel DTO→engine glue is deleted. Exit semantics (R12 condition) preserved at the persona level. | `cmd/tf/main.go`, `internal/tf` | single-run scenario suite green with zero assertion changes; exit-code tests green; if not ⇒ STOP-E (revert the step, record) |
-| 6 | **e2e split (L3).** Build tag on the real-download/real-git tests; `task test:e2e`; verify `task coverage` totals unchanged. | test files, Taskfile | default `task test` runs offline (spot-check); tagged run passes locally |
+| 6 | **e2e split (L3).** Build tag on the real-download/real-git tests; `task test:e2e`; verify `task coverage` totals unchanged. **Controller e2e sub-item (part c):** add the `//go:build e2e` kind controller test + `task test:e2e:controller` (kind prerequisite) that deploys `run-controller` against a `meshapitest` coordinator (plan 03 §5.7) and asserts in-cluster auto-detect → real k8s Job → single-run `tf-block-runner` — closes the plan 03 §12.3 / plan 05 §13 gap. | test files, Taskfile | default `task test` runs offline (spot-check); tagged run passes locally; controller e2e green against a local kind cluster |
 | 7 | **CI reshape (L1, L2, §5).** `lint` job; `test` job rename + tag-exclusion note; `images` consolidation; `e2e.yml`; verify `build-images.yml`/`pr-cleanup.yml`/`release*.yml` need nothing. | `.github/workflows/` | draft-PR run: lint+test+6 image legs green; e2e workflow dispatchable; job-name change coordinated with branch protection (flag §15.5) |
 | 8 | **File hygiene (L16–L18).** `.editorconfig` JVM sections out; `.agents/skills/backend-go` rewritten; k8s manifests moved to `containers/run-controller/k8s/` (+ commented probe example). | listed files | `task lint`/editors unaffected; skill commands execute; manifests `kubectl apply --dry-run=client` clean |
 | 9 | **Deprecation audit (L9, §7).** Wording unification through the shared helper; add missing warnings found; alias tests extended to assert the uniform message + link. | `internal/config`, persona files | alias test matrix green; one-startup-line rule verified in container smoke |
@@ -677,6 +699,13 @@ the untouched pin suites and image smoke tests.
   failure exercise for the lint job (introduce a violation on the working branch →
   job fails → revert), mirroring the phase-0 gate-proof pattern; `e2e.yml` dispatched
   once with evidence.
+- **Controller e2e (opt-in, part c):** the `//go:build e2e` kind controller test
+  (`task test:e2e:controller`, §5.4) — stands up a kind cluster, deploys
+  `run-controller` pointed at a `meshapitest` coordinator (plan 03 §5.7), seeds a
+  claimed run, and asserts in-cluster auto-detection ⇒ a **real k8s Job** whose
+  dispatched `tf-block-runner` runs single-run to terminal and PATCHes the run back.
+  Closes the plan 03 §12.3 / plan 05 §13 in-repo controller-e2e gap; runs via `e2e.yml`
+  (`e2e-controller` job), never a PR gate.
 - **Docs:** every README/skill command executed verbatim; sample configs parsed by the
   personas' config tests; k8s manifests dry-run applied.
 - **Sweeps as tests:** the L5/L6/L20 greps are executable checks recorded in the PR;

@@ -281,10 +281,18 @@ Each sub-plan is one stacked single-commit PR and must contain exactly these sec
   *behavior* (same inputs, same observable bytes/fields on the wire) — but the mapping
   is **N:1 by design**: Kotlin unit tests that merely restate structure through mocks
   ("register called once with step id X", "update called with SUCCEEDED") consolidate
-  into one Go **scenario test** in the house harness style (run JSON in → fake meshStack
-  + fake external-API transcript out, black-box through `Handler.Execute`). An
+  into one Go **scenario test** in the house harness style (run JSON in → the shared
+  `meshapitest` server (plan 03 §5.7) on the meshStack/coordinator side + the runner's
+  own external-API `httptest` fake out, black-box through `Handler.Execute`). An
   assertion whose *behavior* cannot be preserved is STOP-B; a test whose *shape*
   disappears into a scenario is the intended outcome, not a loss.
+- **meshStack side = `meshapitest` (plan 03 §5.7); external side = the runner's own
+  fake.** Every per-persona integration/scenario test drives the meshStack/coordinator
+  side through the shared `meshapitest` server (real HTTP, seedable runs, captured
+  requests) — **not** a per-package hand-rolled "fake meshStack"; wherever a sub-plan
+  says "fake meshStack" it means `meshapitest`. External-service calls
+  (GitLab/GitHub/Azure-DevOps) keep their own `httptest` fakes unchanged. This rule is
+  stated once here and inherited by all four sub-plans.
 - **Keep-as-unit criterion:** a ported test stays (or becomes) a unit test only where
   the unit has real decision surface — pure input→output tables and parsers: the manual
   `toOutputType` mapping, the ADO `StatusMapper` state/result table, the github
@@ -326,8 +334,8 @@ func (h Handler) Execute(ctx context.Context, run dispatch.ClaimedRun) error
   pinned as constructor defaults like the tf engine's.
 - External-API clients live in the same package as unexported types unless the package
   grows past cohesion (D11: sibling split only if seams prove real).
-- Coverage: the whole package is hermetically testable (fake meshStack transport + fake
-  external API) and is covered **scenario-first** (D16, §5.2); **no exclusion-list
+- Coverage: the whole package is hermetically testable (`meshapitest` on the meshStack
+  side per §5.2 + the runner's external-API fake) and is covered **scenario-first** (D16, §5.2); **no exclusion-list
   entries** are expected for any phase-6 package.
 
 ### 5.4 Config section + env/yaml alias table
@@ -403,6 +411,13 @@ Per persona (names are the published image names, D8):
   sub-plan's flag list (the entrypoint targets the persona binary directly, and no
   per-persona binary aliases `java`), judged acceptable because the shipped controller
   config uses the default entrypoint (A12).
+- **Mock-backed container smoke (the sub-plan §8 image step / §9 step-8 row).** Each
+  port's image step `docker run`s the built image against a `meshapitest` server (plan
+  03 §5.7) — host networking, `RUNNER_API_URL`→the mock — seeds one run, runs the
+  container in polling mode, and asserts a full **claim → execute/handover → report**
+  cycle on `meshapitest`'s captured requests (register + PATCH), **not** just a healthz
+  `OK` probe. This proves the direct-entrypoint / persona-binary / env path end-to-end,
+  above the hermetic scenario suite (§5.2). Stated once here; inherited by all four.
 
 ### 5.7 Acceptance validation
 

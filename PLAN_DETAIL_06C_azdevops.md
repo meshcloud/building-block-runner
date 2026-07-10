@@ -593,11 +593,11 @@ until step 8.
 | 0 | **Preflight.** Umbrella A1–A12 + C1–C8 verifications on the phase-6b branch; branch `phase-6c-azdevops`. Record: whether 06B shipped `ExternalCallError`/`DecryptInputs` (STOP-C4 gate), the `UseNumber` state, the shutdown-cancel wiring shape. Re-run the §4.6 fit-check mechanically. | nothing | STOP-A / STOP-C4 / STOP-D gate |
 | 1 | **Kotlin pins (tests only).** §3.2: S-P1–6, U-P1–8, P-P1–5, A-P1–6, K-P1–2, F-P1 in `azure-devops-block-runner`; verify C-P1–7 exist (C3). | Kotlin test files only | `./gradlew :azure-devops-block-runner:check` green; `git diff -- ':!*Test*' ':!*Scenario*'` empty; the 2 slow poller tests tagged |
 | 2 | **Mapper + client.** `internal/azdevops`: status-mapping pure functions; `adoClient` + package-local DTOs + `renderValue`; payload struct. | `internal/azdevops` | Go twins of S-P1–6 (tables), A-P4–6 (fake-transport transcripts incl. leak + redirect pins) |
-| 3 | **Handler + poller.** `Config`, `NewHandler`, `Execute` skeleton, failure ladder, update builders, `pollCompletion` (fake clock). | `internal/azdevops` | scenario suite §10.1: async handover, sync happy, timeout, dedup/re-emission, fallback, resilience, PATCH-failure — fake meshStack + fake ADO transcripts matching the pins |
+| 3 | **Handler + poller.** `Config`, `NewHandler`, `Execute` skeleton, failure ladder, update builders, `pollCompletion` (fake clock). | `internal/azdevops` | scenario suite §10.1: async handover, sync happy, timeout, dedup/re-emission, fallback, resilience, PATCH-failure — `meshapitest` (plan 03 §5.7) + fake ADO transcripts matching the pins |
 | 4 | **Persona wiring, polling.** `cmd/azdevops/main.go` + register the handler in the `cmd/bbrunner` superset; mgmt on 8101; loop + shutdown-cancel wiring. | `cmd/azdevops/main.go`, `cmd/bbrunner` | loop-wiring scenario (claim→execute→re-drain); `bbrunner azure-devops-block-runner` subcommand-dispatch row; alias test (`MANAGEMENT_PORT`>`PORT`>8101); ctx-cancel shutdown test |
 | 5 | **Single-run mode.** `SingleRunMode` + file source + NoOp decryptor + R12 tail. | `cmd/azdevops/main.go` (+ glue) | K-P1 twin (captured wire equal modulo sanctioned deltas); exit-condition tests (K-P2 twin asserting the R12 delta) |
 | 6 | **Gate + tooling.** `thresholds.txt` += `internal/azdevops 90` (no exclusions); depguard: `azdevops` imports `dispatch`/`meshapi`/`report`/`config`/`crypto` + stdlib only. | `tools/coverage/*`, `.golangci.yml` | induced-failure check; `task coverage` green |
-| 7 | **Image.** Per-app `containers/azure-devops-block-runner/Dockerfile` + `containers/azure-devops-block-runner/runner-config.yml`. | containers/ | `docker build -f containers/azure-devops-block-runner/Dockerfile` (no `--target`); container smoke: healthz on 8080, claim loop against a stub |
+| 7 | **Image.** Per-app `containers/azure-devops-block-runner/Dockerfile` + `containers/azure-devops-block-runner/runner-config.yml`. | containers/ | `docker build -f containers/azure-devops-block-runner/Dockerfile` (no `--target`); mock-backed container smoke (umbrella §5.6): `docker run` against a `meshapitest` server (plan 03 §5.7, `RUNNER_API_URL`→mock), seed a run, assert the claim→report cycle — not just healthz on 8080 |
 | 8 | **Acceptance gate (§11).** Side-by-side transcripts + manual smoke + outer net. | — | STOP-E; evidence in PR description |
 | 9 | **Removal.** Delete `azure-devops-block-runner/`; `settings.gradle:7`; CI legs per §8; grep gate. | module dir, gradle, workflows | full CI green incl. flipped image leg; remaining modules' `./gradlew check` green |
 
@@ -633,7 +633,7 @@ form — the §7.6 pin).
 ### 10.3 Gate
 
 `thresholds.txt` += `…/internal/azdevops 90`, **no exclusions** (whole package
-hermetic: fake meshStack transport + fake ADO transport + fake clock). Touched shared
+hermetic: `meshapitest` (plan 03 §5.7) + fake ADO transport + fake clock). Touched shared
 packages stay ≥90. The package is dominated by the poll/update logic which the scenario
 suite drives branch-by-branch; a shortfall is STOP-C (add scenario cases, never
 exclusions). Keep-as-unit list: mapper tables, `renderValue`, config aliases — real

@@ -62,6 +62,9 @@ the retry policy is then wrong; replan the policy, do not weaken the pin.
   - new `report`: runner-agnostic reporting facility (D4) — `RunStatus`/`StepStatus`/
     `ExecutionStatus`, `Progress` tracker, `RunLog`, `Observer` (10s ticker, abort-cancel,
     async `SUCCEEDED→IN_PROGRESS` mapping), `Reporter` port, DTO mapping.
+  - new `meshapitest`: the shared `net/http/httptest` meshfed-API mock **server** (the D6
+    integration harness, §5.7) — real-HTTP claim/register/PATCH/artifact with seedable runs
+    and captured requests; reused by phases 4–7.
 - Re-base `internal/tf` onto `config` mechanics and `report` (moves code out; tf keys and
   behavior unchanged).
 - Re-base `run-controller` onto the shared packages; eliminate its package-level mutable
@@ -230,6 +233,7 @@ mains live in their own modules until phase 4. The alternatives:
 | `crypto` (unchanged algorithms) | `internal/crypto` |
 | `config` (new) | `internal/config` |
 | `report` (new) | `internal/report` |
+| `meshapitest` (new; integration-test harness, §5.7) | `internal/meshapitest` |
 
 Dependency cost: `config` adds `gopkg.in/yaml.v2` to the module (already used by both
 consumers); `report` adds nothing (imports `meshapi` for the DTO mapping). Prometheus
@@ -554,6 +558,29 @@ stated here so phase 4's plan can assume it (its instruction already owns
 "MANAGEMENT_PORT unification incl. per-persona defaults and the new standalone-runner
 metrics", high-level §7).
 
+### 5.7 `meshapitest` — shared meshfed-API mock server (integration harness)
+
+D6 mandates "a reusable `net/http/httptest` meshfed-API **server** the client dials, over a
+hand-rolled fake `RoundTripper`, shared across every runner type's integration tests"
+(high-level §4). Phase 3 realizes it as a concrete deliverable so the promise has an owner
+(today every suite hand-rolls a fake `RoundTripper`). Package `meshapitest` (phase-3 home
+`go-meshapi-client/meshapitest`; moves to `internal/meshapitest` in phase 4 with the other
+shared packages, §5.1) exposes a `httptest.Server` serving the frozen runner-facing
+endpoints over real HTTP — claim POST (`FetchRun`), register-source, status PATCH (both
+frozen body shapes, §8), artifact download — with **seedable runs** and **captured
+requests** for assertions.
+
+Consumers (named, non-speculative — P3): (1) this phase's client integration test — one
+full claim→register→PATCH→terminal-status cycle over the real transport (retry included),
+complementing the byte-exact `RoundTripper` transcript pins of §6 step 1, which stay for
+wire-shape precision; (2) the phase-5 concurrency suite (plan 05 §7 — N simultaneous runs
+through `Loop`+`InProcess`); (3) the phase-6 per-persona integration tests (umbrella §5.2 —
+replacing each sub-plan's per-package "fake meshStack"); (4) the phase-7 opt-in controller
+e2e (plan 07 §5.4 — the coordinator side a real kind cluster's `run-controller` talks to).
+It is a **test-only helper**: not on the D6 gate (§9), not a wire contract. The phase-1
+transcript fixtures (plan 01 §3) are authored replayable so they port onto it without
+rewriting scenarios.
+
 ---
 
 ## 6. Controller re-base & migration sequence (always-green)
@@ -566,7 +593,7 @@ the number per working commit (squashed on merge). Characterize before refactori
 | 0 | **Preflight.** Run all §1 verifications on the phase-2b branch; branch `phase-3-shared-core`. | nothing | A1–A10 verified (STOP-A); tf coverage number recorded |
 | 1 | **Controller characterization (tests only).** (a) Fake-`RoundTripper` transcript tests for `RunApiClient`: fetch node-id `run-controller-<uuid>`, V1 media types, base64 passthrough of raw claim bytes, register body (single `validation` step), `StatusUpdateDTO` PATCH shape; (b) same for `RegistrationApiClient`: PUT URL, v1-preview media type both headers, WIF-body golden (extends `dtos_test.go`), 404 ⇒ "create it via the meshStack UI" error, non-200 error path; (c) **k8s Job manifest golden** via `client-go`'s `kubernetes/fake` clientset (already an indirect dep — no new module): labels, `BackoffLimit:1`, `TTLSecondsAfterFinished:120`, volumes/mounts incl. `/var/run/secrets/meshstack`, env (`RUN_JSON_FILE_PATH`/`RUNNER_UUID`/`RUNNER_API_URL` and **no** `EXECUTION_MODE` — plan 02 §11.3), Secret+ServiceAccount shapes, secret-owner-reference, `CountActiveJobs` finished-job filtering. | `_test.go` only | `runapi.go`/`registration.go`/`kubernetes.go` leave 0%; `git diff -- ':!*_test.go'` empty for this step |
 | 2 | **`HttpError`.** Introduce in `meshapi`, migrate every producer/consumer, delete `StatusError`. | `meshapi/client.go`, `controller/controller.go:244-250`, `controller/runapi.go:51-55`, tf fetch classification, tests' error construction (declared retarget §6.1.1) | full suites green; step-1 transcripts unchanged |
-| 3 | **Retry transport.** `meshapi/retry.go` per §5.2.3 + constructor default policy; ApiKeyAuth's login client gets the same transport (login POST whitelisted). New tests: attempt-counting fake transport (503×N then 200; Retry-After honored; 500 not retried; claim POST never retried; PATCH never retried). | `meshapi` | new retry tests green; **all** phase-1 tf pins + step-1 transcripts byte-identical (STOP-D) |
+| 3 | **Retry transport.** `meshapi/retry.go` per §5.2.3 + constructor default policy; ApiKeyAuth's login client gets the same transport (login POST whitelisted). New tests: attempt-counting fake transport (503×N then 200; Retry-After honored; 500 not retried; claim POST never retried; PATCH never retried). Also add the `meshapitest` server (§5.7) + one claim→register→PATCH→terminal integration test over the real transport. | `meshapi`, `meshapitest` | new retry tests green; the integration cycle green; **all** phase-1 tf pins + step-1 transcripts byte-identical (STOP-D) |
 | 4 | **Identity de-global.** `Identity` into constructors; delete `SetClientMetadata`/`runnerName`/`runnerVersion`; wire both mains + tf adapter. (If A3 found `crypto.Crypto` still alive, delete it here too.) | `meshapi/client.go:26-44`, both `main.go`s, tf meshapi adapter | grep: zero package-level `var` with mutable state in `meshapi`; header pins (phase-1 CP2, step-1) green |
 | 5 | **Client split + registration move.** `RunClient`/`RunnerClient` per §5.2.4; move `EP_RunnerWithUuid` + v1-preview media type + PUT semantics out of `controller/registration.go`; controller re-based: `registration.go` keeps DTO build, 404 mapping, logging; its `http.Client`, `setHeaders`, `putController` die. | `meshapi`, `controller/registration.go`, `controller/runapi.go:35-37` | step-1 transcript pins prove wire-identical; `RegistrationApi` unit tests green |
 | 6 | **`config` package.** Extract mechanics + `Api` per §5.3; re-base `internal/tf` config (phase-1 CP9 tests green unchanged); re-base controller: `LoadControllerConfig(logger) (ControllerConfig, error)` returns a value, fatal-on-missing-file preserved at the `main.go` call site. | new `config`; `internal/tf` config file; `controller/config.go` | CP9 + `config_test.go` assertions unchanged; new `config` package tests (§9) |
@@ -658,6 +685,12 @@ Specified: `Progress` mutate/snapshot isolation (plus `-race`, A5), `Observer` w
 `Reporter` + short interval — ticks carry snapshots, abort cancels, async final mapping,
 cancelled-ctx skips final, report-error path; `RunLog` write/segment/nil-safety
 (post-2b `(nil, error)` shape); `ToStatusUpdate` golden vs today's tf PATCH JSON.
+
+**Integration harness (§5.7):** the `meshapitest` server backs one client integration test
+driving a full claim→register→PATCH→terminal cycle over real HTTP (retry path included) —
+the D6-preferred real-transport style, complementing the byte-exact `RoundTripper`
+transcripts (§6 step 1). Test-only helper: **not gated**, no exclusion entry (hermetic —
+`httptest`, ephemeral ports).
 
 **The `controller` package does not join the gate in this phase** — interpretation of
 D6 ("gate extends to every new domain/application package"): `controller` is not a new

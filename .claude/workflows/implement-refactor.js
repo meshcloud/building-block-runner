@@ -257,6 +257,19 @@ reviewable PR on ${spec.branch}:
    ${spec.branch} (the PR squash-merges to one), then open a DRAFT PR:
    'gh pr create --draft --base ${spec.base} --head ${spec.branch}' with a body summarizing
    the phase + its sanctioned deltas + any uncertainties. Put the URL(s) in prUrls. Do not merge.
+
+CLOSE-GAPS DIRECTIVE (do not just report gaps — close them): the failure mode this
+workflow keeps hitting is a green but INCOMPLETE PR — a consolidator that reconciles only
+the slices the fan-out happened to produce and defers the phase's remaining plan steps to
+uncertainties[] instead of finishing them. Do NOT do that. If a slice left steps from
+${spec.plan} unimplemented, IMPLEMENT the missing steps yourself so this phase's stated EXIT
+CRITERIA actually hold before you open the PR — as long as the tree stays green ('task test'
+and 'task lint' pass, -race where enabled, coverage gates hold). Reinterpreting an
+illustrative signature against the code that truly exists is fine; shipping a half-built
+phase is not. Record an item in uncertainties[] ONLY when you genuinely cannot complete it
+within reason (needs a live meshStack/cluster/Gradle, a frozen customer-facing contract you
+must not touch, etc.) and state precisely why. Set exitCriteriaMet=true ONLY when the plan's
+exit criteria truly hold. A longer, complete, green PR beats a fast green-but-partial one.
 ${spec.consolidateNote ? `\nPHASE-SPECIFIC (overrides the single-PR step above): ${spec.consolidateNote}` : ''}
 ${prefaceResult ? `\nSequential prerequisite result:\n${typeof prefaceResult === 'string' ? prefaceResult : JSON.stringify(prefaceResult)}` : ''}
 

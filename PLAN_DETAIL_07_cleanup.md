@@ -498,7 +498,8 @@ bridges.
   — the D15 text-handler default, its level from `LOG_LEVEL` (`debug|info|warn|error`,
   default `info`; plan 03 §5.3, wired since plan 04 §4). At `debug` the shared `meshapi`
   transport (fed a `meshapi.SlogLogger` adapter — the provider-copied `Logger` seam, plan 03
-  §5.2.6/§7) logs full HTTP request/response bodies **unredacted**, and the
+  §5.2.6/§7) logs full HTTP request/response bodies **unredacted** (only the `Authorization`
+  header masked — the one sanctioned exception), and the
   now-slog `tf`/`tfrun` package emits its Debug lines; at the default `info` both are inert.
   The sensitive-body exposure at `debug` is the deliberate, documented trade-off (opt-in
   diagnostic; artifact-download bodies excepted).

@@ -375,7 +375,8 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
   mid-refactor. New phase-6 packages use slog natively, run id as attribute). A `LOG_LEVEL` env
   (`debug|info|warn|error`, default `info`) sets the slog handler level for every persona;
   at `debug` the shared `meshapi` HTTP transport logs full request/response headers **and
-  bodies including sensitive values — deliberately unredacted** (opt-in diagnostic;
+  bodies including sensitive values — deliberately unredacted, except the `Authorization`
+  header which is masked** (the one sanctioned exception; opt-in diagnostic;
   artifact-download bodies excepted, metadata only). The client's pluggable `Logger` seam is
   copied from the terraform-provider-meshstack client (interface + body/header helpers, a
   slog adapter) so the future shared meshfed-api go-client merges with no logging delta (D3).

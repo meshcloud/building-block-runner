@@ -278,7 +278,8 @@ bridge (consistent with plan 03's shared-core ruling). Every logger parameter be
 resolving `LOG_LEVEL` (`debug|info|warn|error`, default `info`; plan 03 §5.3) — and injects
 a `meshapi.SlogLogger(logger)` adapter (the provider-shaped pluggable `Logger` seam, plan 03
 §5.2.6/§7) into the `meshapi` clients, so `LOG_LEVEL=debug` turns on full HTTP
-request/response wire-body logging (unredacted, artifact-stream excepted) for every persona.
+request/response wire-body logging (bodies unredacted; only the `Authorization` header
+masked; artifact-stream excepted) for every persona.
 
 ### 4.1 Fit per-persona entrypoints & the `bbrunner` controller/superset (D1, D2, D8, D11)
 

@@ -177,9 +177,9 @@ entirely with its own `http.Client`:
   `Logger` interface (`Debug/Info/Warn(ctx, msg, args ...any)`, `noopLogger` default) with
   request/response Debug logging (sorted headers + pretty-JSON body via lazy `fmt.Stringer`
   wrappers). **Copied verbatim** into `meshapi` (§5.2.6) — interface + `loggedHeaders`/
-  `loggedBody`/`bytesToPrettyJson` — so the SDK merge has no logging-seam delta (§7); sole
-  deviation is dropping the `Authorization` `[REDACTED]` (our `LOG_LEVEL=debug` = full,
-  unobfuscated bodies).
+  `loggedBody`/`bytesToPrettyJson` — so the SDK merge has no logging-seam delta (§7). Copied
+  verbatim **including** the `Authorization` `[REDACTED]` masking — the single sanctioned
+  exception to no-obfuscation; bodies stay full/unredacted.
 - Deliberately **not** adopted (alignment notes §7): `MinMeshStackVersion` startup check,
   the 5-minute whole-client timeout (`http_client.go:18` — would kill legitimate 128MiB
   artifact streams), generic `DoRequest[R]`/`RequestOption` machinery (P2: our four
@@ -388,12 +388,14 @@ type Logger interface {
 func SlogLogger(l *slog.Logger) Logger
 ```
 
-- **One deliberate deviation from the copied code:** the provider redacts the
-  `Authorization` header (`[REDACTED]`, `logging.go:47-50`). We **drop that redaction** — at
-  `LOG_LEVEL=debug` the full request/response headers and bodies are logged **including
-  sensitive values** (runToken bearer, claim payloads, decrypted inputs echoed in status,
-  PATCH messages), **unobfuscated by design** (as specified; opt-in diagnostic, non-default;
-  §8 records the trade-off). This is a one-line policy difference, not a structural one.
+- **Copied verbatim, including the provider's one redaction:** the `Authorization` header is
+  masked (`[REDACTED]`, `logging.go:47-50`) — kept as the **single sanctioned exception** to
+  the otherwise "don't obfuscate secrets in logs" policy. Everything else at
+  `LOG_LEVEL=debug` is logged **unredacted**: full request/response bodies including
+  sensitive values (claim payloads, decrypted inputs echoed in status, PATCH messages — a
+  runToken present in a claim body is shown in full) and all non-`Authorization` headers.
+  No deviation from the provider code, so the §7 merge cost is nil (§8 records the
+  trade-off).
 - **Level gating via `LOG_LEVEL`:** the slog handler level (set in `main` from
   `config.LogLevel`, §5.3; wired plan 04 §4 / plan 07 §8.1) decides whether the adapter's
   `Debug` emits — no separate `Enabled()` check needed. Because the `meshapi` client is
@@ -694,7 +696,7 @@ tests are planned, STOP-C guards the residue).
 | Retry | `retryRoundTripper` + `RetryOptions{MaxRetries, Backoff, WhitelistedPaths}` | same design, unexported, smaller budget, `WhitelistedPosts` | trivial (merge = keep provider's, port budget) |
 | Auth | `Authorization.Header(ctx, c) (string, error)` | `AuthProvider.AuthHeader() string` kept (phase-1 pins cover the empty-header branch; changing the failure surface is not behavior-preserving) | small; adapter or signature migration at merge time — recorded delta |
 | Client layout | aggregate of per-resource clients over one `HttpClient` | `RunClient`/`RunnerClient` over one `http.Client` | naming maps 1:1 (`RunnerClient` ≈ `MeshBuildingBlockRunnerClient`) |
-| Logging | `internal.Logger` (Debug/Info/Warn, ctx-first) + request/response Debug logging (headers+pretty-JSON body), `Authorization` redacted | **same interface + helpers copied verbatim** (§5.2.6), fed by a `*slog.Logger` adapter so the app stays slog-native; redaction dropped per the `LOG_LEVEL=debug` full-body requirement | **none** — identical seam; the redaction difference is a one-line policy toggle |
+| Logging | `internal.Logger` (Debug/Info/Warn, ctx-first) + request/response Debug logging (headers+pretty-JSON body), `Authorization` redacted | **same interface + helpers copied verbatim** (§5.2.6) incl. the `Authorization` `[REDACTED]` masking (sanctioned exception; bodies stay unredacted), fed by a `*slog.Logger` adapter so the app stays slog-native | **none** — identical seam, no deviation |
 | Media types | computed `application/vnd.meshcloud.api.<kind>.<version>.hal+json` (`mesh_object_client.go:72-74`) | constants (two endpoints) | mechanical |
 | Request plumbing | generic `DoRequest[R]` + `RequestOption` | hand-rolled per endpoint (4 endpoints; P2 — generics don't pay yet) | isolated to method bodies |
 | Version check | `MinMeshStackVersion` at startup | deliberately absent (wrong for runners, D3) | n/a |
@@ -726,8 +728,9 @@ retries are invisible to the peer beyond duplicate idempotent requests.
 
 Also additive: the `LOG_LEVEL` env + `meshapi` DEBUG wire-body logging (§5.2.6). Inert at
 the default `info` level (no wire or log change); at `debug` it logs full request/response
-bodies **including sensitive values, unredacted by design** — an opt-in operator
-diagnostic, never on by default. No frozen contract is touched.
+bodies **including sensitive values, unredacted by design** (the `Authorization` header is
+the one masked field — sanctioned exception copied from the provider, §5.2.6) — an opt-in
+operator diagnostic, never on by default. No frozen contract is touched.
 
 ---
 

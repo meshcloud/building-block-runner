@@ -1,32 +1,34 @@
-package k8sjob
+package meshapi
 
 import (
 	"encoding/base64"
 	"encoding/json"
 	"testing"
-
-	meshapi "github.com/meshcloud/building-block-runner/internal/meshapi"
 )
 
+// These tests migrated with DecryptRunDetails from internal/k8sjob (PLAN_DETAIL_03 step 8:
+// "tests move"). The nil-Decryptor cases never reach Decrypt (MANUAL has no secrets;
+// unsupported/invalid error before any decrypt), so nil is a valid stand-in there.
+
 func TestDecryptRunDetails_UnsupportedImplementationType(t *testing.T) {
-	runDetails := meshapi.RunDetailsDTO{
+	runDetails := RunDetailsDTO{
 		ApiVersion: "v1",
 		Kind:       "meshBuildingBlockRun",
-		Metadata:   meshapi.RunMetaDTO{Uuid: "test-uuid"},
-		Spec: meshapi.RunSpecDTO{
+		Metadata:   RunMetaDTO{Uuid: "test-uuid"},
+		Spec: RunSpecDTO{
 			RunNumber: 1,
 			Behavior:  "APPLY",
-			BuildingBlock: meshapi.BuildingBlockSpecDTO{
+			BuildingBlock: BuildingBlockSpecDTO{
 				Uuid: "bb-uuid",
-				Spec: meshapi.BuildingBlockDetailsSpecDTO{
+				Spec: BuildingBlockDetailsSpecDTO{
 					DisplayName:         "Test BB",
 					WorkspaceIdentifier: "test-workspace",
-					Inputs:              []meshapi.BuildingBlockInputSpecDTO{},
+					Inputs:              []BuildingBlockInputSpecDTO{},
 				},
 			},
-			Definition: meshapi.DefinitionSpecDTO{
+			Definition: DefinitionSpecDTO{
 				Uuid: "def-uuid",
-				Spec: meshapi.DefinitionDetailsSpecDTO{
+				Spec: DefinitionDetailsSpecDTO{
 					Version:        1,
 					Implementation: json.RawMessage(`{"type": "UNKNOWN_TYPE"}`),
 				},
@@ -37,30 +39,30 @@ func TestDecryptRunDetails_UnsupportedImplementationType(t *testing.T) {
 	runJson, _ := json.Marshal(runDetails)
 	runJsonBase64 := base64.StdEncoding.EncodeToString(runJson)
 
-	if _, err := decryptRunDetails(runJsonBase64, nil); err == nil {
+	if _, err := DecryptRunDetails(runJsonBase64, nil); err == nil {
 		t.Error("expected error for unsupported implementation type")
 	}
 }
 
 func TestDecryptRunDetails_ManualImplementation(t *testing.T) {
-	runDetails := meshapi.RunDetailsDTO{
+	runDetails := RunDetailsDTO{
 		ApiVersion: "v1",
 		Kind:       "meshBuildingBlockRun",
-		Metadata:   meshapi.RunMetaDTO{Uuid: "test-uuid"},
-		Spec: meshapi.RunSpecDTO{
+		Metadata:   RunMetaDTO{Uuid: "test-uuid"},
+		Spec: RunSpecDTO{
 			RunNumber: 1,
 			Behavior:  "APPLY",
-			BuildingBlock: meshapi.BuildingBlockSpecDTO{
+			BuildingBlock: BuildingBlockSpecDTO{
 				Uuid: "bb-uuid",
-				Spec: meshapi.BuildingBlockDetailsSpecDTO{
+				Spec: BuildingBlockDetailsSpecDTO{
 					DisplayName:         "Test BB",
 					WorkspaceIdentifier: "test-workspace",
-					Inputs:              []meshapi.BuildingBlockInputSpecDTO{},
+					Inputs:              []BuildingBlockInputSpecDTO{},
 				},
 			},
-			Definition: meshapi.DefinitionSpecDTO{
+			Definition: DefinitionSpecDTO{
 				Uuid: "def-uuid",
-				Spec: meshapi.DefinitionDetailsSpecDTO{
+				Spec: DefinitionDetailsSpecDTO{
 					Version:        1,
 					Implementation: json.RawMessage(`{"type": "MANUAL"}`),
 				},
@@ -71,7 +73,7 @@ func TestDecryptRunDetails_ManualImplementation(t *testing.T) {
 	runJson, _ := json.Marshal(runDetails)
 	runJsonBase64 := base64.StdEncoding.EncodeToString(runJson)
 
-	result, err := decryptRunDetails(runJsonBase64, nil)
+	result, err := DecryptRunDetails(runJsonBase64, nil)
 	if err != nil {
 		t.Errorf("expected no error for MANUAL type, got: %v", err)
 	}
@@ -84,7 +86,7 @@ func TestDecryptRunDetails_ManualImplementation(t *testing.T) {
 		t.Fatalf("failed to decode result: %v", err)
 	}
 
-	var decodedRun meshapi.RunDetailsDTO
+	var decodedRun RunDetailsDTO
 	if err := json.Unmarshal(decoded, &decodedRun); err != nil {
 		t.Fatalf("failed to unmarshal decoded result: %v", err)
 	}
@@ -110,7 +112,7 @@ func TestDecryptRunDetails_InvalidInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := decryptRunDetails(tt.input, nil); err == nil {
+			if _, err := DecryptRunDetails(tt.input, nil); err == nil {
 				t.Errorf("expected error for %s", tt.name)
 			}
 		})

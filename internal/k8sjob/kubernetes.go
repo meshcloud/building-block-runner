@@ -88,7 +88,7 @@ func NewKubernetesJobDispatcherWithClient(clientset kubernetes.Interface, cfg Co
 // template returns *dispatch.UnhandledTypeError with the frozen message (D5/§10.1); any other
 // job creation error's Error() text is the exact FAILED-status message reported to meshfed.
 func (k *KubernetesJobDispatcher) Dispatch(run dispatch.ClaimedRun) error {
-	decryptedRunJsonBase64, err := decryptRunDetails(run.RawJson, k.crypto)
+	decryptedRunJsonBase64, err := meshapi.DecryptRunDetails(run.RawJson, meshapi.NewCertDecryptorFromCrypto(k.crypto))
 	if err != nil {
 		k.metrics.IncDecryptionError(k.runnerUuid)
 		// L14: report an actionable FAILED status (wording aligned with the tf runner's

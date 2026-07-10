@@ -169,3 +169,70 @@ read-only, and `run-controller/runner-config.yml`'s sample stays valid unchanged
   PEM (verified byte-for-byte in `internal/config/basekey_test.go`). Azdevops/github (06C/06D)
   reusing this same shared base file inherit the fix for free; noted here in case a reviewer
   wonders why the checked-in key's textual form differs from the Kotlin source.
+
+## Phase 6c (azure-devops Kotlin→Go port, PLAN_DETAIL_06C_azdevops.md)
+
+This slice landed the **Go azure-devops-block-runner persona additively** (new
+`internal/azdevops`, `cmd/azdevops`, `cmd/bbrunner/azdevops.go` registration, the per-persona
+Dockerfile/runner-config.yml, `internal/azdevops 90` coverage gate, the `azdevops` depguard
+group). It did **not** delete the Kotlin `azure-devops-block-runner` module, flip its CI
+legs, or edit meshfed-release — same rationale as 6a: those steps hinge on the §11
+acceptance gate (side-by-side Kotlin/Go transcript equivalence + a manual smoke against a
+real Azure DevOps org) that cannot be executed in this environment. The following remain for
+the human/PR that flips azure-devops over to the Go image:
+
+- **meshfed-release `.agents/skills/local-dev-stack/SKILL.md`:** verified at plan step 0
+  (umbrella §9/06C §15) — **no azure-devops runner entry exists today**, so no edit is owed
+  here; an optional start snippet (`go run ./cmd/azdevops` or `go run ./cmd/bbrunner
+  azdevops`, env `RUNNER_API_URL=http://localhost:8304` +
+  `RUNNER_CONFIG_FILE=containers/azure-devops-block-runner/runner-config.yml`) is a
+  maintainer choice, not gate-relevant.
+- **This repo, deferred to the removal PR:** `git rm -r azure-devops-block-runner/`;
+  `settings.gradle` drop `include 'azure-devops-block-runner'`; `.github/workflows/ci.yml` +
+  `build-images.yml` flip the azure-devops JVM leg to
+  `dockerfile: containers/azure-devops-block-runner/Dockerfile` and add a `./cmd/azdevops`
+  build leg. Kept intact here so CI stays green and the sibling ports (6b/6d) can stack on
+  the template.
+- **Kotlin pin tests (§3):** not added — gradle is not runnable in this environment and the
+  module is not being modified/removed in this commit. The Go scenario suite
+  (`internal/azdevops/*_test.go`) reproduces all 28 planned pins (S-P1–6 mapper tables,
+  U-P1–8 update shapes, P-P1–5 poll-loop semantics, A-P1–6 trigger/failure-ladder, K-P1–2
+  single-run wire+exit, F-P1 decrypt asymmetry) as the surviving pin, driven against a fake
+  Azure DevOps `httptest` transport + the shared `meshapitest` mock + an injected `Clock`
+  (sleep-free).
+- **Shared-package additions this slice made (flagged, STOP-C4):** `meshapi.Decryptor` +
+  `meshapi.DecryptInputs` were specified in 06A as 06B's (gitlab) responsibility, first
+  consumer wins. At the time this slice was authored, `phase-6b-gitlab` had not landed them
+  (`git diff phase-6a-manual..phase-6b-gitlab` was empty), so azdevops shipped both to the
+  06A-specified contract instead of forking a local copy (PLAN_DETAIL_06C_azdevops.md §1
+  STOP-C4). **If 06B lands its own version in parallel, the two need reconciling** — same
+  shape expected (mirrors `internal/tf.Decryptor`'s existing interface), but this is flagged
+  for the consolidation pass to verify, not assumed safe.
+- **`internal/crypto` fix this slice made (flagged):** `readRSAPrivateKey` gained a
+  `normalizePEM` fallback for single-line PEM blobs (no newline after `-----BEGIN...-----`) —
+  the exact shape every Kotlin runner's classpath `runner-config.yml` ships its baked dev
+  `privateKey` in (`PrivateKeyLoader.kt`'s hand-rolled parser tolerates it; Go's stdlib
+  `encoding/pem.Decode` does not). Discovered because azure-devops is the **first real
+  consumer** of `config.ResolvePrivateKey` + private-key decryption among the Go ports (06A/
+  manual never decrypts). Without this fix, a customer's real, currently-deployed Kotlin
+  `runner-config.yml` (or this port's own baked dev key) would fail to decrypt on the new Go
+  image — a silent config-compat break (D7/D10) — so it was fixed here rather than deferred.
+  The fix is purely additive tolerance (falls back only when a bare `pem.Decode` fails) and
+  is exercised by `internal/crypto/pemnormalize_test.go` plus a container smoke (`docker run`
+  the built image, confirm it logs a successful private-key resolution and serves
+  `/healthz`). **06B/06D should re-verify their own baked keys parse now that this fix
+  exists** rather than rediscovering the same gap independently.
+
+### Consolidation reconciliation (phase-6a-manual stack)
+
+The STOP-C4 duplication above was reconciled when 06C was stacked onto 06B:
+`meshapi.Decryptor`/`meshapi.NoopDecryptor`/`meshapi.NewCertDecryptor` and the byte-based
+`meshapi.DecryptInputs` are kept from 06B (06B's `CertDecryptor` carries the Kotlin
+`decrypt("") == ""` empty-string guard, which is the correct parity for every persona). 06C's
+typed-DTO input decryptor was kept as well but renamed to `meshapi.DecryptInputSpecs`
+(`internal/meshapi/decryptinputspecs.go`) — the two consumers need different shapes: gitlab
+forwards the whole raw run document (byte-preserving, §16.6) while azure-devops already holds
+the parsed `[]BuildingBlockInputSpecDTO` and decrypts it directly. Both apply the identical
+STRING/CODE/FILE branch rule. 06C's `internal/crypto` `normalizePEM` single-line-PEM tolerance
+and 06B's multi-line re-wrap of the shared dev key coexist (the normalize pass is a no-op on
+already-valid multi-line PEM); both survive.

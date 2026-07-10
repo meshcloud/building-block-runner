@@ -7,8 +7,8 @@ package tfrun
 //     generated tfvars file / written file (run.go:45-56 decryptIfSensitive, tfcmd.go:513-561
 //     saveInputFiles, tfcmd.go:565-706 vars).
 //   - decrypt failure surfaces the key-mismatch guidance text (run.go:58-63).
-//   - FIXME(bug) B5: a sensitive BOOLEAN input is not decrypted (decryptIfSensitive's switch only
-//     handles CODE/STRING/FILE) and its ciphertext is written verbatim.
+//   - B5 (fixed, phase 2b): a sensitive BOOLEAN input is now decrypted like any other sensitive
+//     type (decryptIfSensitive no longer switches on DataType before deciding whether to decrypt).
 //   - encodeVarValueForEnv (tfcmd.go:708-723): MULTISELECT JSON-encoding and its error path.
 //   - buildTfEnv (tfcmd.go:455-511): env-var decrypt-failure path, and the cleanSystemEnv
 //     whitelist (tfcmd.go:401-446) does not leak ambient ("poisoned") process env vars.
@@ -225,16 +225,16 @@ func (suite *WorkerTestSuite) Test_ApplyWithPlanArtifact_StalePlanApplyFailure()
 	suite.Contains(*executeTf.UserMessage, "no longer valid")
 }
 
-// Test_Vars_SensitiveBooleanInput_PassesThroughCiphertextVerbatim pins
-// // FIXME(bug): B5 — decryptIfSensitive's type switch (run.go:45-56) only decrypts sensitive
-// CODE/STRING/FILE values; a sensitive BOOLEAN (also: INTEGER/SINGLE_SELECT/MULTI_SELECT/LIST)
-// input falls through the switch untouched, so its ciphertext is written into the tfvars file as
-// if it were the real value. Correct behavior (phase 2b): decrypt every sensitive value or fail
-// fast, per the bug inventory (plan §6, B5).
-func Test_Vars_SensitiveBooleanInput_PassesThroughCiphertextVerbatim(t *testing.T) {
+// Test_Vars_SensitiveBooleanInput_IsDecrypted pins the fixed run.go:decryptIfSensitive (B5, phase
+// 2b): it no longer type-switches on DataType before deciding whether to decrypt — a sensitive
+// BOOLEAN (also: INTEGER/SINGLE_SELECT/MULTI_SELECT/LIST) input is decrypted just like
+// CODE/STRING/FILE, so its plaintext (not the ciphertext) lands in the generated tfvars file.
+func Test_Vars_SensitiveBooleanInput_IsDecrypted(t *testing.T) {
 	uut := makeTestGenericTfCmd(t)
 
-	const ciphertext = "QUFBQUJCQkJDQ0NDRERERA==-not-a-real-boolean-ciphertext"
+	crypto := testCrypto(t)
+	uut.params.dec = certDecryptor{crypto: crypto}
+	ciphertext := encryptForTest(t, crypto, "true")
 	uut.params.vars["flag"] = &Variable{value: ciphertext, isSensitive: true, Type: DATA_TYPE_BOOLEAN}
 
 	err := uut.vars()
@@ -243,7 +243,8 @@ func Test_Vars_SensitiveBooleanInput_PassesThroughCiphertextVerbatim(t *testing.
 	tfvarsPath := path.Join(uut.runContextInfo.workingDirectory, tfvarsFileName)
 	content, err := os.ReadFile(tfvarsPath)
 	require.NoError(t, err)
-	assert.Contains(t, string(content), ciphertext, "B5: ciphertext should (buggily) appear verbatim")
+	assert.Contains(t, string(content), "true", "fixed: the decrypted plaintext lands in the tfvars file")
+	assert.NotContains(t, string(content), ciphertext, "fixed: the raw ciphertext must not appear verbatim")
 }
 
 // Test_encodeVarValueForEnv_MultiSelectJSONEncodesValue pins the MULTISELECT branch of

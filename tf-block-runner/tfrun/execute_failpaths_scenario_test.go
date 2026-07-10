@@ -66,8 +66,9 @@ func Test_BuildTfEnv_SshSourceSetsGitSshCommand(t *testing.T) {
 	t.Cleanup(func() { AppConfig.SkipHostKeyValidation = prev })
 
 	wd := t.TempDir()
-	rci := &RunContextInfo{workingDirectory: wd, logwrap: NewLogWrap(log.New(io.Discard, "", 0), filepath.Join(wd, "log.txt"))}
-	require.NotNil(t, rci.logwrap)
+	lw, err := NewLogWrap(log.New(io.Discard, "", 0), filepath.Join(wd, "log.txt"))
+	require.NoError(t, err)
+	rci := &RunContextInfo{workingDirectory: wd, logwrap: lw}
 	tfcmd := &GenericTfCmd{
 		runContextInfo: rci,
 		params:         &TfCmdParams{source: &GitSource{auth: &SshAuth{}}, vars: map[string]*Variable{}},

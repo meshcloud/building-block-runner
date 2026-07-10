@@ -22,10 +22,7 @@ func runDTOToInternal(dto *meshapi.RunDetailsDTO, dec Decryptor) (*Run, error) {
 		return nil, err
 	}
 
-	source, err := terraformImplToGitSource(&impl, dec)
-	if err != nil {
-		return nil, err
-	}
+	source := terraformImplToGitSource(&impl, dec)
 
 	// Its not easy to provide this input at another position. As the whole run does not
 	// exist when the inputs are setted. This would still require a two-stage process at
@@ -72,10 +69,7 @@ func ToInternalWithoutDecryption(dto *meshapi.RunDetailsDTO, dec Decryptor) (*Ru
 		return nil, err
 	}
 
-	source, err := terraformImplToGitSource(&impl, dec)
-	if err != nil {
-		return nil, err
-	}
+	source := terraformImplToGitSource(&impl, dec)
 
 	// Encode the run JSON for potential use
 	jsonBytes, err := json.Marshal(dto)
@@ -126,7 +120,7 @@ func toInternalVariableMap(m []meshapi.BuildingBlockInputSpecDTO) map[string]*Va
 }
 
 // with this behavior the update won't update steps if the current status' step is nil.
-func (status RunStatus) toExternal() (meshapi.RunStatusUpdateDTO, error) {
+func (status RunStatus) toExternal() meshapi.RunStatusUpdateDTO {
 
 	// status
 	runStatus := status.Status.str()
@@ -172,25 +166,22 @@ func (status RunStatus) toExternal() (meshapi.RunStatusUpdateDTO, error) {
 		Summary:    status.Summary,
 		Steps:      steps,
 		Artifact:   artifact,
-	}, nil
+	}
 }
 
-func terraformImplAuthMethod(impl *meshapi.TerraformImplementation, dec Decryptor) (auth, error) {
+func terraformImplAuthMethod(impl *meshapi.TerraformImplementation, dec Decryptor) auth {
 	if impl.SshPrivateKey == nil {
-		return &NoAuth{}, nil
+		return &NoAuth{}
 	}
 	return &SshAuth{
 		certStr:        *impl.SshPrivateKey,
 		knownHostEntry: knownHostsToInternal(impl.KnownHost),
 		dec:            dec,
-	}, nil
+	}
 }
 
-func terraformImplToGitSource(impl *meshapi.TerraformImplementation, dec Decryptor) (*GitSource, error) {
-	auth, err := terraformImplAuthMethod(impl, dec)
-	if err != nil {
-		return nil, err
-	}
+func terraformImplToGitSource(impl *meshapi.TerraformImplementation, dec Decryptor) *GitSource {
+	auth := terraformImplAuthMethod(impl, dec)
 
 	return &GitSource{
 		url:       impl.RepositoryUrl,
@@ -198,7 +189,7 @@ func terraformImplToGitSource(impl *meshapi.TerraformImplementation, dec Decrypt
 		auth:      auth,
 		refName:   impl.RefName,
 		gitFacade: &Git{},
-	}, nil
+	}
 }
 
 func knownHostsToInternal(dto *meshapi.KnownHostDTO) *KnownHost {

@@ -157,21 +157,6 @@ linters:
       # an executed production code path if fixed now; the comment names the phase that
       # owns removing the block by actually fixing the underlying code.
 
-      # tf-block-runner: dies in phase 2/2b (DDD refactor + bug-fix pass).
-      - path: ^tf-block-runner/tfrun/
-        linters:
-          - errcheck
-          - forcetypeassert
-          - nilerr
-          - makezero
-          - ineffassign
-          - unparam
-      # tf-block-runner/main.go's healthz handler shares the same unchecked-Write pattern
-      # (dies alongside tfrun in phase 2/2b, once main.go wiring is revisited).
-      - path: ^tf-block-runner/main\.go$
-        linters:
-          - errcheck
-
       # run-controller + go-meshapi-client: die in phase 3 (shared-core consolidation).
       - path: ^run-controller/controller/
         linters:

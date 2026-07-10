@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/go-git/go-git/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -82,9 +83,50 @@ func Test_LogDirectoryContentsForWorktreeUnstagedChangedError(t *testing.T) {
 	require.NoError(t, os.Mkdir(filepath.Join(dir, "a-dir"), 0o700))
 	require.NoError(t, os.Symlink(filepath.Join(dir, "a-file.tf"), filepath.Join(dir, "a-link")))
 
-	gs := &GitSource{log: NewLogWrap(log.New(io.Discard, "", 0), filepath.Join(dir, "update.log"))}
-	require.NotNil(t, gs.log)
+	lw, err := NewLogWrap(log.New(io.Discard, "", 0), filepath.Join(dir, "update.log"))
+	require.NoError(t, err)
+	gs := &GitSource{log: lw}
 
 	// Must not panic and must walk every entry type.
 	assert.NotPanics(t, func() { gs.logDirectoryContentsForWorktreeUnstagedChangedError(dir) })
+}
+
+// vanishingTmpDirFacade wraps MockedGitFacade's no-op clone() to also remove the tmp clone dir it
+// was asked to clone into, simulating "the cloned tmp directory vanished between clone and the
+// subsequent os.Stat" (B9) — a race unreachable via the real Git facade in a hermetic test.
+type vanishingTmpDirFacade struct {
+	*MockedGitFacade
+}
+
+func (g *vanishingTmpDirFacade) clone(a auth, url, targetdir string) (*git.Repository, error) {
+	repo, err := g.MockedGitFacade.clone(a, url, targetdir)
+	if err == nil {
+		err = os.RemoveAll(targetdir)
+	}
+	return repo, err
+}
+
+// Test_CopyToTargetDir_NilPathMissingSourceDirDoesNotPanic pins the fixed gitsource.go:111-116
+// (B9): when the resolved sourceDir unexpectedly does not exist and g.path is nil (no subpath
+// configured), CopyToTargetDir must log the resolved sourceDir and return an error — not
+// nil-deref on *g.path, which is nil in exactly this case.
+func Test_CopyToTargetDir_NilPathMissingSourceDirDoesNotPanic(t *testing.T) {
+	dir := t.TempDir()
+	lw, err := NewLogWrap(log.New(io.Discard, "", 0), filepath.Join(dir, "update.log"))
+	require.NoError(t, err)
+
+	facade := &vanishingTmpDirFacade{MockedGitFacade: &MockedGitFacade{}}
+	facade.init()
+
+	gs := &GitSource{
+		url:       "https://example.com/org/repo.git",
+		path:      nil,
+		auth:      &NoAuth{},
+		log:       lw,
+		gitFacade: facade,
+	}
+
+	var copyErr error
+	assert.NotPanics(t, func() { copyErr = gs.CopyToTargetDir(dir) })
+	assert.ErrorContains(t, copyErr, "specified path does not exist")
 }

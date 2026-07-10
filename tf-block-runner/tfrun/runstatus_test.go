@@ -4,20 +4,21 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func Test_firstStep_correctlyInitializes(t *testing.T) {
 	runStatus := makeTestRunStatus()
-	runStatus.firstStep()
+	require.NoError(t, runStatus.firstStep())
 	assert.Equal(t, 0, runStatus.CurrentStepIndex)
 	assert.Equal(t, "step1", runStatus.currentStepStatus().Name)
 }
 
 func Test_failRunAndNotFinishedSteps_correctlyFailsThisAndSuccessorSteps(t *testing.T) {
 	runStatus := makeTestRunStatus()
-	runStatus.firstStep()
+	require.NoError(t, runStatus.firstStep())
 	runStatus.currentStepStatus().Status = SUCCEEDED
-	runStatus.nextStep()
+	require.NoError(t, runStatus.nextStep())
 	runStatus.failRunAndNotFinishedSteps()
 
 	assert.Equal(t, 1, runStatus.CurrentStepIndex)

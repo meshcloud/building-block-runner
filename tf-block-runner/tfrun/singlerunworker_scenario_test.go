@@ -91,8 +91,8 @@ func (suite *SingleRunWorkerTestSuite) SetupSuite() {
 }
 
 func (suite *SingleRunWorkerTestSuite) TearDownSuite() {
-	os.RemoveAll(suite.tfBin.dir)
-	os.RemoveAll(suite.workerDir)
+	_ = os.RemoveAll(suite.tfBin.dir)
+	_ = os.RemoveAll(suite.workerDir)
 }
 
 func (suite *SingleRunWorkerTestSuite) SetupTest() {
@@ -253,8 +253,8 @@ func (suite *SingleRunWorkerTestSuite) Test_ExecuteRun_ApplyTfFailure() {
 	run := suite.buildRun(withBehavior(APPLY.str()), withRepo(suite.repo.Path, suite.repoPath))
 
 	suite.tfMock.applyFunc = func(ctx context.Context, opts ...tfexec.ApplyOption) error {
-		suite.tfMock.stdOut.Write([]byte("apply in progress\n"))
-		suite.tfMock.stdErr.Write([]byte("failure\n"))
+		_, _ = suite.tfMock.stdOut.Write([]byte("apply in progress\n"))
+		_, _ = suite.tfMock.stdErr.Write([]byte("failure\n"))
 		return errors.New("test error")
 	}
 
@@ -350,6 +350,11 @@ func (suite *SingleRunWorkerTestSuite) Test_ExecuteRun_AbortFlagCancelsContext()
 
 // --- registration failure (mirrors singlerunworker.go:128-135) ------------------------------------
 
+// Test_ExecuteRun_RegistrationFailure_ReportsFailed pins the fixed ExecuteRun (B11, phase 2b):
+// registration is before tofu init/apply begins, so its failure is now propagated out of
+// ExecuteRun as an error (unlike a later tf init/apply failure, which stays exit-0 — see
+// singlerunworker.go's registerErr doc comment) — in addition to the pre-existing FAILED status
+// report this test already pinned.
 func (suite *SingleRunWorkerTestSuite) Test_ExecuteRun_RegistrationFailure_ReportsFailed() {
 	w := suite.newWorker("single-run-token-register-fail")
 	run := suite.buildRun(withBehavior(APPLY.str()), withRepo(suite.repo.Path, suite.repoPath))
@@ -370,7 +375,7 @@ func (suite *SingleRunWorkerTestSuite) Test_ExecuteRun_RegistrationFailure_Repor
 
 	updateCalls := suite.collectUpdates()
 
-	suite.Require().NoError(w.ExecuteRun(run))
+	suite.Require().Error(w.ExecuteRun(run), "fixed: a registration failure now surfaces as an ExecuteRun error")
 
 	suite.False(initCalled, "tf must never run when registration hard-fails")
 
@@ -422,7 +427,7 @@ func (suite *SingleRunWorkerTestSuite) Test_ExecuteRun_WorkerDirCreationFails_No
 func (suite *SingleRunWorkerTestSuite) Test_ExecuteRun_TempDirCreationFails_SendsInitFailUpdate() {
 	readOnlyDir := suite.T().TempDir()
 	suite.Require().NoError(os.Chmod(readOnlyDir, 0500))
-	suite.T().Cleanup(func() { os.Chmod(readOnlyDir, 0700) }) // restore so TempDir's own cleanup can remove it
+	suite.T().Cleanup(func() { _ = os.Chmod(readOnlyDir, 0700) }) // restore so TempDir's own cleanup can remove it
 
 	w := suite.newWorker("single-run-token-mkdirtemp-fail")
 	w.workerDir = readOnlyDir

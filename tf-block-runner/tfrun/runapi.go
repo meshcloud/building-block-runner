@@ -130,10 +130,7 @@ func (api *RunApiClient) Register(runStatus *RunStatus) error {
 }
 
 func (api *RunApiClient) UpdateState(status *RunStatus) (bool, error) {
-	dto, err := status.toExternal()
-	if err != nil {
-		return false, err
-	}
+	dto := status.toExternal()
 
 	data, err := api.client.PatchStatus(status.RunId, AppConfig.RunnerUuid, dto)
 	if err != nil {

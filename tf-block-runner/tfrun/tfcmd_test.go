@@ -222,7 +222,9 @@ func Test_collectOutput(t *testing.T) {
 	assert.Equal(t, "[\n  \"foo\",\n  \"bar\"\n]", collectedOutput["list"].Value)
 
 	assert.Equal(t, DataType(DATA_TYPE_CODE), collectedOutput["object"].Type)
-	assert.JSONEq(t, "{\n  \"test1\": \"foo\",\n  \"test2\": true,\n  \"test3\": 42\n}", collectedOutput["object"].Value.(string))
+	objectValue, ok := collectedOutput["object"].Value.(string)
+	require.True(t, ok)
+	assert.JSONEq(t, "{\n  \"test1\": \"foo\",\n  \"test2\": true,\n  \"test3\": 42\n}", objectValue)
 }
 
 // Creates a new *GenericTfCmd and provides config with a working directory
@@ -236,6 +238,8 @@ func Test_collectOutput(t *testing.T) {
 func makeTestGenericTfCmd(t *testing.T) *GenericTfCmd {
 	t.Helper()
 	wd := t.TempDir()
+	lw, err := NewLogWrap(log.New(io.Discard, "[tfCmd_test] ", log.LstdFlags), "/dev/null")
+	require.NoError(t, err)
 	return &GenericTfCmd{
 		params: &TfCmdParams{
 			vars: make(map[string]*Variable),
@@ -243,7 +247,7 @@ func makeTestGenericTfCmd(t *testing.T) *GenericTfCmd {
 		},
 		runContextInfo: &RunContextInfo{
 			workingDirectory: wd,
-			logwrap:          NewLogWrap(log.New(io.Discard, "[tfCmd_test] ", log.LstdFlags), "/dev/null"),
+			logwrap:          lw,
 			// Provide default test values for meshStack variables
 			runJsonBase64: "dGVzdC1ydW4tanNvbi1iYXNlNjQtZGVmYXVsdA==",
 			bbId:          "test-building-block-id",

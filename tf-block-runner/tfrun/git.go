@@ -162,7 +162,7 @@ func (g *Git) moveDirContent(src string, dst string) error {
 // You gotta love Azure.
 func (g *Git) azureClone(dir string, url string, ref *string, authType AuthType) error {
 	g.log.PrintlnToLocalLogs("using Azure Devops workaround")
-	var err error = nil
+	var err error
 	var output []byte
 	tmpDir := path.Join(dir, TEMP_CLONE_DIR_PATH)
 

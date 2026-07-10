@@ -312,8 +312,7 @@ func Test_TerraformImplAuthMethod_SshBranch(t *testing.T) {
 		SshPrivateKey: &key,
 		KnownHost:     &meshapi.KnownHostDTO{Host: "h", KeyType: "ssh-rsa", KeyValue: "AAAA"},
 	}
-	auth, err := terraformImplAuthMethod(impl, nil)
-	require.NoError(t, err)
+	auth := terraformImplAuthMethod(impl, nil)
 	sshAuth, ok := auth.(*SshAuth)
 	require.True(t, ok, "an implementation with an SSH private key must yield *SshAuth")
 	assert.Equal(t, "ssh-key-pem", sshAuth.certStr)
@@ -321,8 +320,7 @@ func Test_TerraformImplAuthMethod_SshBranch(t *testing.T) {
 	assert.Equal(t, "h", sshAuth.knownHostEntry.host)
 
 	// No key => NoAuth.
-	noAuth, err := terraformImplAuthMethod(&meshapi.TerraformImplementation{}, nil)
-	require.NoError(t, err)
+	noAuth := terraformImplAuthMethod(&meshapi.TerraformImplementation{}, nil)
 	assert.IsType(t, &NoAuth{}, noAuth)
 }
 

@@ -39,20 +39,18 @@ type Variable struct {
 	isSensitive bool
 }
 
-// add more "decryptable" types here, once we support them.
 // A nil dec means "no decryptor configured" and passes the value through unchanged, matching
 // the former meshcrypto.Crypto == nil single-run behavior.
+//
+// Every sensitive value is decrypted regardless of DataType (B5 fix, phase 2b): a prior
+// type-switch only decrypted CODE/STRING/FILE, silently leaving ciphertext as the value for any
+// other sensitive type (e.g. BOOLEAN, INTEGER). The encrypted wire representation is always a
+// string produced by the sender's encryption regardless of the input's logical DataType, so
+// decrypting unconditionally is correct for every type, not just the three previously listed.
 func (variable Variable) decryptIfSensitive(dec Decryptor) (result any, err error) {
 	result = variable.value
 	if variable.isSensitive && dec != nil {
-		switch variable.Type {
-		case DATA_TYPE_CODE:
-			result, err = dec.Decrypt(fmt.Sprintf("%v", variable.value))
-		case DATA_TYPE_STRING:
-			result, err = dec.Decrypt(fmt.Sprintf("%v", variable.value))
-		case DATA_TYPE_FILE:
-			result, err = dec.Decrypt(fmt.Sprintf("%v", variable.value))
-		}
+		result, err = dec.Decrypt(fmt.Sprintf("%v", variable.value))
 		if err != nil {
 			// Wrap the error with helpful context
 			return nil, fmt.Errorf("failed to decrypt secret input: %w. "+

@@ -29,8 +29,8 @@ import (
 func testLogwrap(t *testing.T) *logwrap {
 	t.Helper()
 	// A logwrap needs an update-log file; the run's working dir is a natural throwaway location.
-	lw := NewLogWrap(log.New(io.Discard, "", 0), filepath.Join(t.TempDir(), "update.log"))
-	require.NotNil(t, lw)
+	lw, err := NewLogWrap(log.New(io.Discard, "", 0), filepath.Join(t.TempDir(), "update.log"))
+	require.NoError(t, err)
 	return lw
 }
 

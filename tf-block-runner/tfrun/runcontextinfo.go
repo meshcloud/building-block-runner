@@ -28,9 +28,14 @@ type RunContextInfo struct {
 	meshstackBaseUrl string
 }
 
-func initRunContextInfo(run *Run, logPrefix string, logWriter io.Writer, wd string) *RunContextInfo {
+func initRunContextInfo(run *Run, logPrefix string, logWriter io.Writer, wd string) (*RunContextInfo, error) {
 	log := log.New(logWriter, fmt.Sprintf("%s[%s] [%s] ", logPrefix, run.Behavior.str(), run.Id), log.LstdFlags)
 	outFile := path.Join(wd, "logs", fmt.Sprintf("logs-%s.txt", run.Id))
+
+	logwrap, err := NewLogWrap(log, outFile)
+	if err != nil {
+		return nil, fmt.Errorf("initializing run context for run %s: %w", run.Id, err)
+	}
 
 	// A run is IN_PROGRESS by definition from the moment the runner starts executing it.
 	// Using PENDING here would cause a 500 from the coordinator if the status is ever
@@ -55,10 +60,10 @@ func initRunContextInfo(run *Run, logPrefix string, logWriter io.Writer, wd stri
 		runStatus:              status,
 		progress:               newProgress(*status),
 		logFile_name:           outFile,
-		logwrap:                NewLogWrap(log, outFile),
+		logwrap:                logwrap,
 		runToken:               run.RunToken,
 		meshstackBaseUrl:       run.MeshstackBaseUrl,
 	}
 
-	return runContextInfo
+	return runContextInfo, nil
 }

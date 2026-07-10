@@ -11,7 +11,7 @@ import (
 func TestUpdateState_ErrorHandling(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte("forbidden"))
+		_, _ = w.Write([]byte("forbidden"))
 	}))
 	defer server.Close()
 
@@ -49,7 +49,7 @@ func TestUpdateState_ErrorHandling(t *testing.T) {
 func TestRegister_ErrorHandling(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte("forbidden"))
+		_, _ = w.Write([]byte("forbidden"))
 	}))
 	defer server.Close()
 
@@ -83,7 +83,7 @@ func TestRegister_ErrorHandling(t *testing.T) {
 func TestRegister_409Conflict_ReturnsNil(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusConflict)
-		w.Write([]byte("conflict"))
+		_, _ = w.Write([]byte("conflict"))
 	}))
 	defer server.Close()
 

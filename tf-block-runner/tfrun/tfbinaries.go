@@ -138,7 +138,7 @@ func (bin *TfBinaries) GetTF(ctx context.Context, workingDir string, ver string)
 		} else {
 
 			// install tofu binaries
-			err = bin.installTofuBinaries(ver, versionInstallPath)
+			err = bin.installTofuBinaries(ctx, ver, versionInstallPath)
 			if err != nil {
 				return nil, err
 			}
@@ -151,12 +151,15 @@ func (bin *TfBinaries) GetTF(ctx context.Context, workingDir string, ver string)
 	}
 }
 
-func (bin *TfBinaries) installTofuBinaries(ver, dir string) (err error) {
+func (bin *TfBinaries) installTofuBinaries(ctx context.Context, ver, dir string) (err error) {
 	dl, err := tofudl.New()
 	if err != nil {
 		return err
 	}
-	tofuBinary, err := dl.Download(context.Background(), tofudl.DownloadOptVersion(tofudl.Version(ver)))
+	// B8 fix (phase 2b): honor the caller's ctx instead of context.Background(), so the
+	// configured init timeout (or run cancellation) actually bounds this network download
+	// like it does every other step.
+	tofuBinary, err := dl.Download(ctx, tofudl.DownloadOptVersion(tofudl.Version(ver)))
 	if err != nil {
 		return err
 	}

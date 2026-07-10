@@ -38,13 +38,17 @@ func (suite *GitSourceTestSuite) SetupSuite() {
 
 	suite.wd = tmpWd
 	suite.logfile = f
-	suite.log = NewLogWrap(log.New(io.Discard, "", log.LstdFlags), f.Name())
+	lw, err := NewLogWrap(log.New(io.Discard, "", log.LstdFlags), f.Name())
+	if err != nil {
+		panic(err)
+	}
+	suite.log = lw
 }
 
 func (suite *GitSourceTestSuite) TearDownSuite() {
-	suite.logfile.Close()
-	os.Remove(suite.logfile.Name())
-	os.RemoveAll(suite.wd)
+	_ = suite.logfile.Close()
+	_ = os.Remove(suite.logfile.Name())
+	_ = os.RemoveAll(suite.wd)
 }
 
 func (suite *GitSourceTestSuite) Test_GitSourceCloneSimple() {

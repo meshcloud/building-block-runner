@@ -1,24 +1,23 @@
 package tfrun
 
 // bug_inventory_test.go pins the D13 bug inventory
-// (PLAN_DETAIL_01_tf_characterization_tests.md §6): every FIXME(bug) test below asserts
-// *current*, buggy behavior verbatim. Do not "fix" these assertions here — phase 2b flips each
-// one to assert correct behavior together with the matching production fix (D13). This file is
-// deliberately self-contained (its own TfFacade test double, its own tfcmd/execute harness) so it
-// stays disjoint from the other phase-1 checkpoint test files.
+// (PLAN_DETAIL_01_tf_characterization_tests.md §6). Phase 2b (PLAN_DETAIL_02 §7) works through
+// this inventory: each entry below now asserts *correct* behavior together with the matching
+// production fix, and the `FIXME(bug)` markers are gone. This file is deliberately
+// self-contained (its own TfFacade test double, its own tfcmd/execute harness) so it stays
+// disjoint from the other checkpoint test files.
 //
 // Not pinned here, by design:
 //   - B6 (manager.go shutdownCalled) and B10 (runcontextinfo.go reportStatus shallow copy) are
-//     genuine data races. D13 exempts them from "pin verbatim, fix in 2b": they are fixed
-//     structurally in phase 2 (atomic.Bool / deep-copy), so no FIXME(bug) test asserts the race
-//     itself here (A5: `-race` is intentionally not enabled until phase 2).
+//     genuine data races. D13 exempts them from "pin verbatim, fix in 2b": they were fixed
+//     structurally in phase 2 (atomic.Bool / deep-copy) and are guarded by `-race` (on in CI/
+//     Taskfile since phase 2), not by a functional pin here.
 //   - B8 (tfbinaries.go installTofuBinaries uses context.Background()) lives in a file excluded
 //     from the coverage gate (§7) and needs a live network download to reach; inventory-only.
-//   - B9 (gitsource.go nil-deref logging `*g.path` when it is nil) requires the cloned tmp
-//     directory to vanish between clone and stat — not reachable without a contrived facade;
-//     inventory-only per the detail plan.
+//   - B9 (gitsource.go nil-deref logging `*g.path` when it is nil) is covered by a unit test in
+//     gitsource_test.go (R10), not here.
 //   - B11 (main.go single-run failure only logged, process exits 0) lives in `package main`,
-//     outside the `tfrun` gate; revisited with the persona main in phase 2/4.
+//     outside the `tfrun` gate; fixed in tf-block-runner/main.go (R12).
 
 import (
 	"context"
@@ -101,6 +100,9 @@ func makeBugInventoryTfCmd(t *testing.T, buildingBlockId, suggestedWorkspace str
 		AppConfig.InitTimeoutMins = previousInit
 	})
 
+	lw, err := NewLogWrap(log.New(io.Discard, "[bug-inventory] ", log.LstdFlags), "/dev/null")
+	require.NoError(t, err)
+
 	return &GenericTfCmd{
 		ctx: context.Background(),
 		params: &TfCmdParams{
@@ -109,23 +111,19 @@ func makeBugInventoryTfCmd(t *testing.T, buildingBlockId, suggestedWorkspace str
 			useWorkspaces:      true,
 		},
 		runContextInfo: &RunContextInfo{
-			logwrap: NewLogWrap(log.New(io.Discard, "[bug-inventory] ", log.LstdFlags), "/dev/null"),
+			logwrap: lw,
 		},
 	}
 }
 
-// --- B1: selectWorkspace swallows the WorkspaceSelect error -------------------------------------
+// --- B1 (fixed): selectWorkspace propagates the WorkspaceSelect error ---------------------------
 
-// Test_BugInventory_B1_WorkspaceSelectErrorSwallowed pins tfcmd.go:231-234 (selectWorkspace):
-// when the workspace WorkspaceList *did* find a match but the subsequent WorkspaceSelect call on
-// it errors, selectWorkspace swallows that error (`return "", nil`) instead of propagating it.
-// The caller, useWorkspaceIfNeeded, then reads the empty workspace name as "no existing
-// workspace" and creates a brand-new one, silently splitting the workspace tf actually has on
-// disk from the one meshStack now believes is active.
-func Test_BugInventory_B1_WorkspaceSelectErrorSwallowed(t *testing.T) {
-	// FIXME(bug): B1 — correct behavior (2b) propagates the WorkspaceSelect error out of
-	// selectWorkspace instead of returning ("", nil); useWorkspaceIfNeeded must then fail the
-	// run rather than creating a new workspace.
+// Test_BugInventory_B1_WorkspaceSelectErrorPropagated pins the fixed tfcmd.go:selectWorkspace:
+// when WorkspaceList *did* find a match but the subsequent WorkspaceSelect call on it errors,
+// selectWorkspace now propagates that error instead of swallowing it into ("", nil). The caller,
+// useWorkspaceIfNeeded, then fails the run instead of silently creating a brand-new workspace and
+// splitting the workspace tf actually has on disk from the one meshStack now believes is active.
+func Test_BugInventory_B1_WorkspaceSelectErrorPropagated(t *testing.T) {
 	const realWorkspaceName = "org.proj.plat:bb-1"
 	uut := makeBugInventoryTfCmd(t, "bb-1", realWorkspaceName)
 
@@ -140,22 +138,20 @@ func Test_BugInventory_B1_WorkspaceSelectErrorSwallowed(t *testing.T) {
 
 	err := uut.useWorkspaceIfNeeded(facade)
 
-	require.NoError(t, err, "bug: the swallowed WorkspaceSelect error never surfaces")
+	require.Error(t, err, "the WorkspaceSelect error now surfaces to the caller")
 	assert.Equal(t, []string{realWorkspaceName}, facade.workspaceSelectCalls,
 		"the existing workspace was found and a select was attempted (and failed)")
-	assert.Equal(t, []string{realWorkspaceName}, facade.workspaceNewCalls,
-		"bug: a NEW workspace is created even though a matching one already exists on disk")
+	assert.Empty(t, facade.workspaceNewCalls,
+		"fixed: no NEW workspace is created when a matching one already exists on disk but failed to select")
 }
 
-// --- B2: selectWorkspace returns the wrong (bare buildingBlockId) name ---------------------------
+// --- B2 (fixed): selectWorkspace returns the real matched workspace name -------------------------
 
-// Test_BugInventory_B2_WorkspaceSelectReturnsWrongName pins tfcmd.go:236: on the "found in the
-// available list" branch, selectWorkspace returns params.buildingBlockId instead of the actual
-// matched workspace name `ws` — contrast the "already on the expected workspace" branch two lines
-// above (tfcmd.go:222-225), which correctly returns the full `current` name.
-func Test_BugInventory_B2_WorkspaceSelectReturnsWrongName(t *testing.T) {
-	// FIXME(bug): B2 — correct behavior (2b) returns `ws` (the real matched workspace name), not
-	// tfcmd.params.buildingBlockId.
+// Test_BugInventory_B2_WorkspaceSelectReturnsMatchedName pins the fixed tfcmd.go:selectWorkspace:
+// on the "found in the available list" branch, selectWorkspace now returns the actual matched
+// workspace name `ws`, not the bare `params.buildingBlockId` — consistent with the "already on
+// the expected workspace" branch above it, which always returned the full `current` name.
+func Test_BugInventory_B2_WorkspaceSelectReturnsMatchedName(t *testing.T) {
 	const realWorkspaceName = "org.proj.plat:bb-2"
 	uut := makeBugInventoryTfCmd(t, "bb-2", realWorkspaceName)
 
@@ -169,19 +165,15 @@ func Test_BugInventory_B2_WorkspaceSelectReturnsWrongName(t *testing.T) {
 	workspace, err := uut.selectWorkspace(facade)
 
 	require.NoError(t, err)
-	assert.Equal(t, "bb-2", workspace,
-		"bug: returns the bare buildingBlockId, not the matched workspace name %q", realWorkspaceName)
-	assert.NotEqual(t, realWorkspaceName, workspace)
+	assert.Equal(t, realWorkspaceName, workspace,
+		"fixed: returns the real matched workspace name, not the bare buildingBlockId")
 }
 
-// Test_BugInventory_B2_DeleteWorkspaceIfNeeded_DeletesWrongName shows B2's downstream consequence:
-// deleteWorkspaceIfNeeded (tfcmd.go:244-270) deletes whatever selectWorkspace returned, so it
-// inherits the wrong (bare buildingBlockId) name — a name that normally does not exist as an
-// actual tf workspace — and a DESTROY run's real workspace is left behind, with only a log line
-// about it (tfcmd.go:266-268).
-func Test_BugInventory_B2_DeleteWorkspaceIfNeeded_DeletesWrongName(t *testing.T) {
-	// FIXME(bug): B2 (continued) — once B2 is fixed, this must assert WorkspaceDelete is called
-	// with realWorkspaceName, not "bb-2".
+// Test_BugInventory_B2_DeleteWorkspaceIfNeeded_DeletesMatchedName shows the fix's downstream
+// effect: deleteWorkspaceIfNeeded deletes whatever selectWorkspace returned, so it now deletes the
+// real workspace name instead of a bare buildingBlockId that never existed as an actual tf
+// workspace — a DESTROY run's workspace is actually removed, not left behind on disk.
+func Test_BugInventory_B2_DeleteWorkspaceIfNeeded_DeletesMatchedName(t *testing.T) {
 	const realWorkspaceName = "org.proj.plat:bb-2"
 	uut := makeBugInventoryTfCmd(t, "bb-2", realWorkspaceName)
 
@@ -195,21 +187,18 @@ func Test_BugInventory_B2_DeleteWorkspaceIfNeeded_DeletesWrongName(t *testing.T)
 	uut.deleteWorkspaceIfNeeded(facade)
 
 	require.NotEmpty(t, facade.workspaceDeleteCalls)
-	assert.Equal(t, "bb-2", facade.workspaceDeleteCalls[len(facade.workspaceDeleteCalls)-1],
-		"bug: deletes the bare buildingBlockId, not the real workspace %q — DESTROY leaves it behind on disk",
-		realWorkspaceName)
+	assert.Equal(t, realWorkspaceName, facade.workspaceDeleteCalls[len(facade.workspaceDeleteCalls)-1],
+		"fixed: deletes the real workspace %q, not the bare buildingBlockId", realWorkspaceName)
 }
 
-// --- B3: deleteWorkspaceIfNeeded continues after a selectWorkspace error -------------------------
+// --- B3 (fixed): deleteWorkspaceIfNeeded returns after a selectWorkspace error --------------------
 
-// Test_BugInventory_B3_DeleteWorkspaceIfNeeded_ContinuesAfterSelectError pins tfcmd.go:253-259:
-// when selectWorkspace itself fails (e.g. the underlying `tofu workspace list` errors),
-// deleteWorkspaceIfNeeded only logs "won't attempt deletion again" but does not return — it falls
-// through and still attempts WorkspaceSelect("default") followed by WorkspaceDelete("") with the
-// zero-value workspace name.
-func Test_BugInventory_B3_DeleteWorkspaceIfNeeded_ContinuesAfterSelectError(t *testing.T) {
-	// FIXME(bug): B3 — correct behavior (2b) returns immediately after the selectWorkspace error
-	// instead of falling through to WorkspaceSelect("default")/WorkspaceDelete("").
+// Test_BugInventory_B3_DeleteWorkspaceIfNeeded_ReturnsAfterSelectError pins the fixed
+// tfcmd.go:deleteWorkspaceIfNeeded: when selectWorkspace itself fails (e.g. the underlying `tofu
+// workspace list` errors), deleteWorkspaceIfNeeded now logs "won't attempt deletion again" and
+// returns immediately, instead of falling through to WorkspaceSelect("default")/
+// WorkspaceDelete("") with the zero-value workspace name.
+func Test_BugInventory_B3_DeleteWorkspaceIfNeeded_ReturnsAfterSelectError(t *testing.T) {
 	uut := makeBugInventoryTfCmd(t, "bb-3", "org.proj.plat:bb-3")
 
 	facade := &workspaceFacade{
@@ -221,23 +210,19 @@ func Test_BugInventory_B3_DeleteWorkspaceIfNeeded_ContinuesAfterSelectError(t *t
 
 	uut.deleteWorkspaceIfNeeded(facade)
 
-	assert.Contains(t, facade.workspaceSelectCalls, "default",
-		"bug: still attempts WorkspaceSelect(\"default\") after the earlier WorkspaceList error")
-	require.NotEmpty(t, facade.workspaceDeleteCalls)
-	assert.Empty(t, facade.workspaceDeleteCalls[len(facade.workspaceDeleteCalls)-1],
-		"bug: attempts WorkspaceDelete(\"\") — the zero-value workspace name")
+	assert.NotContains(t, facade.workspaceSelectCalls, "default",
+		"fixed: does not attempt WorkspaceSelect(\"default\") after the earlier WorkspaceList error")
+	assert.Empty(t, facade.workspaceDeleteCalls,
+		"fixed: never attempts WorkspaceDelete after the earlier WorkspaceList error")
 }
 
-// --- B4: plainInit's retry pause is nanoseconds, not the promised second -----------------------
+// --- B4 (fixed): plainInit's retry pause is a full second, as the log message promises ----------
 
-// Test_BugInventory_B4_PlainInitRetrySleepIsNanosecondsNotSeconds pins tfcmd.go:171-185
-// (plainInit): the comment says "Wait one second and retry", but `time.Sleep(1000)` sleeps 1000
-// *nanoseconds* (time.Duration's base unit is ns), not time.Second. The retry-once behavior
-// itself is correct and pinned alongside it; only the pause duration is wrong.
-func Test_BugInventory_B4_PlainInitRetrySleepIsNanosecondsNotSeconds(t *testing.T) {
-	// FIXME(bug): B4 — correct behavior (2b) sleeps time.Second (or uses an injected clock);
-	// this elapsed-time assertion must then be updated (or replaced with a fake clock) instead of
-	// silently starting to fail.
+// Test_BugInventory_B4_PlainInitRetrySleepIsOneSecond pins the fixed tfcmd.go:plainInit: the log
+// message says "Wait one second and retry", and the retry pause is now `time.Second`, not the
+// `1000` (nanoseconds) it used to be. No Clock port exists yet in this codebase (that lands with
+// the phase-2 engine/ports step), so this asserts a real ~1s sleep rather than a fake clock.
+func Test_BugInventory_B4_PlainInitRetrySleepIsOneSecond(t *testing.T) {
 	uut := makeBugInventoryTfCmd(t, "bb-4", "org.proj.plat:bb-4")
 
 	calls := 0
@@ -257,22 +242,18 @@ func Test_BugInventory_B4_PlainInitRetrySleepIsNanosecondsNotSeconds(t *testing.
 
 	require.NoError(t, err)
 	assert.Equal(t, 2, calls, "init is retried exactly once on failure")
-	assert.Less(t, elapsed, 500*time.Millisecond,
-		"bug: the retry pause is ~1000ns, not the ~1s the log message promises — "+
-			"a correct fix would make this elapsed time close to 1s, failing this assertion")
+	assert.GreaterOrEqual(t, elapsed, time.Second,
+		"fixed: the retry pause is a full second, matching the log message's promise")
 }
 
-// --- B5: a sensitive input of an undecryptable type keeps its ciphertext ------------------------
+// --- B5 (fixed): every sensitive input type is decrypted, not just CODE/STRING/FILE -------------
 
-// Test_BugInventory_B5_SensitiveNonDecryptableTypeKeepsCiphertext pins run.go:45-56
-// (Variable.decryptIfSensitive): the decrypt switch only handles CODE/STRING/FILE. A sensitive
-// input of any other type (INTEGER, BOOLEAN, SINGLE_SELECT, MULTI_SELECT, LIST) falls through the
-// switch untouched, so the ciphertext itself — not the decrypted plaintext — silently becomes the
-// variable's value that ends up in the generated tfvars/env.
-func Test_BugInventory_B5_SensitiveNonDecryptableTypeKeepsCiphertext(t *testing.T) {
-	// FIXME(bug): B5 — correct behavior (2b) either decrypts every sensitive value (extending the
-	// switch) or fails fast for unsupported sensitive types; this test must then assert the
-	// decrypted plaintext ("true") instead of the ciphertext.
+// Test_BugInventory_B5_SensitiveNonCodeLikeTypeIsDecrypted pins the fixed
+// Variable.decryptIfSensitive (run.go): it no longer type-switches on DataType before deciding
+// whether to decrypt — every sensitive value is decrypted regardless of type. A sensitive
+// BOOLEAN input (previously falling through the switch untouched) now yields the decrypted
+// plaintext, not the ciphertext.
+func Test_BugInventory_B5_SensitiveNonCodeLikeTypeIsDecrypted(t *testing.T) {
 	crypto := testCrypto(t)
 	ciphertext := encryptForTest(t, crypto, "true")
 
@@ -281,37 +262,57 @@ func Test_BugInventory_B5_SensitiveNonDecryptableTypeKeepsCiphertext(t *testing.
 	result, err := v.decryptIfSensitive(certDecryptor{crypto: crypto})
 
 	require.NoError(t, err)
-	assert.Equal(t, ciphertext, result,
-		"bug: the raw ciphertext is passed through unchanged for a sensitive BOOLEAN input")
-	assert.NotEqual(t, "true", result)
+	assert.Equal(t, "true", result,
+		"fixed: a sensitive BOOLEAN input is now decrypted like any other sensitive type")
+	assert.NotEqual(t, ciphertext, result)
 }
 
-// --- B7: NewLogWrap returns a bare nil on file-open failure --------------------------------------
+// --- B7 (fixed): NewLogWrap returns (nil, error) on file-open failure ----------------------------
 
-// Test_BugInventory_B7_NewLogWrapReturnsNilOnOpenError pins logwrapper.go:16-19: NewLogWrap
-// returns nil (no error) when the log file cannot be opened. Its only production caller,
-// initRunContextInfo (runcontextinfo.go:56), never checks for nil, so the first log write after a
-// bad path (missing parent dir, permission error, …) nil-derefs and panics.
-func Test_BugInventory_B7_NewLogWrapReturnsNilOnOpenError(t *testing.T) {
-	// FIXME(bug): B7 — correct behavior (2b) returns (nil, error) so the caller can fail the run
-	// cleanly instead of nil-dereffing on first write.
-	lw := NewLogWrap(log.New(io.Discard, "", log.LstdFlags), "/nonexistent-dir/does-not-exist/x.log")
+// Test_BugInventory_B7_NewLogWrapReturnsErrorOnOpenError pins the fixed logwrapper.go: NewLogWrap
+// now returns a non-nil error when the log file cannot be opened, so its caller,
+// initRunContextInfo, can fail the run cleanly instead of nil-dereffing on the first log write.
+func Test_BugInventory_B7_NewLogWrapReturnsErrorOnOpenError(t *testing.T) {
+	lw, err := NewLogWrap(log.New(io.Discard, "", log.LstdFlags), "/nonexistent-dir/does-not-exist/x.log")
 
-	assert.Nil(t, lw, "bug: nil is silently returned instead of an error on file-open failure")
+	assert.Nil(t, lw)
+	require.Error(t, err, "fixed: a file-open failure now returns an error instead of a silent nil")
 }
 
-// --- B12: Behavior.str()'s default branch calls log.Fatalf ---------------------------------------
+// Test_BugInventory_B7_InitRunContextInfoPropagatesLogWrapError pins the fixed
+// initRunContextInfo (runcontextinfo.go): it now propagates NewLogWrap's error instead of
+// constructing a RunContextInfo with a nil logwrap that panics on first write.
+func Test_BugInventory_B7_InitRunContextInfoPropagatesLogWrapError(t *testing.T) {
+	run := &Run{
+		Id:                  "bug-inv-b7",
+		BuildingBlockId:     "bb-7",
+		WorkspaceIdentifier: p("_"),
+	}
 
-// Test_BugInventory_B12_DetermineBehaviorUnknownStringNeverReachesFatalStringer pins behavior.go's
-// Behavior.str(): its default branch calls log.Fatalf, which os.Exit(1)s the whole process for an
-// unmapped Behavior value — not something a test can invoke in-process without killing the test
-// binary. The reachable half of this pin is DetermineBehavior, the only production parser of an
-// external (run JSON) string into a Behavior: it correctly returns UNKNOWN_BEHAVIOR + an error
-// instead of ever constructing a Behavior value that would later hit the fatal branch.
+	// wd's "logs" subdir is deliberately not created, so the outFile path
+	// ("<wd>/logs/logs-<runId>.txt") cannot be opened.
+	wd := t.TempDir()
+	rci, err := initRunContextInfo(run, "[bug-inventory] ", io.Discard, wd)
+
+	assert.Nil(t, rci)
+	require.Error(t, err, "fixed: the log-file-open error now surfaces instead of a nil-logwrap RunContextInfo")
+}
+
+// --- B12 (fixed): Behavior.str()'s default branch no longer calls log.Fatalf --------------------
+
+// Test_BugInventory_B12_UnmappedBehaviorStringReturnsUnknown pins the fixed behavior.go:
+// Behavior.str() on an unmapped value (e.g. UNKNOWN_BEHAVIOR) now returns "UNKNOWN" instead of
+// calling log.Fatalf (which used to os.Exit(1) the whole process) — directly testable in-process,
+// unlike the former fatal branch.
+func Test_BugInventory_B12_UnmappedBehaviorStringReturnsUnknown(t *testing.T) {
+	assert.Equal(t, "UNKNOWN", UNKNOWN_BEHAVIOR.str())
+	assert.Equal(t, "UNKNOWN", Behavior(99).str(), "any value outside the declared range also returns UNKNOWN, not a crash")
+}
+
+// Test_BugInventory_B12_DetermineBehaviorUnknownStringNeverReachesFatalStringer keeps the
+// DetermineBehavior contract pinned unchanged by the B12 fix: it is still the parser callers use
+// to reject an unrecognized run-JSON behavior string, returning UNKNOWN_BEHAVIOR + an error.
 func Test_BugInventory_B12_DetermineBehaviorUnknownStringNeverReachesFatalStringer(t *testing.T) {
-	// FIXME(bug): B12 — correct behavior (2b) makes Behavior.str() return ("UNKNOWN", error) (or
-	// similar) instead of log.Fatalf; DetermineBehavior's contract pinned below is expected to be
-	// unaffected by that fix.
 	behavior, err := DetermineBehavior("bogus")
 
 	require.Error(t, err)
@@ -361,7 +362,8 @@ func runToInitFailure(t *testing.T, behavior Behavior) string {
 	// NewLogWrap; worker.go/singlerunworker.go always os.Mkdir the "logs" subdir first
 	// (worker.go:103) — mirrored here so this harness matches production wiring.
 	require.NoError(t, os.Mkdir(path.Join(wd, "logs"), 0700))
-	runContextInfo := initRunContextInfo(run, "[bug-inventory] ", io.Discard, wd)
+	runContextInfo, err := initRunContextInfo(run, "[bug-inventory] ", io.Discard, wd)
+	require.NoError(t, err)
 	run.Source.setLog(runContextInfo.logwrap)
 	ctx := context.Background()
 
@@ -405,15 +407,11 @@ func runToInitFailure(t *testing.T, behavior Behavior) string {
 	return *currentStep.SystemMessage
 }
 
-// Test_BugInventory_B13_HintInitFailedAsymmetry pins the asymmetry between tfplan.go:135-138 /
-// tfdestroy.go:140-143 (both print HINT_INIT_FAILED to the logs right before failing on an init
-// error) and tfapply.go:149-152 (which fails on the very same init error without ever printing
-// the hint) — an APPLY user gets no "Check provider and / or backend config" guidance that a
-// DETECT/DESTROY user would get for an identical failure.
-func Test_BugInventory_B13_HintInitFailedAsymmetry(t *testing.T) {
-	// FIXME(bug): B13 — correct behavior (2b) is consistent: either all three behaviors print
-	// HINT_INIT_FAILED on init failure, or none do. This test must be updated to assert that
-	// consistent behavior once fixed.
+// Test_BugInventory_B13_HintInitFailedConsistentAcrossBehaviors pins the fixed tfapply.go: APPLY
+// now prints HINT_INIT_FAILED on an init failure, exactly like DETECT (tfplan.go) and DESTROY
+// (tfdestroy.go) already did — an APPLY user now gets the same "Check provider and / or backend
+// config" guidance for an init failure that a DETECT/DESTROY user gets for an identical failure.
+func Test_BugInventory_B13_HintInitFailedConsistentAcrossBehaviors(t *testing.T) {
 	t.Run("DETECT prints the hint", func(t *testing.T) {
 		msg := runToInitFailure(t, DETECT)
 		assert.Contains(t, msg, HINT_INIT_FAILED)
@@ -424,8 +422,8 @@ func Test_BugInventory_B13_HintInitFailedAsymmetry(t *testing.T) {
 		assert.Contains(t, msg, HINT_INIT_FAILED)
 	})
 
-	t.Run("bug: APPLY does not print the hint", func(t *testing.T) {
+	t.Run("fixed: APPLY now also prints the hint", func(t *testing.T) {
 		msg := runToInitFailure(t, APPLY)
-		assert.NotContains(t, msg, HINT_INIT_FAILED)
+		assert.Contains(t, msg, HINT_INIT_FAILED)
 	})
 }

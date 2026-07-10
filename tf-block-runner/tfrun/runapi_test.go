@@ -70,20 +70,20 @@ func (suite *ApiTestSuite) SetupSuite() {
 		case req.Method == http.MethodPost && strings.Contains(req.URL.Path, "meshbuildingblockruns"):
 			rw.WriteHeader(200)
 			body := GetRunResponseForTest()
-			rw.Write(body)
+			_, _ = rw.Write(body)
 			return
 
 		// this is the updateState call
 		case req.Method == http.MethodPatch:
 			rw.WriteHeader(200)
 			body = GetStatusUpdateResponseForTest()
-			rw.Write(body)
+			_, _ = rw.Write(body)
 			return
 
 		// in all other cases just answer with 200
 		default:
 			rw.WriteHeader(200)
-			rw.Write(make([]byte, 0))
+			_, _ = rw.Write(make([]byte, 0))
 			return
 		}
 	}))
@@ -140,7 +140,7 @@ func (suite *ApiTestSuite) setupRequestCapture() (cleanup func(), capturedURL *s
 
 		rw.WriteHeader(200)
 		responseBody := GetRunResponseForTest()
-		rw.Write(responseBody)
+		_, _ = rw.Write(responseBody)
 	})
 
 	cleanup = func() { suite.meshfed.Config.Handler = originalHandler }
@@ -177,7 +177,8 @@ func (suite *ApiTestSuite) Test_FetchRun() {
 	// assert auth
 	suite.NotNil(run.Source.auth)
 	suite.IsType(&SshAuth{}, run.Source.auth)
-	auth := run.Source.auth.(*SshAuth)
+	auth, ok := run.Source.auth.(*SshAuth)
+	suite.Require().True(ok)
 	suite.Equal("notARealKey", auth.certStr)
 	suite.Equal("knownHost", auth.knownHostEntry.host)
 	suite.Equal("knownHostValue", auth.knownHostEntry.value)
@@ -268,7 +269,7 @@ func (suite *ApiTestSuite) Test_RegisterSource() {
 
 	// assert body
 	root := any(nil)
-	json.Unmarshal(req.body, &root)
+	suite.Require().NoError(json.Unmarshal(req.body, &root))
 	assertJsonExists(suite.T(), root, "$.source")
 	assertJsonEqual(suite.T(), root, "$.source.id", "runApi_test")
 	assertJsonNotExists(suite.T(), root, "$.source.externalId")
@@ -346,7 +347,7 @@ func (suite *ApiTestSuite) Test_UpdateState() {
 
 	// assert body
 	root := any(nil)
-	json.Unmarshal(req.body, &root)
+	suite.Require().NoError(json.Unmarshal(req.body, &root))
 	assertJsonEqual(suite.T(), root, "$.blockRunId", "run-uuid")
 	assertJsonEqual(suite.T(), root, "$.source", "runApi_test")
 	assertJsonEqual(suite.T(), root, "$.status", "IN_PROGRESS")
@@ -414,7 +415,7 @@ func (suite *ApiTestSuite) Test_UpdateStateOutputs() {
 
 	// assert body, but only outputs here specifically.
 	root := any(nil)
-	json.Unmarshal(req.body, &root)
+	suite.Require().NoError(json.Unmarshal(req.body, &root))
 
 	assertJsonExists(suite.T(), root, "$.steps")
 	assertJsonLen(suite.T(), root, "$.steps[*]", 1)
@@ -528,14 +529,20 @@ func GetRunResponseForTest() []byte {
 	`)
 }
 
-func (suite *ApiTestSuite) Test_UseCustomPredicate_V2MediaType() {
-	// Setup: Enable the useCustomPredicate flag
+// F4 (PLAN_DETAIL_01_tf_characterization_tests.md §"Findings"): these were named
+// Test_UseCustomPredicate_* for a "custom predicate" feature that exists nowhere in
+// production code (grep finds it only in this file, pre-rename). What they actually pin:
+// Register always requests the V1 media type, and FetchRunDetails always hits the
+// /create endpoint with forRunnerUuid=<RunnerUuid>, regardless of whether RunnerUuid is a
+// real UUID, an arbitrary string, or empty.
+func (suite *ApiTestSuite) Test_Register_UsesV1MediaType_ForNonUuidRunnerUuid() {
+	// Setup: RunnerUuid is an arbitrary non-UUID string
 	originalConfig := AppConfig
 	defer func() { AppConfig = originalConfig }()
 
-	useCustomPredicate := "CUSTOM_PREDICATE"
+	nonUuidRunnerUuid := "CUSTOM_PREDICATE"
 	AppConfig = TfRunnerConfig{
-		RunnerUuid: useCustomPredicate,
+		RunnerUuid: nonUuidRunnerUuid,
 	}
 
 	// Execute: Make a register call
@@ -560,7 +567,7 @@ func (suite *ApiTestSuite) Test_UseCustomPredicate_V2MediaType() {
 	// Assert: One request was made
 	suite.Len(suite.caughtRequests, 1)
 
-	// Assert: Request uses V1 media type (registration always uses V1 regardless of custom predicate)
+	// Assert: Request uses V1 media type (registration always uses V1, regardless of RunnerUuid shape)
 	req := suite.caughtRequests[0]
 	acceptHeader, exists := req.header["Accept"]
 	suite.True(exists)
@@ -573,8 +580,8 @@ func (suite *ApiTestSuite) Test_UseCustomPredicate_V2MediaType() {
 	suite.Equal(meshapi.BlockRunMediaTypeV1, contentTypeHeader[0])
 }
 
-func (suite *ApiTestSuite) Test_UseCustomPredicate_Null_UsesV1MediaType() {
-	// Setup: Test that V1 media type is used
+func (suite *ApiTestSuite) Test_Register_UsesV1MediaType_ForUuidRunnerUuid() {
+	// Setup: RunnerUuid is a real UUID
 	originalConfig := AppConfig
 	defer func() { AppConfig = originalConfig }()
 
@@ -617,14 +624,14 @@ func (suite *ApiTestSuite) Test_UseCustomPredicate_Null_UsesV1MediaType() {
 	suite.Equal(meshapi.BlockRunMediaTypeV1, contentTypeHeader[0])
 }
 
-func (suite *ApiTestSuite) Test_UseCustomPredicate_Empty_UsesV1MediaType() {
-	// Setup: useCustomPredicate is explicitly empty string
+func (suite *ApiTestSuite) Test_Register_UsesV1MediaType_ForEmptyRunnerUuid() {
+	// Setup: RunnerUuid is explicitly an empty string
 	originalConfig := AppConfig
 	defer func() { AppConfig = originalConfig }()
 
-	useCustomPredicate := ""
+	emptyRunnerUuid := ""
 	AppConfig = TfRunnerConfig{
-		RunnerUuid: useCustomPredicate,
+		RunnerUuid: emptyRunnerUuid,
 	}
 
 	// Execute: Make a register call
@@ -662,14 +669,14 @@ func (suite *ApiTestSuite) Test_UseCustomPredicate_Empty_UsesV1MediaType() {
 	suite.Equal(meshapi.BlockRunMediaTypeV1, contentTypeHeader[0])
 }
 
-func (suite *ApiTestSuite) Test_FetchRunDetails_UseCustomPredicate_UsesCreateEndpoint() {
-	// Setup: Enable the useCustomPredicate flag
+func (suite *ApiTestSuite) Test_FetchRunDetails_UsesCreateEndpoint_ForNonUuidRunnerUuid() {
+	// Setup: RunnerUuid is an arbitrary non-UUID string
 	originalConfig := AppConfig
 	defer func() { AppConfig = originalConfig }()
 
-	useCustomPredicate := "CUSTOM_PREDICATE"
+	nonUuidRunnerUuid := "CUSTOM_PREDICATE"
 	AppConfig = TfRunnerConfig{
-		RunnerUuid: useCustomPredicate,
+		RunnerUuid: nonUuidRunnerUuid,
 		RunApiBackend: RunApiConfig{
 			User:     "test-user",
 			Password: "test-pass",
@@ -707,8 +714,9 @@ func (suite *ApiTestSuite) Test_FetchRunDetails_UseCustomPredicate_UsesCreateEnd
 	suite.Equal(meshapi.BlockRunMediaTypeV1, contentTypeHeader[0])
 }
 
-func (suite *ApiTestSuite) Test_FetchRunDetails_NoCustomPredicate_UsesDefaultEndpoint() {
-	// Setup: Test with valid RunnerUuid (uses new endpoint)
+func (suite *ApiTestSuite) Test_FetchRunDetails_UsesCreateEndpoint_ForUuidRunnerUuid() {
+	// Setup: RunnerUuid is a real UUID — still the /create endpoint, same as the
+	// non-UUID case above (there is no separate "default" endpoint).
 	originalConfig := AppConfig
 	defer func() { AppConfig = originalConfig }()
 

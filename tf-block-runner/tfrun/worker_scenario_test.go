@@ -107,8 +107,8 @@ func (suite *WorkerTestSuite) SetupSuite() {
 
 // clean up temp directory after test suite ran.
 func (suite *WorkerTestSuite) TearDownSuite() {
-	os.RemoveAll(suite.tfBin.dir)
-	os.RemoveAll(AppConfig.TfParentWorkingDir)
+	_ = os.RemoveAll(suite.tfBin.dir)
+	_ = os.RemoveAll(AppConfig.TfParentWorkingDir)
 }
 
 // for each test setup new channels.
@@ -209,7 +209,7 @@ func (suite *WorkerTestSuite) Test_MissingAuth() {
 
 	data, _ := io.ReadAll(updateCalls[0].Body)
 	var update meshapi.RunStatusUpdateDTO
-	json.Unmarshal(data, &update)
+	suite.Require().NoError(json.Unmarshal(data, &update))
 
 	suite.Equal(FAILED.str(), *update.Status)
 	suite.Len(update.Steps, 6)
@@ -249,7 +249,7 @@ func (suite *WorkerTestSuite) Test_ApplySucceeded() {
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, _ := io.ReadAll(lastUpdate.Body)
 	var update meshapi.RunStatusUpdateDTO
-	json.Unmarshal(data, &update)
+	suite.Require().NoError(json.Unmarshal(data, &update))
 
 	suite.Equal(SUCCEEDED.str(), *update.Status)
 	for _, step := range update.Steps {
@@ -290,7 +290,7 @@ func (suite *WorkerTestSuite) Test_RegistrationConflict_ContinuesExecution() {
 		req.Body = io.NopCloser(bytes.NewBuffer(data))
 
 		var update meshapi.RunStatusUpdateDTO
-		json.Unmarshal(data, &update)
+		suite.Require().NoError(json.Unmarshal(data, &update))
 
 		statusStr := ""
 		if update.Status != nil {
@@ -359,7 +359,7 @@ func (suite *WorkerTestSuite) Test_ApplyRunAborted() {
 	suite.Len(updateCalls, 1)
 	data, _ := io.ReadAll(updateCalls[0].Body)
 	var update meshapi.RunStatusUpdateDTO
-	json.Unmarshal(data, &update)
+	suite.Require().NoError(json.Unmarshal(data, &update))
 	suite.Equal(IN_PROGRESS.str(), *update.Status)
 }
 
@@ -378,8 +378,8 @@ func (suite *WorkerTestSuite) Test_ApplyTfFailure() {
 
 	// make tf apply fail
 	suite.tfMock.applyFunc = func(ctx context.Context, opts ...tfexec.ApplyOption) error {
-		suite.tfMock.stdOut.Write([]byte("apply in progress\n"))
-		suite.tfMock.stdErr.Write([]byte("failure\n"))
+		_, _ = suite.tfMock.stdOut.Write([]byte("apply in progress\n"))
+		_, _ = suite.tfMock.stdErr.Write([]byte("failure\n"))
 		return errors.New("test error")
 	}
 
@@ -393,7 +393,7 @@ func (suite *WorkerTestSuite) Test_ApplyTfFailure() {
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, _ := io.ReadAll(lastUpdate.Body)
 	var update meshapi.RunStatusUpdateDTO
-	json.Unmarshal(data, &update)
+	suite.Require().NoError(json.Unmarshal(data, &update))
 
 	suite.Equal(FAILED.str(), *update.Status)
 	suite.Len(update.Steps, 6)
@@ -442,7 +442,7 @@ func (suite *WorkerTestSuite) Test_DestroySucceeded() {
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, _ := io.ReadAll(lastUpdate.Body)
 	var update meshapi.RunStatusUpdateDTO
-	json.Unmarshal(data, &update)
+	suite.Require().NoError(json.Unmarshal(data, &update))
 
 	suite.Equal(SUCCEEDED.str(), *update.Status)
 	for _, step := range update.Steps {
@@ -467,8 +467,8 @@ func (suite *WorkerTestSuite) Test_DestroyTfFailure() {
 
 	// make tf apply fail
 	suite.tfMock.destroyFunc = func(ctx context.Context, opts ...tfexec.DestroyOption) error {
-		suite.tfMock.stdOut.Write([]byte("destroy in progress\n"))
-		suite.tfMock.stdErr.Write([]byte("failure\n"))
+		_, _ = suite.tfMock.stdOut.Write([]byte("destroy in progress\n"))
+		_, _ = suite.tfMock.stdErr.Write([]byte("failure\n"))
 		return errors.New("test error")
 	}
 
@@ -482,7 +482,7 @@ func (suite *WorkerTestSuite) Test_DestroyTfFailure() {
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, _ := io.ReadAll(lastUpdate.Body)
 	var update meshapi.RunStatusUpdateDTO
-	json.Unmarshal(data, &update)
+	suite.Require().NoError(json.Unmarshal(data, &update))
 
 	suite.Equal(FAILED.str(), *update.Status)
 	suite.Len(update.Steps, 6)
@@ -514,7 +514,7 @@ func (suite *WorkerTestSuite) Test_UpdatesStatusWithLiveLogs() {
 
 	suite.tfMock.applyFunc = func(ctx context.Context, opts ...tfexec.ApplyOption) error {
 		for i := 0; i < 5; i++ {
-			fmt.Fprintf(suite.tfMock.stdOut, "%d", i)
+			_, _ = fmt.Fprintf(suite.tfMock.stdOut, "%d", i)
 			time.Sleep(time.Second * 1)
 		}
 		return nil
@@ -540,12 +540,20 @@ func (suite *WorkerTestSuite) Test_UpdatesStatusWithLiveLogs() {
 		expectedLogUpdates[i] = noPredecessorNotice + suffix
 	}
 
+	// Decode every captured request body exactly once upfront: req.Body is a single-read stream,
+	// and the expectedLogUpdates loop below scans the full set of decoded updates once per
+	// expected value, so re-reading req.Body per scan would silently see an already-drained
+	// (empty) body on the second and later scans.
+	decodedUpdates := make([]meshapi.RunStatusUpdateDTO, len(updateCalls))
+	for i, update := range updateCalls {
+		data, err := io.ReadAll(update.Body)
+		suite.Require().NoError(err)
+		suite.Require().NoError(json.Unmarshal(data, &decodedUpdates[i]))
+	}
+
 	for _, expected := range expectedLogUpdates {
 		found := false
-		for _, update := range updateCalls {
-			data, _ := io.ReadAll(update.Body)
-			var update meshapi.RunStatusUpdateDTO
-			json.Unmarshal(data, &update)
+		for _, update := range decodedUpdates {
 			if step := findStepOrNil(update, StepExecuteTf); step != nil && step.SystemMessage != nil && *step.SystemMessage == expected {
 				found = true
 				break

@@ -3,7 +3,7 @@ package tfrun
 // backend_scenario_test.go pins the meshStack HTTP backend fallback use case end to end
 // (PLAN_DETAIL_01_tf_characterization_tests.md CP6, D9 pin 9) plus the two matrix rows that live in
 // the same code path: the env whitelist (cleanSystemEnv, D9 pin 13) and the init-retry behavior
-// (tfcmd.go:170-184; B4's *buggy sleep duration* is pinned separately in bug_inventory_test.go —
+// (tfcmd.go:170-184; the retry pause's duration is pinned separately in bug_inventory_test.go —
 // this file only pins that the retry itself succeeds). Driven through TfApplyCommand.execute() end
 // to end (real GitSource + hermetic local-repo clone, CP1) rather than Worker/SingleRunWorker,
 // because the backend/env logic has no HTTP-transport-observable surface of its own — the
@@ -69,7 +69,8 @@ func runBackendFallbackScenario(t *testing.T, repoFiles map[string]string, useMe
 
 	wd := t.TempDir()
 	require.NoError(t, os.Mkdir(path.Join(wd, "logs"), 0700))
-	runContextInfo := initRunContextInfo(run, "[backend-fallback] ", io.Discard, wd)
+	runContextInfo, err := initRunContextInfo(run, "[backend-fallback] ", io.Discard, wd)
+	require.NoError(t, err)
 	run.Source.setLog(runContextInfo.logwrap)
 	ctx := context.Background()
 
@@ -171,6 +172,8 @@ func Test_BackendFallback_UseCaseMatrix(t *testing.T) {
 			RunApiBackend:        RunApiConfig{Url: "https://fallback-from-appconfig.example.com"},
 		}
 
+		lw, err := NewLogWrap(log.New(io.Discard, "", log.LstdFlags), "/dev/null")
+		require.NoError(t, err)
 		cmd := &GenericTfCmd{
 			ctx: context.Background(),
 			runContextInfo: &RunContextInfo{
@@ -179,7 +182,7 @@ func Test_BackendFallback_UseCaseMatrix(t *testing.T) {
 				runToken:            runToken,
 				meshstackBaseUrl:    "", // deliberately empty: must fall back to AppConfig
 				workingDirectory:    t.TempDir(),
-				logwrap:             NewLogWrap(log.New(io.Discard, "", log.LstdFlags), "/dev/null"),
+				logwrap:             lw,
 			},
 		}
 
@@ -219,13 +222,15 @@ func Test_BackendFallback_UseCaseMatrix(t *testing.T) {
 			return nil
 		}
 
+		lw, err := NewLogWrap(log.New(io.Discard, "", log.LstdFlags), "/dev/null")
+		require.NoError(t, err)
 		cmd := &GenericTfCmd{
 			ctx: context.Background(),
 			params: &TfCmdParams{
 				useWorkspaces: false, // isolate the retry behavior from workspace selection
 			},
 			runContextInfo: &RunContextInfo{
-				logwrap: NewLogWrap(log.New(io.Discard, "", log.LstdFlags), "/dev/null"),
+				logwrap: lw,
 			},
 		}
 

@@ -57,7 +57,7 @@ func (g *GitSource) CopyToTargetDir(dir string) error {
 	if err := os.Mkdir(tmpDir, 0700); err != nil {
 		return err
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	g.log.PrintlnToLocalLogs(fmt.Sprintf("cloning into temporary dir %s", tmpDir))
 
@@ -98,7 +98,9 @@ func (g *GitSource) CopyToTargetDir(dir string) error {
 	// cloning is done, so auth is not needed anymore
 	// we clean up the potentially needed auth files before we cloning into the wd
 	// to avoid naming clashes
-	g.auth.done()
+	if err := g.auth.done(); err != nil {
+		return fmt.Errorf("cleaning up auth files: %w", err)
+	}
 	g.log.PrintlnToLocalAndUpdateLogs(MSG_CLONE_SUCCESS)
 
 	// sources are now either directly in the temporary directory or in a subpath
@@ -109,9 +111,11 @@ func (g *GitSource) CopyToTargetDir(dir string) error {
 	}
 
 	if _, err := os.Stat(sourceDir); err != nil {
-		// this means the specified path does not exist
-		g.log.PrintlnToLocalLogs(fmt.Sprintf("path '%s' does not exist, cannot copy sources", *g.path))
-		g.log.PrintlnToUpdateLogs(fmt.Sprintf("The specified path '%s' does not exist, please check repository configuration.", *g.path))
+		// this means the specified path does not exist. Log sourceDir (the resolved path), not
+		// *g.path (B9 fix): g.path is nil whenever no subpath was configured, and dereferencing it
+		// unconditionally here nil-derefs in that case even though sourceDir is always valid.
+		g.log.PrintlnToLocalLogs(fmt.Sprintf("path '%s' does not exist, cannot copy sources", sourceDir))
+		_, _ = g.log.PrintlnToUpdateLogs(fmt.Sprintf("The specified path '%s' does not exist, please check repository configuration.", sourceDir))
 		return errors.New("specified path does not exist")
 	}
 

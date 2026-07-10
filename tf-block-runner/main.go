@@ -58,8 +58,7 @@ func main() {
 	// Check if running in single-run mode
 	if singleRunMode {
 		logger.Println("Running in single-run mode")
-		executeSingleRun(logger, tfBinaryProvider, dec)
-		return
+		os.Exit(executeSingleRun(logger, tfBinaryProvider, dec))
 	}
 
 	// Standard polling mode
@@ -98,7 +97,7 @@ func startHealthServer(logger *log.Logger) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -112,29 +111,46 @@ func startHealthServer(logger *log.Logger) {
 	}()
 }
 
-func executeSingleRun(logger *log.Logger, tfBinaryProvider *tfrun.TfBinaries, dec tfrun.Decryptor) {
+// executeSingleRun drives one single-run execution and returns the process exit code.
+//
+// B11 fix (phase 2b): a single-run failure used to always fall through to exit 0, so the k8s
+// Job the controller dispatched was reported "succeeded" even when the run never got off the
+// ground. SingleRunWorker.ExecuteRun only returns an error for failures before the run's first
+// potentially state-mutating step (workdir setup, run-JSON parse, registration — see its doc
+// comment); once tofu init/apply has begun, ExecuteRun always returns nil, even on failure, and
+// this function keeps returning 0 in that case. That scoping matters operationally: the
+// controller's Job template uses BackoffLimit:1 + RestartPolicy:Never
+// (run-controller/controller/kubernetes.go), so a blanket non-zero exit on any failure would
+// make k8s re-run a failed terraform run once — a second, automatic APPLY/DESTROY against
+// real infrastructure. Re-triggering stateful terraform must stay a deliberate user action, so
+// only the pre-flight failure class (which never touched terraform) exits non-zero here.
+func executeSingleRun(logger *log.Logger, tfBinaryProvider *tfrun.TfBinaries, dec tfrun.Decryptor) int {
 	// Read RUN_JSON_FILE_PATH from environment - extract the file path of the K8S secret file that is mounted
 	runJsonFilePath := os.Getenv(ENV_RUN_JSON_FILE_PATH)
 	if runJsonFilePath == "" {
-		logger.Fatalf("RUN_JSON_FILE_PATH environment variable is required in single-run mode")
+		logger.Println("RUN_JSON_FILE_PATH environment variable is required in single-run mode")
+		return 1
 	}
 
 	// Read JSON from file
 	runJsonBytes, err := os.ReadFile(runJsonFilePath)
 	if err != nil {
-		logger.Fatalf("Failed to read run JSON file from %s: %v", runJsonFilePath, err)
+		logger.Printf("Failed to read run JSON file from %s: %v", runJsonFilePath, err)
+		return 1
 	}
 
 	// Parse JSON into RunDetailsDTO
 	var runDetails meshapi.RunDetailsDTO
 	if err := json.Unmarshal(runJsonBytes, &runDetails); err != nil {
-		logger.Fatalf("Failed to parse run JSON: %v", err)
+		logger.Printf("Failed to parse run JSON: %v", err)
+		return 1
 	}
 
 	// Convert to internal Run structure (without decryption)
 	run, err := tfrun.ToInternalWithoutDecryption(&runDetails, dec)
 	if err != nil {
-		logger.Fatalf("Failed to convert run details: %v", err)
+		logger.Printf("Failed to convert run details: %v", err)
+		return 1
 	}
 
 	logger.Printf("Executing single run: %s - %s", run.Id, run.BuildingBlockName)
@@ -155,9 +171,12 @@ func executeSingleRun(logger *log.Logger, tfBinaryProvider *tfrun.TfBinaries, de
 		dec,
 	)
 
+	exitCode := 0
 	if err := worker.ExecuteRun(run); err != nil {
 		logger.Printf("Run execution failed: %v", err)
+		exitCode = 1
 	}
 
 	logger.Println("Single run completed")
+	return exitCode
 }

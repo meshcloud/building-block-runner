@@ -134,7 +134,7 @@ func (suite *WorkerTestSuite) Test_RegistrationHardFailure_ReportsFailedWithoutE
 
 	data, _ := io.ReadAll(updateCalls[0].Body)
 	var update meshapi.RunStatusUpdateDTO
-	json.Unmarshal(data, &update)
+	suite.Require().NoError(json.Unmarshal(data, &update))
 	suite.Equal(FAILED.str(), *update.Status)
 }
 
@@ -169,7 +169,7 @@ func (suite *WorkerTestSuite) Test_SendInitFail_WhenWorkerDirIsUnusable() {
 
 	data, _ := io.ReadAll(updateCalls[0].Body)
 	var update meshapi.RunStatusUpdateDTO
-	json.Unmarshal(data, &update)
+	suite.Require().NoError(json.Unmarshal(data, &update))
 	suite.Equal(FAILED.str(), *update.Status)
 	suite.Require().NotNil(update.Summary)
 	suite.Equal("Something went wrong while starting the run.", *update.Summary)

@@ -53,7 +53,9 @@ func NewManager(tfbin *TfBinaries, dec Decryptor) RunManager {
 
 func (rm *DefaultRunManager) Start(wg *sync.WaitGroup) {
 	rm.logger.Println("Started")
-	os.MkdirAll(AppConfig.TfParentWorkingDir, 0777)
+	if err := os.MkdirAll(AppConfig.TfParentWorkingDir, 0777); err != nil {
+		rm.logger.Printf("failed to create working directory %q: %s", AppConfig.TfParentWorkingDir, err.Error())
+	}
 	go func() {
 		defer wg.Done()
 		rm.run(rm.defaultTimeout)

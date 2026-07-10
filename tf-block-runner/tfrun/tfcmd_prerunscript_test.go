@@ -16,9 +16,12 @@ import (
 )
 
 // makePreRunScriptTfCmd extends the basic test helper with the fields required by runPreRunScript:
-// a real context with TfBinaries downloaded (if flag is set), a run mode, and a logwrap that writes system messages to a readable temp file.
+// a real context with TfBinaries downloaded (if flag is set), and a logwrap that writes system
+// messages to a readable temp file. runMode is always "APPLY": no test in this file drives a
+// different behavior, and runPreRunScript's own behavior does not branch on it (RunMode is passed
+// straight through to the pre-run script's env).
 // Returns the command and a helper that reads all lines written to the system message (update) log.
-func makePreRunScriptTfCmd(t *testing.T, preRunScript *string, runMode string, downloadTfBinaries bool) (*GenericTfCmd, func() string) {
+func makePreRunScriptTfCmd(t *testing.T, preRunScript *string, downloadTfBinaries bool) (*GenericTfCmd, func() string) {
 	t.Helper()
 
 	wd := t.TempDir()
@@ -31,7 +34,8 @@ func makePreRunScriptTfCmd(t *testing.T, preRunScript *string, runMode string, d
 	systemLogFileName := systemLogFile.Name()
 	_ = systemLogFile.Close()
 
-	lw := NewLogWrap(log.New(io.Discard, "[test] ", log.LstdFlags), systemLogFileName)
+	lw, err := NewLogWrap(log.New(io.Discard, "[test] ", log.LstdFlags), systemLogFileName)
+	require.NoError(t, err)
 
 	// pick outdated tofu version intentionally as running tests locally might have newer Tofu version in PATH system-installed
 	// Note: Version 1.6.0 does not work on linux/amd64 because of 'tofudl' bug:
@@ -42,7 +46,7 @@ func makePreRunScriptTfCmd(t *testing.T, preRunScript *string, runMode string, d
 		params: &TfCmdParams{
 			vars:         make(map[string]*Variable),
 			preRunScript: preRunScript,
-			runMode:      runMode,
+			runMode:      "APPLY",
 			tfVersion:    tofuVersion,
 		},
 		runContextInfo: &RunContextInfo{
@@ -71,7 +75,7 @@ func makePreRunScriptTfCmd(t *testing.T, preRunScript *string, runMode string, d
 		// NewTfBin can't be used easily as tfexec is not disentangled from TfBinaries, which is sad and needs refactoring!
 		versionInstallPath := filepath.Join(sut.bin.dir, tofuVersion)
 		require.NoError(t, os.MkdirAll(versionInstallPath, 0755))
-		require.NoError(t, sut.bin.installTofuBinaries(tofuVersion, versionInstallPath))
+		require.NoError(t, sut.bin.installTofuBinaries(context.Background(), tofuVersion, versionInstallPath))
 	}
 
 	readSystemLog := func() string {
@@ -91,7 +95,7 @@ func strPtr(s string) *string { return &s }
 // ---------------------------------------------------------------------------
 
 func Test_runPreRunScript_nilScript_returnsNilNoError(t *testing.T) {
-	sut, _ := makePreRunScriptTfCmd(t, nil, "APPLY", false)
+	sut, _ := makePreRunScriptTfCmd(t, nil, false)
 
 	userMsg, err := sut.runPreRunScript(nil)
 
@@ -100,7 +104,7 @@ func Test_runPreRunScript_nilScript_returnsNilNoError(t *testing.T) {
 }
 
 func Test_runPreRunScript_emptyScript_returnsNilNoError(t *testing.T) {
-	sut, _ := makePreRunScriptTfCmd(t, strPtr(""), "APPLY", false)
+	sut, _ := makePreRunScriptTfCmd(t, strPtr(""), false)
 
 	userMsg, err := sut.runPreRunScript(nil)
 
@@ -109,7 +113,7 @@ func Test_runPreRunScript_emptyScript_returnsNilNoError(t *testing.T) {
 }
 
 func Test_runPreRunScript_scriptWithWindowsLineEndings_returnsNilNoError(t *testing.T) {
-	sut, _ := makePreRunScriptTfCmd(t, strPtr("echo Hello\r\n\r\necho Windows\r\n"), "APPLY", false)
+	sut, _ := makePreRunScriptTfCmd(t, strPtr("echo Hello\r\n\r\necho Windows\r\n"), false)
 
 	userMsg, err := sut.runPreRunScript(nil)
 
@@ -120,7 +124,7 @@ func Test_runPreRunScript_scriptWithWindowsLineEndings_returnsNilNoError(t *test
 func Test_runPreRunScript_userMessageFile_returnedAndSetAsUserMessage(t *testing.T) {
 	// Platform engineers write user-facing messages via $MESHSTACK_USER_MESSAGE.
 	script := "echo 'hello user' >> \"$MESHSTACK_USER_MESSAGE\""
-	sut, _ := makePreRunScriptTfCmd(t, &script, "APPLY", false)
+	sut, _ := makePreRunScriptTfCmd(t, &script, false)
 
 	userMsg, err := sut.runPreRunScript(nil)
 
@@ -132,7 +136,7 @@ func Test_runPreRunScript_userMessageFile_returnedAndSetAsUserMessage(t *testing
 func Test_runPreRunScript_failedScript_userMessageFile_stillSetAsUserMessage(t *testing.T) {
 	// Script writes a user message then exits non-zero; the user message must still be preserved.
 	script := "echo 'partial output' >> \"$MESHSTACK_USER_MESSAGE\"\nexit 1"
-	sut, _ := makePreRunScriptTfCmd(t, &script, "APPLY", false)
+	sut, _ := makePreRunScriptTfCmd(t, &script, false)
 
 	userMsg, err := sut.runPreRunScript(nil)
 
@@ -146,7 +150,7 @@ func Test_runPreRunScript_failedScript_userMessageLoggedToSystemLog(t *testing.T
 	// When a script fails and has written to $MESHSTACK_USER_MESSAGE, the user message
 	// must appear in the system (operator/update) log so it is visible in the run logs.
 	script := "echo 'user-visible pre-run failure' >> \"$MESHSTACK_USER_MESSAGE\"\nexit 1"
-	sut, readSystemLog := makePreRunScriptTfCmd(t, &script, "APPLY", false)
+	sut, readSystemLog := makePreRunScriptTfCmd(t, &script, false)
 
 	_, _ = sut.runPreRunScript(nil)
 
@@ -158,7 +162,7 @@ func Test_runPreRunScript_failedScript_userMessageBecomesStepUserMessage(t *test
 	// propagate that message via failWithUserMsg so the step's UserMessage is the
 	// platform-engineer-provided text, not the generic error string.
 	script := "echo 'user-visible pre-run failure' >> \"$MESHSTACK_USER_MESSAGE\"\nexit 1"
-	sut, _ := makePreRunScriptTfCmd(t, &script, "APPLY", false)
+	sut, _ := makePreRunScriptTfCmd(t, &script, false)
 
 	userMsg, err := sut.runPreRunScript(nil)
 
@@ -174,7 +178,7 @@ func Test_runPreRunScript_failedScript_userMessageBecomesStepUserMessage(t *test
 
 func Test_runPreRunScript_failedScript_stdoutGoesToSystemLog(t *testing.T) {
 	script := "echo 'debug detail'\nexit 1"
-	sut, readSystemLog := makePreRunScriptTfCmd(t, &script, "APPLY", false)
+	sut, readSystemLog := makePreRunScriptTfCmd(t, &script, false)
 
 	_, _ = sut.runPreRunScript(nil)
 
@@ -185,18 +189,18 @@ func Test_runPreRunScript_exitCodeAlwaysLoggedToSystemLog(t *testing.T) {
 	successScript := "exit 0"
 	failScript := "exit 42"
 
-	sut0, readLog0 := makePreRunScriptTfCmd(t, &successScript, "APPLY", false)
+	sut0, readLog0 := makePreRunScriptTfCmd(t, &successScript, false)
 	_, _ = sut0.runPreRunScript(nil)
 	assert.Contains(t, readLog0(), "exited with code 0")
 
-	sut42, readLog42 := makePreRunScriptTfCmd(t, &failScript, "APPLY", false)
+	sut42, readLog42 := makePreRunScriptTfCmd(t, &failScript, false)
 	_, _ = sut42.runPreRunScript(nil)
 	assert.Contains(t, readLog42(), "exited with code 42")
 }
 
 func Test_runPreRunScript_errorMessageContainsExitCode(t *testing.T) {
 	script := "exit 7"
-	sut, _ := makePreRunScriptTfCmd(t, &script, "APPLY", false)
+	sut, _ := makePreRunScriptTfCmd(t, &script, false)
 
 	_, err := sut.runPreRunScript(nil)
 
@@ -221,7 +225,7 @@ func Test_runPreRunScript_errorMessageContainsExitCode(t *testing.T) {
 func Test_runPreRunScript_stdoutAndStderr_bothGoToSystemLog(t *testing.T) {
 	// When a script writes to both stdout and stderr, neither must appear in UserMessage.
 	script := "echo 'this is stdout'\necho 'this is stderr' >&2"
-	sut, readSystemLog := makePreRunScriptTfCmd(t, &script, "APPLY", false)
+	sut, readSystemLog := makePreRunScriptTfCmd(t, &script, false)
 
 	_, err := sut.runPreRunScript(nil)
 
@@ -236,7 +240,7 @@ func Test_runPreRunScript_stdoutAndStderr_bothGoToSystemLog(t *testing.T) {
 func Test_runPreRunScript_userMessageFile_doesNotLeakIntoSystemLog(t *testing.T) {
 	// Content written to $MESHSTACK_USER_MESSAGE must NOT appear in the system log.
 	script := "echo 'user-only content' >> \"$MESHSTACK_USER_MESSAGE\""
-	sut, readSystemLog := makePreRunScriptTfCmd(t, &script, "APPLY", false)
+	sut, readSystemLog := makePreRunScriptTfCmd(t, &script, false)
 
 	_, err := sut.runPreRunScript(nil)
 
@@ -255,7 +259,7 @@ func Test_runPreRunScript_bashInterpreterUsed(t *testing.T) {
 	}
 	// BASH_VERSION is only set in bash; this verifies the script runs under bash.
 	script := "echo \"interpreter: $BASH_VERSION\" >> \"$MESHSTACK_USER_MESSAGE\""
-	sut, _ := makePreRunScriptTfCmd(t, &script, "APPLY", false)
+	sut, _ := makePreRunScriptTfCmd(t, &script, false)
 
 	userMsg, err := sut.runPreRunScript(nil)
 
@@ -267,7 +271,7 @@ func Test_runPreRunScript_bashInterpreterUsed(t *testing.T) {
 func Test_runPreRunScript_runModePassedAsFirstArgument(t *testing.T) {
 	// The script writes $1 to the user message file so we can assert the run mode arrived.
 	script := "echo \"mode=$1\" >> \"$MESHSTACK_USER_MESSAGE\""
-	sut, _ := makePreRunScriptTfCmd(t, &script, "APPLY", false)
+	sut, _ := makePreRunScriptTfCmd(t, &script, false)
 
 	userMsg, err := sut.runPreRunScript(nil)
 
@@ -279,7 +283,7 @@ func Test_runPreRunScript_runModePassedAsFirstArgument(t *testing.T) {
 func Test_runPreRunScript_runJsonPassedOnStdin(t *testing.T) {
 	// Script reads all of stdin and writes it to the user message file.
 	script := "cat - >> \"$MESHSTACK_USER_MESSAGE\""
-	sut, _ := makePreRunScriptTfCmd(t, &script, "APPLY", false)
+	sut, _ := makePreRunScriptTfCmd(t, &script, false)
 
 	userMsg, err := sut.runPreRunScript(nil)
 
@@ -293,7 +297,7 @@ func Test_runPreRunScript_runJsonPassedOnStdin(t *testing.T) {
 func Test_runPreRunScript_scriptThatIgnoresStdin_doesNotHang(t *testing.T) {
 	// This is the common case: a script that does not read stdin at all.
 	script := "echo 'done' >> \"$MESHSTACK_USER_MESSAGE\""
-	sut, _ := makePreRunScriptTfCmd(t, &script, "APPLY", false)
+	sut, _ := makePreRunScriptTfCmd(t, &script, false)
 
 	userMsg, err := sut.runPreRunScript(nil)
 
@@ -305,7 +309,7 @@ func Test_runPreRunScript_scriptThatIgnoresStdin_doesNotHang(t *testing.T) {
 func Test_runPreRunScript_cwdIsWorkingDirectory(t *testing.T) {
 	// Script uses pwd to write the current directory to the user message file.
 	script := "pwd >> \"$MESHSTACK_USER_MESSAGE\""
-	sut, _ := makePreRunScriptTfCmd(t, &script, "APPLY", false)
+	sut, _ := makePreRunScriptTfCmd(t, &script, false)
 
 	userMsg, err := sut.runPreRunScript(nil)
 
@@ -322,7 +326,7 @@ func Test_runPreRunScript_cwdIsWorkingDirectory(t *testing.T) {
 
 func Test_runPreRunScript_tofuAndTerraformBinPresent(t *testing.T) {
 	script := `tofu version >>"$MESHSTACK_USER_MESSAGE"`
-	sut, _ := makePreRunScriptTfCmd(t, &script, "APPLY", true)
+	sut, _ := makePreRunScriptTfCmd(t, &script, true)
 
 	userMsg, err := sut.runPreRunScript(nil)
 

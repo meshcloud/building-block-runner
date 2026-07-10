@@ -38,7 +38,7 @@ func (suite *ApiTestSuite) Test_UpdateState_MalformedResponseBodyReturnsError() 
 	original := suite.meshfed.Config.Handler
 	suite.meshfed.Config.Handler = http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
 		rw.WriteHeader(http.StatusOK)
-		rw.Write([]byte("not-json"))
+		_, _ = rw.Write([]byte("not-json"))
 	})
 	suite.T().Cleanup(func() { suite.meshfed.Config.Handler = original })
 

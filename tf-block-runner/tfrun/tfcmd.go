@@ -113,14 +113,14 @@ func (tfcmd *GenericTfCmd) failWithUserMsg(err error, overrideUserMsg *string) {
 		if strings.HasPrefix(msgText, "exit status ") {
 			msgText = fmt.Sprintf("command failed (%s) — check the step logs above for error details.", msgText)
 		}
-		tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(msgText)
+		_, _ = tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(msgText)
 
 		if errors.Is(tfcmd.ctx.Err(), context.DeadlineExceeded) {
 			msgText = fmt.Sprintf("execution step stopped, because it exceeded the configured timeout of %d minutes", AppConfig.TfCommandTimeoutMins)
-			tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(msgText)
+			_, _ = tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(msgText)
 		} else if errors.Is(tfcmd.ctx.Err(), context.Canceled) {
 			msgText = fmt.Sprintf("execution step cancelled: %s", context.Cause(tfcmd.ctx).Error())
-			tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(msgText)
+			_, _ = tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(msgText)
 		}
 
 		if overrideUserMsg != nil {
@@ -178,7 +178,7 @@ func (tfcmd *GenericTfCmd) plainInit(ctx context.Context, tf TfFacade, migrateSt
 		// that terraform init fails because of some connectivity issue. We therefore implement a very
 		// simple retry here
 		tfcmd.Printfln("Calling 'init' failed: %s", err.Error())
-		time.Sleep(1000)
+		time.Sleep(time.Second)
 		tfcmd.Println("Retrying 'init' once.")
 		err = tf.Init(ctx, tfexec.Upgrade(true), tfexec.ForceCopy(migrateState))
 	}
@@ -233,10 +233,10 @@ func (tfcmd *GenericTfCmd) selectWorkspace(tf TfFacade) (string, error) {
 			tfcmd.Printfln("Workspace %s exists, switching to it.", ws)
 			err = tf.WorkspaceSelect(wsCtx, ws)
 			if err != nil {
-				return "", nil
+				return "", err
 			}
 
-			return tfcmd.params.buildingBlockId, nil
+			return ws, nil
 		}
 	}
 
@@ -257,6 +257,7 @@ func (tfcmd *GenericTfCmd) deleteWorkspaceIfNeeded(tf TfFacade) {
 
 	if err != nil {
 		tfcmd.Printfln("Failed to find workspace for deletion: %s, won't attempt deletion again.", err.Error())
+		return
 	}
 
 	tfcmd.Printfln("Deleting workspace: %s", workspace)
@@ -482,7 +483,7 @@ func (tfcmd *GenericTfCmd) buildTfEnv() (map[string]string, error) {
 				envKeys = append(envKeys, varName)
 			} else {
 				tfcmd.Printfln("Failed to decrypt input '%s'", varName)
-				tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(fmt.Sprintf("Failed to decrypt input '%s': %s", varName, err.Error()))
+				_, _ = tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(fmt.Sprintf("Failed to decrypt input '%s': %s", varName, err.Error()))
 				return nil, fmt.Errorf("input decryption failed for '%s'", varName)
 			}
 		}
@@ -537,7 +538,7 @@ func (tfcmd *GenericTfCmd) saveInputFiles() (savedFiles int, err error) {
 		value, err := v.decryptIfSensitive(tfcmd.params.dec)
 		if err != nil {
 			tfcmd.Printfln("Failed to decrypt file input '%s'", k)
-			tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(fmt.Sprintf("Failed to decrypt file input '%s': %s", k, err.Error()))
+			_, _ = tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(fmt.Sprintf("Failed to decrypt file input '%s': %s", k, err.Error()))
 			return savedFiles, fmt.Errorf("file input decryption failed for '%s'", k)
 		}
 

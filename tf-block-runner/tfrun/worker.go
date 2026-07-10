@@ -100,9 +100,14 @@ func (w *Worker) tfExecution(run *Run) {
 		return
 	}
 
-	defer os.RemoveAll(cmdDir)
+	defer func() { _ = os.RemoveAll(cmdDir) }()
 
-	runContextInfo := initRunContextInfo(run, w.log.Prefix(), w.log.Writer(), cmdDir)
+	runContextInfo, err := initRunContextInfo(run, w.log.Prefix(), w.log.Writer(), cmdDir)
+	if err != nil {
+		w.log.Printf("Failed to initialize run context: %s\n", err.Error())
+		w.sendInitFail(run)
+		return
+	}
 	run.Source.setLog(runContextInfo.logwrap)
 	defer runContextInfo.logwrap.Close()
 

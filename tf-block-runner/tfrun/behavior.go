@@ -2,7 +2,6 @@ package tfrun
 
 import (
 	"errors"
-	"log"
 )
 
 type Behavior int
@@ -16,6 +15,12 @@ const (
 
 var behaviors = []Behavior{APPLY, DETECT, DESTROY}
 
+// str returns the enum's stable, external-facing name (used both as the DetermineBehavior parse
+// target and inside log/status messages). An unmapped value (UNKNOWN_BEHAVIOR, or any value
+// outside the declared range) is not a programmer error worth killing the process over (B12 fix,
+// phase 2b): it returns "UNKNOWN" so callers formatting a Behavior for logs/messages keep working;
+// code needing to reject an unrecognized run-JSON behavior string uses DetermineBehavior's error
+// return instead.
 func (b Behavior) str() string {
 	switch b {
 	case APPLY:
@@ -25,8 +30,7 @@ func (b Behavior) str() string {
 	case DESTROY:
 		return "DESTROY"
 	default:
-		log.Fatalf("Behavior.str() not implemented for %d", b)
-		return "" // never reached
+		return "UNKNOWN"
 	}
 }
 

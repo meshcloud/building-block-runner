@@ -145,6 +145,7 @@ func (tfcmd *TfApplyCommand) execute() {
 	tfcmd.advanceStep(nil)
 
 	if err = tfcmd.init(tf); err != nil {
+		tfcmd.runContextInfo.logwrap.PrintlnToLocalAndUpdateLogs(HINT_INIT_FAILED)
 		tfcmd.fail(err)
 		return
 	}
@@ -221,7 +222,7 @@ func (tfcmd *TfApplyCommand) applyPredecessorPlan(tf TfFacade) error {
 	}
 	// Stream the download straight to disk so a large terraform plan is never fully buffered in RAM.
 	if err := tfcmd.runApi.DownloadPredecessorArtifact(tfcmd.params.planArtifactUrl, f); err != nil {
-		f.Close()
+		_ = f.Close()
 		// A planArtifact link was handed out only when the predecessor plan is genuinely available,
 		// so a download failure here means the previewed plan can no longer be retrieved. Fail the
 		// run rather than silently falling back to a fresh apply.

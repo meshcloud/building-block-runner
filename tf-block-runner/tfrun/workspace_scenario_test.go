@@ -39,6 +39,9 @@ func newWorkspaceTestCmd(t *testing.T, buildingBlockId, suggestedWorkspace strin
 	mock := &MockedTfFacade{}
 	mock.initMockFuncs()
 
+	lw, err := NewLogWrap(log.New(io.Discard, "[workspace-naming] ", log.LstdFlags), "/dev/null")
+	require.NoError(t, err)
+
 	cmd := &GenericTfCmd{
 		ctx: context.Background(),
 		params: &TfCmdParams{
@@ -47,7 +50,7 @@ func newWorkspaceTestCmd(t *testing.T, buildingBlockId, suggestedWorkspace strin
 			useWorkspaces:      useWorkspaces,
 		},
 		runContextInfo: &RunContextInfo{
-			logwrap: NewLogWrap(log.New(io.Discard, "[workspace-naming] ", log.LstdFlags), "/dev/null"),
+			logwrap: lw,
 		},
 	}
 	return cmd, mock

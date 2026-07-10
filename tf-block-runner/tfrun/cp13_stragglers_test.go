@@ -148,11 +148,11 @@ func Test_ReadUserMsgFile_MissingFile(t *testing.T) {
 // --- logwrapper write-error branch -----------------------------------------------------------
 
 func Test_LogWrap_WriteAfterCloseErrors(t *testing.T) {
-	lw := NewLogWrap(log.New(io.Discard, "", 0), filepath.Join(t.TempDir(), "log.txt"))
-	require.NotNil(t, lw)
+	lw, err := NewLogWrap(log.New(io.Discard, "", 0), filepath.Join(t.TempDir(), "log.txt"))
+	require.NoError(t, err)
 	lw.Close()
-	_, err := lw.Write([]byte("after close"))
-	assert.Error(t, err, "writing to a closed update-log file must return the error (logwrapper.go:33-34)")
+	_, writeErr := lw.Write([]byte("after close"))
+	assert.Error(t, writeErr, "writing to a closed update-log file must return the error (logwrapper.go:33-34)")
 }
 
 // --- execute() failure branches for DESTROY / DETECT -----------------------------------------

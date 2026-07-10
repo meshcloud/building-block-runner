@@ -71,9 +71,13 @@ func (w *SingleRunWorker) ExecuteRun(run *Run) error {
 		return fmt.Errorf("failed to create logs directory: %w", err)
 	}
 
-	defer os.RemoveAll(cmdDir)
+	defer func() { _ = os.RemoveAll(cmdDir) }()
 
-	runContextInfo := initRunContextInfo(run, w.log.Prefix(), w.log.Writer(), cmdDir)
+	runContextInfo, err := initRunContextInfo(run, w.log.Prefix(), w.log.Writer(), cmdDir)
+	if err != nil {
+		w.sendInitFail(run)
+		return fmt.Errorf("failed to initialize run context: %w", err)
+	}
 	run.Source.setLog(runContextInfo.logwrap)
 	defer runContextInfo.logwrap.Close()
 
@@ -87,18 +91,33 @@ func (w *SingleRunWorker) ExecuteRun(run *Run) error {
 	wg.Add(2)
 	workDoneChannel := make(chan bool)
 
-	go w.workRoutine(workCtx, run, runContextInfo, &wg, workDoneChannel)
+	// registerErr carries a registration failure (if any) out of workRoutine's goroutine.
+	// It is written at most once, by workRoutine, strictly before that goroutine's wg.Done();
+	// wg.Wait() below happens-after every Done() call, so this read is race-free without
+	// further synchronization (B11 fix, phase 2b — registration is "before tofu init/apply
+	// begins", so its failure must make ExecuteRun return an error and the process exit
+	// non-zero, unlike a failure once apply/init has actually started).
+	var registerErr error
+
+	go w.workRoutine(workCtx, run, runContextInfo, &wg, workDoneChannel, &registerErr)
 	go w.observerRoutine(workCtx, workCancel, run, runContextInfo, &wg, workDoneChannel)
 
 	wg.Wait()
 
 	w.log.Printf("Finished execution of %s run %s: %s\n", run.Behavior.str(), run.Id, run.BuildingBlockName)
 
+	if registerErr != nil {
+		return fmt.Errorf("failed to register as a source for run %s: %w", run.Id, registerErr)
+	}
+
 	return nil
 }
 
-// workRoutine starts the actual tf command execution.
-func (w *SingleRunWorker) workRoutine(ctx context.Context, run *Run, runContextInfo *RunContextInfo, wg *sync.WaitGroup, doneSignallingChan chan bool) {
+// workRoutine starts the actual tf command execution. If registration fails, the error is
+// written to *registerErr before the run is marked FAILED — registration happens before
+// tofu init/apply begins, so this is the one workRoutine failure ExecuteRun's caller must be
+// able to observe (B11 fix, phase 2b).
+func (w *SingleRunWorker) workRoutine(ctx context.Context, run *Run, runContextInfo *RunContextInfo, wg *sync.WaitGroup, doneSignallingChan chan bool, registerErr *error) {
 	defer wg.Done()
 	defer func() { doneSignallingChan <- true }()
 
@@ -136,6 +155,7 @@ func (w *SingleRunWorker) workRoutine(ctx context.Context, run *Run, runContextI
 		// Without this, IN_PROGRESS would be sent as the final status, leaving
 		// the run stuck until the coordinator eventually times it out.
 		runContextInfo.progress.setStatus(FAILED)
+		*registerErr = err
 	} else {
 		runContextInfo.logwrap.PrintlnToLocalLogs(fmt.Sprintf("Registered '%s' as a source for runId: %s", AppConfig.RunnerUuid, runContextInfo.runId))
 		tfCommand.execute()

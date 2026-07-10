@@ -13,10 +13,10 @@ type logwrap struct {
 	callback     func()
 }
 
-func NewLogWrap(logger *log.Logger, logsFileName string) *logwrap {
+func NewLogWrap(logger *log.Logger, logsFileName string) (*logwrap, error) {
 	outlog, err := os.OpenFile(logsFileName, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("opening update-logs file %q: %w", logsFileName, err)
 	}
 
 	return &logwrap{
@@ -24,7 +24,7 @@ func NewLogWrap(logger *log.Logger, logsFileName string) *logwrap {
 		updateLogger: outlog,
 		logSize:      0,
 		callback:     func() {},
-	}
+	}, nil
 }
 
 // this writes to the tf output log file.
@@ -49,9 +49,12 @@ func (l *logwrap) PrintlnToUpdateLogs(v ...any) (n int, err error) {
 
 func (l *logwrap) PrintlnToLocalAndUpdateLogs(v ...any) {
 	l.PrintlnToLocalLogs(v...)
-	l.PrintlnToUpdateLogs(v...)
+	// The update-log write error (if any) already reaches the caller through every other
+	// PrintlnToUpdateLogs call site; this convenience wrapper has no error return of its own
+	// to propagate it through, and the local-log write above already recorded the message.
+	_, _ = l.PrintlnToUpdateLogs(v...)
 }
 
 func (l *logwrap) Close() {
-	l.updateLogger.Close()
+	_ = l.updateLogger.Close()
 }

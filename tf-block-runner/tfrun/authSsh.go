@@ -77,7 +77,7 @@ func (sshAuth *SshAuth) prepare(dir string, log *logwrap) error {
 	err = os.WriteFile(certPath, []byte(cert), 0600)
 	if err != nil {
 		log.PrintlnToLocalLogs("unable to write cert file.")
-		log.PrintlnToUpdateLogs(ERR_MSG_PREPARE)
+		_, _ = log.PrintlnToUpdateLogs(ERR_MSG_PREPARE)
 		return err
 	}
 
@@ -88,7 +88,7 @@ func (sshAuth *SshAuth) prepare(dir string, log *logwrap) error {
 		err := os.WriteFile(khPath, []byte(sshAuth.knownHostEntry.toKnownHostsFileContent()), 0600)
 		if err != nil {
 			log.PrintlnToLocalLogs("unable to write known_hosts file.")
-			log.PrintlnToUpdateLogs(ERR_MSG_PREPARE)
+			_, _ = log.PrintlnToUpdateLogs(ERR_MSG_PREPARE)
 			return err
 		}
 	}
@@ -108,7 +108,7 @@ func (sshAuth *SshAuth) toTransport(url string, log *logwrap) (transport.AuthMet
 	key, err := gogitssh.NewPublicKeysFromFile("git", pemFile, "")
 	if err != nil {
 		log.PrintlnToLocalLogs("could not parse cert file with private key.")
-		log.PrintlnToUpdateLogs(ERR_MSG_INVALID_KEY)
+		_, _ = log.PrintlnToUpdateLogs(ERR_MSG_INVALID_KEY)
 		return nil, err
 	}
 

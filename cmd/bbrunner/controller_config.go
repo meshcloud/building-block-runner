@@ -12,10 +12,6 @@ import (
 	meshapi "github.com/meshcloud/building-block-runner/internal/meshapi"
 )
 
-// UseTestClient short-circuits the startup registration PUT for local-dev/test wiring
-// (moved from the former internal/controller.UseTestClient).
-var UseTestClient = false
-
 // controllerConfig holds the run-controller persona's full configuration -- the dissolution
 // target of the former internal/controller.ControllerConfig (PLAN_DETAIL_05 §5): the
 // Kubernetes-facing fields (namespace, job templates, tolerations, node selector, image
@@ -225,11 +221,7 @@ func logControllerConfig(logger *slog.Logger, cfg *controllerConfig) {
 	if len(cfg.ImagePullSecrets) > 0 {
 		attrs = append(attrs, "imagePullSecrets", cfg.ImagePullSecrets)
 	}
-	if UseTestClient {
-		attrs = append(attrs, "testMode", true)
-	} else {
-		attrs = append(attrs, "apiUrl", cfg.Api.Url, "apiUsername", cfg.Api.Username)
-	}
+	attrs = append(attrs, "apiUrl", cfg.Api.Url, "apiUsername", cfg.Api.Username)
 	logger.Info("controller configuration", attrs...)
 
 	for implType, spec := range cfg.Implementations {

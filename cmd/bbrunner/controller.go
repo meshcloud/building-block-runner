@@ -173,11 +173,6 @@ func runController() int {
 // mapping and registration metrics are this persona's own startup orchestration (D11: only
 // main wires).
 func registerController(logger *slog.Logger, cfg *controllerConfig, auth meshapi.AuthProvider, oidcIssuer string, metrics *dispatch.MetricsCollector) error {
-	if UseTestClient {
-		logger.Info("test mode enabled - skipping controller registration")
-		return nil
-	}
-
 	dto := k8sjob.BuildRunnerRegistrationDTO(k8sjob.RegistrationInfo{
 		Uuid:             cfg.Uuid,
 		OwnedByWorkspace: cfg.OwnedByWorkspace,

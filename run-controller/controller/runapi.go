@@ -4,15 +4,24 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
-	"net/http"
 	"time"
 
 	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
+
+	"github.com/meshcloud/building-block-runner/run-controller/build"
 )
 
 var UseTestClient = false
 
 const requesterPrefix = "run-controller"
+
+// clientIdentity is the runner identity stamped on the User-Agent + X-Meshcloud-Runner-*
+// headers of every run-endpoint request. It replaces the former global
+// meshapi.SetClientMetadata("run-controller", build.Version) call in main (Identity
+// de-global, §5.2.2) and keeps those headers byte-identical.
+func clientIdentity() meshapi.Identity {
+	return meshapi.Identity{Name: requesterPrefix, Version: build.Version}
+}
 
 type RunApiClient struct {
 	url     string
@@ -32,8 +41,8 @@ func newApi() RunApi {
 	}
 }
 
-func (api *RunApiClient) newMeshClient(nodeID string) *meshapi.Client {
-	return meshapi.NewClient(api.url, nodeID, AppConfig.Api.NewAuthProvider(api.url))
+func (api *RunApiClient) newMeshClient(nodeID string) *meshapi.RunClient {
+	return meshapi.NewRunClient(api.url, nodeID, AppConfig.Api.NewAuthProvider(api.url), meshapi.WithIdentity(clientIdentity()))
 }
 
 func (api *RunApiClient) FetchRunDetails(nodePostfix string) (string, *meshapi.RunDetailsDTO, error) {
@@ -48,9 +57,9 @@ func (api *RunApiClient) FetchRunDetails(nodePostfix string) (string, *meshapi.R
 	client := api.newMeshClient(requester)
 	dto, rawBytes, err := client.FetchRun(AppConfig.Uuid)
 	if err != nil {
-		if statusErr, ok := err.(*meshapi.StatusError); ok && statusErr.Status != http.StatusNotFound {
-			api.metrics.runsFetchErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeFetchAPI).Inc()
-		} else if !ok {
+		// Count every fetch failure except the frozen "no run available" 404 signal, which
+		// is the normal idle-poll outcome, not an API error.
+		if he, ok := meshapi.AsHttpError(err); !ok || !he.IsNotFound() {
 			api.metrics.runsFetchErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeFetchAPI).Inc()
 		}
 		return "", nil, err

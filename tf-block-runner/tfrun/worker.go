@@ -58,13 +58,11 @@ func (w *Worker) work() {
 }
 
 func (w *Worker) handleFetchRunError(err error) {
-	statusError, isStatusError := err.(*meshapi.StatusError)
-
-	if isStatusError {
-		switch statusError.Status {
-		case 404:
+	if he, isHTTP := meshapi.AsHttpError(err); isHTTP {
+		switch {
+		case he.IsNotFound():
 			w.workerOut <- norun
-		case 409:
+		case he.IsConflict():
 			w.log.Printf("Conflict at coordinator-api.")
 			w.workerOut <- norun
 		default:

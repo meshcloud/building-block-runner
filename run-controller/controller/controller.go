@@ -242,9 +242,9 @@ func (c *Controller) reportRunFailure(runId string, errorMessage string) {
 }
 
 func isNoRunError(err error) bool {
-	// Check if this is a "no runs available" error (HTTP 404)
-	if statusError, ok := err.(*meshapi.StatusError); ok {
-		return statusError.Status == 404
+	// Check if this is a "no runs available" error (HTTP 404).
+	if he, ok := meshapi.AsHttpError(err); ok {
+		return he.IsNotFound()
 	}
 	return false
 }

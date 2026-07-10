@@ -8,6 +8,8 @@ import (
 	"net/http"
 
 	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
+
+	"github.com/meshcloud/building-block-runner/tf-block-runner/build"
 )
 
 // runApiAuth implements meshapi.AuthProvider with Bearer token priority over a fallback AuthProvider.
@@ -36,6 +38,11 @@ type RunApiClient struct {
 	auth       *runApiAuth
 	client     *meshapi.Client
 	httpClient *http.Client
+	// identity is stamped on the User-Agent + X-Meshcloud-Runner-* headers. NewRunApi sets
+	// it to {"tf-block-runner", build.Version} (replacing the former global
+	// meshapi.SetClientMetadata call); the zero value in tests reproduces the historic
+	// "unknown-runner"/"dev" defaults.
+	identity meshapi.Identity
 	// dec decrypts sensitive inputs + SSH key while mapping a fetched run (polling mode).
 	dec Decryptor
 }
@@ -61,12 +68,14 @@ func NewRunApi(dec Decryptor) RunApi {
 		baseAuth: AppConfig.RunApiBackend.NewAuthProvider(),
 	}
 
+	identity := meshapi.Identity{Name: "tf-block-runner", Version: build.Version}
 	httpClient := &http.Client{}
 	return &RunApiClient{
 		rid:        AppConfig.RunnerUuid,
 		baseURL:    AppConfig.RunApiBackend.Url,
 		auth:       auth,
-		client:     meshapi.NewClient(AppConfig.RunApiBackend.Url, AppConfig.RunnerUuid, auth),
+		identity:   identity,
+		client:     meshapi.NewClient(AppConfig.RunApiBackend.Url, AppConfig.RunnerUuid, auth, meshapi.WithIdentity(identity)),
 		httpClient: httpClient,
 		dec:        dec,
 	}
@@ -89,8 +98,9 @@ func (api *RunApiClient) DownloadPredecessorArtifact(url string, w io.Writer) er
 func (api *RunApiClient) FetchRunDetails(nodePostfix string) (*Run, error) {
 	requester := fmt.Sprintf("%s-%s", api.rid, nodePostfix)
 
-	// Use a client with the current auth but override the node ID
-	client := meshapi.NewClientWithHTTP(api.baseURL, requester, api.auth, api.httpClient)
+	// Use a client with the current auth but override the node ID (identity headers stay
+	// identical to api.client's, so the per-fetch override is invisible on the wire).
+	client := meshapi.NewClientWithHTTP(api.baseURL, requester, api.auth, api.httpClient, meshapi.WithIdentity(api.identity))
 
 	dto, _, err := client.FetchRun(AppConfig.RunnerUuid)
 	if err != nil {

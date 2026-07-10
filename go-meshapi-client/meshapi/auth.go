@@ -68,9 +68,15 @@ type ApiKeyAuth struct {
 // defaultLoginTimeout is the HTTP client timeout used when no custom client is provided.
 const defaultLoginTimeout = 30 * time.Second
 
-// NewApiKeyAuth creates an ApiKeyAuth using the default http.Client.
+// NewApiKeyAuth creates an ApiKeyAuth using the default http.Client. Its transport is
+// wrapped with the retry transport (login POST whitelisted, §5.2.3) so a token refresh
+// can ride out a transient 429/503 during a backend restart.
 func NewApiKeyAuth(baseURL, clientId, clientSecret string) *ApiKeyAuth {
-	return NewApiKeyAuthWithClient(baseURL, clientId, clientSecret, &http.Client{Timeout: defaultLoginTimeout})
+	httpClient := &http.Client{
+		Timeout:   defaultLoginTimeout,
+		Transport: newRetryTransport(nil, defaultLoginRetryOptions(), noopLogger{}),
+	}
+	return NewApiKeyAuthWithClient(baseURL, clientId, clientSecret, httpClient)
 }
 
 // NewApiKeyAuthWithClient creates an ApiKeyAuth with a custom http.Client (useful for testing).

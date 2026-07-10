@@ -23,7 +23,8 @@ const (
 
 func main() {
 	logger := log.New(os.Stdout, "[TF RUNNER] ", log.LstdFlags)
-	meshapi.SetClientMetadata("tf-block-runner", build.Version)
+	// Runner identity is now passed per client (meshapi.Identity, §5.2.2); tfrun.NewRunApi
+	// stamps {"tf-block-runner", build.Version} at client construction.
 	logger.Printf("Build metadata: version=%s", build.Version)
 
 	if err := tfrun.ReadConfig(logger); err != nil {

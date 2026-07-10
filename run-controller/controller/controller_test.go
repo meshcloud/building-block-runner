@@ -104,7 +104,7 @@ func setupControllerWithMockApi(mock *mockRunApi, implementations map[string]Job
 
 func TestProcessNextRun_NoRunAvailable(t *testing.T) {
 	mock := &mockRunApi{
-		fetchErr: &meshapi.StatusError{Status: 404},
+		fetchErr: meshapi.HttpError{StatusCode: 404},
 	}
 	ctrl, cleanup := setupControllerWithMockApi(mock, map[string]JobSpecTemplate{
 		"TERRAFORM": {Image: "tf:latest"},
@@ -264,12 +264,12 @@ func TestIsNoRunError(t *testing.T) {
 	}{
 		{
 			name: "404 status error",
-			err:  &meshapi.StatusError{Status: 404},
+			err:  meshapi.HttpError{StatusCode: 404},
 			want: true,
 		},
 		{
 			name: "500 status error",
-			err:  &meshapi.StatusError{Status: 500},
+			err:  meshapi.HttpError{StatusCode: 500},
 			want: false,
 		},
 		{
@@ -288,9 +288,9 @@ func TestIsNoRunError(t *testing.T) {
 	}
 }
 
-// Verify that meshapi.StatusError satisfies the error interface and is accessible.
-func TestStatusError_Message(t *testing.T) {
-	err := &meshapi.StatusError{Status: 404}
+// Verify that meshapi.HttpError satisfies the error interface and is accessible.
+func TestHttpError_Message(t *testing.T) {
+	err := meshapi.HttpError{StatusCode: 404}
 	if !strings.Contains(err.Error(), "404") {
 		t.Errorf("expected status error message to contain '404', got: %s", err.Error())
 	}

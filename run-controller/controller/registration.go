@@ -1,20 +1,12 @@
 package controller
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 
 	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
-)
-
-const (
-	EP_RunnerWithUuid = "%s/api/meshobjects/meshbuildingblockrunners/%s"
-
-	MeshBuildingBlockRunner_MediaType_V1Preview = "application/vnd.meshcloud.api.meshbuildingblockrunner.v1-preview.hal+json"
 )
 
 // RegistrationApi interface for runner registration.
@@ -22,25 +14,25 @@ type RegistrationApi interface {
 	RegisterController(metrics *MetricsCollector) error
 }
 
-// RegistrationApiClient implements the RegistrationApi.
+// RegistrationApiClient implements the RegistrationApi. The wire mechanics of the PUT
+// (URL, v1-preview media type, headers, transport) live in meshapi.RunnerClient
+// (PLAN_DETAIL_03_shared_core.md §5.5/§5.2.4); this type keeps the controller-specific
+// content: DTO construction (dtos.go), the 404 => "create it via the meshStack UI"
+// mapping, and registration metrics/logging.
 type RegistrationApiClient struct {
-	url        string
-	namespace  string
-	auth       meshapi.AuthProvider
-	oidcIssuer string
-	client     *http.Client
-	logger     *log.Logger
+	namespace    string
+	oidcIssuer   string
+	runnerClient *meshapi.RunnerClient
+	logger       *log.Logger
 }
 
 // NewRegistrationApi creates a new registration API client.
 func NewRegistrationApi(logger *log.Logger) RegistrationApi {
 	return &RegistrationApiClient{
-		url:        AppConfig.Api.Url,
-		namespace:  AppConfig.Namespace,
-		auth:       AppConfig.Api.NewAuthProvider(AppConfig.Api.Url),
-		oidcIssuer: DiscoveredOidcIssuer,
-		client:     &http.Client{},
-		logger:     logger,
+		namespace:    AppConfig.Namespace,
+		oidcIssuer:   DiscoveredOidcIssuer,
+		runnerClient: meshapi.NewRunnerClient(AppConfig.Api.Url, AppConfig.Api.NewAuthProvider(AppConfig.Api.Url)),
+		logger:       logger,
 	}
 }
 
@@ -54,7 +46,8 @@ func (api *RegistrationApiClient) RegisterController(metrics *MetricsCollector) 
 		return fmt.Errorf("failed to marshal runner registration: %w", err)
 	}
 
-	statusCode, err := api.putController(jsonBody)
+	api.logger.Printf("Updating controller registration %s", AppConfig.Uuid)
+	statusCode, err := api.runnerClient.Update(AppConfig.Uuid, jsonBody)
 	if err != nil {
 		metrics.runnerRegistrationErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeRegistrationPut).Inc()
 		return err
@@ -67,45 +60,6 @@ func (api *RegistrationApiClient) RegisterController(metrics *MetricsCollector) 
 	metrics.runnerRegistrationSuccess.WithLabelValues(AppConfig.Uuid).Inc()
 	api.logger.Printf("Successfully updated controller registration %s", AppConfig.Uuid)
 	return nil
-}
-
-// putController attempts to update the existing controller registration via PUT.
-func (api *RegistrationApiClient) putController(jsonBody []byte) (int, error) {
-	url := fmt.Sprintf(EP_RunnerWithUuid, api.url, AppConfig.Uuid)
-
-	api.logger.Printf("Updating controller registration %s at %s", AppConfig.Uuid, url)
-
-	req, err := http.NewRequest(http.MethodPut, url, bytes.NewReader(jsonBody))
-	if err != nil {
-		return 0, fmt.Errorf("failed to create PUT request: %w", err)
-	}
-
-	api.setHeaders(req)
-
-	resp, err := api.client.Do(req)
-	if err != nil {
-		return 0, fmt.Errorf("failed to execute PUT request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// 404 means controller doesn't exist - caller should try POST
-	if resp.StatusCode == http.StatusNotFound {
-		return http.StatusNotFound, nil
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return resp.StatusCode, fmt.Errorf("PUT failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	return resp.StatusCode, nil
-}
-
-// setHeaders sets the common headers for API requests.
-func (api *RegistrationApiClient) setHeaders(req *http.Request) {
-	req.Header.Set("Authorization", api.auth.AuthHeader())
-	req.Header.Set("Content-Type", MeshBuildingBlockRunner_MediaType_V1Preview)
-	req.Header.Set("Accept", MeshBuildingBlockRunner_MediaType_V1Preview)
 }
 
 // RegisterController registers the universal run controller on startup.

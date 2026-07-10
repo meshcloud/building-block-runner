@@ -16,3 +16,15 @@
 # Phase 1 (PLAN_DETAIL_01 §8, §9 CP13): gate the tf runner's characterization tests at 90%
 # statement coverage, with git.go/tfbinaries.go excluded (see exclusions.txt).
 github.com/meshcloud/building-block-runner/tf-block-runner/tfrun 90
+
+# Phase 3 (PLAN_DETAIL_03 §5.3/§9): the shared config package (D7) -- hermetically
+# testable (temp files, t.Setenv), no exclusion-list entries needed.
+github.com/meshcloud/building-block-runner/go-meshapi-client/config 90
+
+# Phase 3 (PLAN_DETAIL_03 §5.2/§9): the consolidated meshapi client (HttpError, retry,
+# Identity, RunClient/RunnerClient split) -- hermetic fake-transport + httptest tests.
+github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi 90
+
+# Phase 3 (PLAN_DETAIL_03 §5.4/§9): the shared reporting facility (D4) -- direct tests
+# for Progress/Observer/RunLog/ToStatusUpdate (fake Reporter, temp files, -race).
+github.com/meshcloud/building-block-runner/go-meshapi-client/report 90

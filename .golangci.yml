@@ -57,8 +57,10 @@ linters:
   settings:
     depguard:
       rules:
-        # go-meshapi-client: shared API client, stdlib-only in production (verified via
-        # `go list -f '{{join .Imports "\n"}}' ./...`, phase-0 baseline).
+        # go-meshapi-client: shared API client, stdlib-only in production at phase-0
+        # baseline (verified via `go list -f '{{join .Imports "\n"}}' ./...`); phase 3
+        # adds the `config` package (D7), which needs gopkg.in/yaml.v2 for the two-file
+        # deep-merge loader -- the same yaml library both consumers already vendor.
         go-meshapi-client:
           files:
             - "go-meshapi-client/**/*.go"
@@ -67,6 +69,7 @@ linters:
           allow:
             - $gostd
             - github.com/meshcloud/building-block-runner/go-meshapi-client
+            - gopkg.in/yaml.v2
         go-meshapi-client-test:
           files:
             - "go-meshapi-client/**/*_test.go"
@@ -75,6 +78,7 @@ linters:
             - $gostd
             - github.com/meshcloud/building-block-runner/go-meshapi-client
             - github.com/stretchr/testify
+            - gopkg.in/yaml.v2
 
         # run-controller: claims/dispatches runs as k8s Jobs; depends on go-meshapi-client
         # (cross-module import via go.work during phase 0-3, D11) plus k8s client-go and

@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/meshcloud/building-block-runner/run-controller/build"
@@ -19,7 +18,8 @@ import (
 
 func main() {
 	logger := log.New(os.Stdout, "[RUN CONTROLLER] ", log.LstdFlags)
-	meshapi.SetClientMetadata("run-controller", build.Version)
+	// Runner identity is now passed per client (meshapi.Identity, §5.2.2), stamped from
+	// build.Version at the client construction sites in the controller package.
 	logger.Printf("Build metadata: version=%s", build.Version)
 
 	controller.ReadConfig(logger)

@@ -46,7 +46,7 @@ type queueRunApi struct {
 
 func (q *queueRunApi) FetchRunDetails(string) (string, *meshapi.RunDetailsDTO, error) {
 	if q.idx >= len(q.queue) {
-		return "", nil, &meshapi.StatusError{Status: 404}
+		return "", nil, meshapi.HttpError{StatusCode: 404}
 	}
 	item := q.queue[q.idx]
 	q.idx++

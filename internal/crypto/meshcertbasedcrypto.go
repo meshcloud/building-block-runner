@@ -186,6 +186,18 @@ func readRSAPrivateKey(pemContent []byte) (*rsa.PrivateKey, error) {
 
 	block, _ := pem.Decode(pemContent)
 	if block == nil {
+		// Fall back to a normalized re-wrap (single-line PEM, no newline after the BEGIN
+		// marker or before END): the Kotlin runner-config.yml files ship privateKey this
+		// way (PrivateKeyLoader.kt's own parser strips markers/newlines by hand rather
+		// than using a strict PEM decoder), so a customer's existing Kotlin-era config
+		// would otherwise fail to decrypt on first use against the new Go images (a
+		// silent config-compat break, D7/D10) -- this is additive tolerance only, it
+		// never changes how an already-valid multi-line PEM parses.
+		if normalized, ok := normalizePEM(pemContent); ok {
+			block, _ = pem.Decode(normalized)
+		}
+	}
+	if block == nil {
 		return nil, errors.New("no valid PEM block found")
 	}
 

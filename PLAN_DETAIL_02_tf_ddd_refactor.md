@@ -75,7 +75,7 @@ reviewed, then resume.
 - Flipping `-race` on → phase 2b (verifies B6/B10).
 - `run-controller`, `go-meshapi-client` restructuring (incl. the `meshapi`
   `runnerName`/`runnerVersion` package globals, §4.1 item 3) → phase 3.
-- Module consolidation / move to `runner/internal/` → phase 4 (§5.1 says NOW vs THEN).
+- Module consolidation / move to `internal/` → phase 4 (§5.1 says NOW vs THEN).
 - Any new feature, any contract change (D9/D10 stay frozen, §8).
 - The errcheck-class lint pins in production code whose fix changes behavior → 2b.
 
@@ -231,17 +231,17 @@ Phase 2b exit: bug inventory empty; no `FIXME(bug)` markers remain; `-race` on.
 ### 5.1 Package layout — where things live NOW vs THEN (D11)
 
 Phase 2 creates the D11 shape **inside the existing `tf-block-runner` module**, so the
-phase-4 move into the `runner` module is a mechanical `git mv` + import-path rewrite:
+phase-4 move into the root module is a mechanical `git mv` + import-path rewrite:
 
-| Concept | NOW (phase 2, module `…/tf-block-runner`) | THEN (phase 4+, module `…/runner`) |
+| Concept | NOW (phase 2, module `…/tf-block-runner`) | THEN (phase 4+, module `…/building-block-runner`) |
 |---|---|---|
-| tf domain + application engine + ports + meshapi/config adapters | `tf-block-runner/internal/tf` (package `tf`) | `runner/internal/tf` |
-| git source acquisition (GitSource, auth, go-git/exec adapter) | `tf-block-runner/internal/gitsource` | `runner/internal/gitsource` |
-| terraform/tofu binary install + tfexec + mock facade | `tf-block-runner/internal/tofu` | `runner/internal/tofu` |
-| entrypoint | `tf-block-runner/main.go` (unchanged location — keeps meshfed-release `go run .` working, D10) | `runner/cmd/tf/main.go` (per-persona binary, D2) + the `cmd/bbrunner` superset |
-| reporting facility seed (`progress`, `runLog`) | files inside `internal/tf` | extracted to `runner/internal/report` in **phase 3** (D4: runner-agnostic) |
-| config loading | file inside `internal/tf` (tf-specific keys) | generalized into `runner/internal/config` in **phase 3** (D7) |
-| meshapi client, crypto | `go-meshapi-client` module, unchanged | `runner/internal/meshapi`, `internal/crypto` (phase 3/4) |
+| tf domain + application engine + ports + meshapi/config adapters | `tf-block-runner/internal/tf` (package `tf`) | `internal/tf` |
+| git source acquisition (GitSource, auth, go-git/exec adapter) | `tf-block-runner/internal/gitsource` | `internal/gitsource` |
+| terraform/tofu binary install + tfexec + mock facade | `tf-block-runner/internal/tofu` | `internal/tofu` |
+| entrypoint | `tf-block-runner/main.go` (unchanged location — keeps meshfed-release `go run .` working, D10) | `cmd/tf/main.go` (per-persona binary, D2) + the `cmd/bbrunner` superset |
+| reporting facility seed (`progress`, `runLog`) | files inside `internal/tf` | extracted to `internal/report` in **phase 3** (D4: runner-agnostic) |
+| config loading | file inside `internal/tf` (tf-specific keys) | generalized into `internal/config` in **phase 3** (D7) |
+| meshapi client, crypto | `go-meshapi-client` module, unchanged | `internal/meshapi`, `internal/crypto` (phase 3/4) |
 | `util/` | **dissolved**: `SortedByKeys` becomes an unexported helper next to its only caller in `internal/tf` (D11: no `util`) | — |
 
 The `gitsource`/`tofu` sibling split is justified per D11's "only if the seams prove

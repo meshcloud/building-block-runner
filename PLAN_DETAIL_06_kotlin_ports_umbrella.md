@@ -22,13 +22,13 @@ get the revision reviewed, then resume.
 
 | # | Assumption | Promised by | Verification step |
 |---|---|---|---|
-| A1 | `dispatch.RunHandler` is `Execute(ctx context.Context, run ClaimedRun) error` with `ClaimedRun{Id RunId, Type meshapi.RunnerImplementationType, Details meshapi.RunDetailsDTO, RawJson string}`; contract: handler decrypts per run, run-scoped reporting is runToken-only, handler owns its timeout, non-nil error = infrastructure failure (run-level FAILED is reported by the handler, which then returns nil). `InProcess` registry rejects `ALL`. | Plan 05 §4.2, §17 | read `runner/internal/dispatch`; `grep -rn "Execute(ctx" runner/internal/dispatch` |
+| A1 | `dispatch.RunHandler` is `Execute(ctx context.Context, run ClaimedRun) error` with `ClaimedRun{Id RunId, Type meshapi.RunnerImplementationType, Details meshapi.RunDetailsDTO, RawJson string}`; contract: handler decrypts per run, run-scoped reporting is runToken-only, handler owns its timeout, non-nil error = infrastructure failure (run-level FAILED is reported by the handler, which then returns nil). `InProcess` registry rejects `ALL`. | Plan 05 §4.2, §17 | read `internal/dispatch`; `grep -rn "Execute(ctx" internal/dispatch` |
 | A2 | Loop policy knobs exist: `LoopConfig{PollInterval, ClaimBackoff, MaxConcurrent}`, injectable `ClaimClassifier`, `Done()` wake channel, `maxConcurrentRuns` config + `RUNNER_MAX_CONCURRENT_RUNS`. | Plan 05 §4.1/§6 | read `dispatch/loop.go`; run the loop cadence tests |
 | A3 | The opt-in `registration:` config section (displayName, ownedByWorkspace, publicKey, capability) + startup PUT without WIF works for standalone personas; absent section ⇒ no registration traffic. | Plan 05 §9 | run the plan-05 step-8 registration transcript tests |
-| A4 | `meshapi`: `RunClient` (claim POST `…/meshbuildingblockruns/create?forRunnerUuid=`, register-source, PATCH, artifact), per-run construction with runToken-only auth, `HttpError.IsNotFound/IsConflict`, `Identity`, `DecryptRunDetails(runJsonBase64, Decryptor)` with all five impl-type branches (input decryption + per-type impl secrets: `SshPrivateKey`, `AppPem`, `PipelineTriggerToken`, `PersonalAccessToken` — today `run-controller/controller/decryption.go:27-118`), `RunDetailsDTO.Links{Self, RegisterSource, UpdateSource, MeshstackBaseUrl}` (`go-meshapi-client/meshapi/dtos.go:19-24`). Claim POST and status PATCH are never retried. | Plan 03 §5.2, Plan 05 §5 | `grep -rn "DecryptRunDetails\|LinksDTO\|WhitelistedPosts" runner/internal/meshapi` |
-| A5 | `report`: `Progress`/`RunStatus`/`StepStatus` (value `Steps`), `Reporter{Register, Report}`, `ToStatusUpdate(s, source, type)`, `Observer` (10s ticker — **not used by these ports**, §4 row 7). | Plan 03 §5.4 | read `runner/internal/report` |
-| A6 | `config`: `Path`/`LoadFile`/`Env` mechanics, `Api` struct with `user`/`username` alias + `NewAuthProvider` (API key wins, `/api/login` exchange), `ManagementPort(log, def, aliases…)` with `MANAGEMENT_PORT > alias > default` precedence. | Plan 03 §5.3, Plan 04 §4.3 | read `runner/internal/config`; run the alias-precedence tests |
-| A7 | Persona wiring: adding a persona = add `runner/cmd/<persona>/main.go` (wiring, linking only its deps) + register the handler in the `runner/cmd/bbrunner` superset + one per-persona `containers/<persona>-block-runner/Dockerfile` (direct entrypoint to the persona binary) + one build-matrix leg (`./runner/cmd/<persona>`); no `runner/main.go` registry or argv[0] multiplexing. `mgmt.NewServer` (healthz `OK` + `/metrics`) and `mgmt.RunMetrics` (`runner_runs_claimed_total` etc., labeled `runner_uuid`) are reusable per persona; plan-05 additions `runner_runs_unhandled_total`, `runner_at_capacity_skips_total`. | Plan 04 §11, Plan 05 §10.3 | read `runner/cmd/tf/main.go`, `runner/cmd/bbrunner/main.go`, a per-persona `containers/*/Dockerfile`, `runner/internal/mgmt` |
+| A4 | `meshapi`: `RunClient` (claim POST `…/meshbuildingblockruns/create?forRunnerUuid=`, register-source, PATCH, artifact), per-run construction with runToken-only auth, `HttpError.IsNotFound/IsConflict`, `Identity`, `DecryptRunDetails(runJsonBase64, Decryptor)` with all five impl-type branches (input decryption + per-type impl secrets: `SshPrivateKey`, `AppPem`, `PipelineTriggerToken`, `PersonalAccessToken` — today `run-controller/controller/decryption.go:27-118`), `RunDetailsDTO.Links{Self, RegisterSource, UpdateSource, MeshstackBaseUrl}` (`go-meshapi-client/meshapi/dtos.go:19-24`). Claim POST and status PATCH are never retried. | Plan 03 §5.2, Plan 05 §5 | `grep -rn "DecryptRunDetails\|LinksDTO\|WhitelistedPosts" internal/meshapi` |
+| A5 | `report`: `Progress`/`RunStatus`/`StepStatus` (value `Steps`), `Reporter{Register, Report}`, `ToStatusUpdate(s, source, type)`, `Observer` (10s ticker — **not used by these ports**, §4 row 7). | Plan 03 §5.4 | read `internal/report` |
+| A6 | `config`: `Path`/`LoadFile`/`Env` mechanics, `Api` struct with `user`/`username` alias + `NewAuthProvider` (API key wins, `/api/login` exchange), `ManagementPort(log, def, aliases…)` with `MANAGEMENT_PORT > alias > default` precedence. | Plan 03 §5.3, Plan 04 §4.3 | read `internal/config`; run the alias-precedence tests |
+| A7 | Persona wiring: adding a persona = add `cmd/<persona>/main.go` (wiring, linking only its deps) + register the handler in the `cmd/bbrunner` superset + one per-persona `containers/<persona>-block-runner/Dockerfile` (direct entrypoint to the persona binary) + one build-matrix leg (`./cmd/<persona>`); no `main.go` registry or argv[0] multiplexing. `mgmt.NewServer` (healthz `OK` + `/metrics`) and `mgmt.RunMetrics` (`runner_runs_claimed_total` etc., labeled `runner_uuid`) are reusable per persona; plan-05 additions `runner_runs_unhandled_total`, `runner_at_capacity_skips_total`. | Plan 04 §11, Plan 05 §10.3 | read `cmd/tf/main.go`, `cmd/bbrunner/main.go`, a per-persona `containers/*/Dockerfile`, `internal/mgmt` |
 | A8 | Coverage gate mechanics: per-package lines in `tools/coverage/thresholds.txt` at 90, `exclusions.txt` per-file with justification, induced-failure check procedure. `-race` is ON. | Plans 00/02/04 §7.1 | `cat tools/coverage/thresholds.txt tools/coverage/exclusions.txt && task coverage` |
 | A9 | `crypto.MeshCertBasedCrypto.DecryptMeshCertBased` implements RSA/OAEP-SHA1-MGF1 + AES-128-GCM with 4-byte IV-length prefix — the same algorithm as `MeshCertDecryptionService` (`block-runner-core/...security/MeshCertDecryptionService.kt:32-120`); parity is already proven in production (the controller decrypts what meshStack encrypts for all five types). | Current `main`, unchanged by 00–05 | run `crypto` tests; cross-decrypt one Kotlin-test fixture ciphertext (`MeshCertDecryptionServiceTest.kt`) with the Go crypto in a scratch test |
 | A10 | The Kotlin modules, `containers/jvm.Dockerfile`, `entrypoint-jvm.sh`, the `jvm-runners-ci`/`jvm-runners-image` matrix legs (`.github/workflows/ci.yml:19-90`) and the four JVM legs in `build-images.yml:32-43` are untouched by phases 0–5. | Plans 00–05 scope | `git diff main..phase-5-dispatcher -- '*.gradle' containers/jvm.Dockerfile .github/workflows/` — empty for these paths |
@@ -239,7 +239,7 @@ Each sub-plan is one stacked single-commit PR and must contain exactly these sec
    note per row where the translation is not mechanical.
 6. **Config** — persona struct + the full §5.4 alias table instantiated for the runner.
 7. **Persona wiring & modes** — `cmd/<persona>/main.go` wiring + `cmd/bbrunner` superset
-   registration (not a `runner/main.go` registry entry), `MANAGEMENT_PORT`, registration
+   registration (not a `main.go` registry entry), `MANAGEMENT_PORT`, registration
    section, single-run activation (§5.5).
 8. **Dockerfile & image switch** (§5.6).
 9. **Migration sequence** — always-green steps sized for one reviewable PR, each with
@@ -358,16 +358,16 @@ Per persona (names are the published image names, D8):
 
 | Persona | Registry entry / Identity name | `MANAGEMENT_PORT` default (D12) | Polling mode | Single-run mode |
 |---|---|---|---|---|
-| `manual-block-runner` | `manual-block-runner` | **8104** | `dispatch.Loop` + `InProcess{MANUAL: handler}`, `PollInterval` 10s, `ClaimBackoff` 0, `maxConcurrentRuns` default 1 | handler direct, NoOp decryptor |
+| `manual-block-runner` | `manual-block-runner` | **8104** | `dispatch.Loop` + `InProcess{MANUAL: handler}`, `PollInterval` 10s, `ClaimBackoff` 0, `maxConcurrentRuns` default 3 | handler direct, NoOp decryptor |
 | `gitlab-block-runner` | `gitlab-block-runner` | **8103** | same, `{GITLAB_PIPELINE: handler}` | same |
 | `azure-devops-block-runner` | `azure-devops-block-runner` | **8101** | same, `{AZURE_DEVOPS_PIPELINE: handler}` | same |
 | `github-block-runner` | `github-block-runner` | **8102** | same, `{GITHUB_WORKFLOW: handler}` | same |
 
-- Wiring lives in `runner/cmd/<persona>/main.go` (package main) — one **binary** per
+- Wiring lives in `cmd/<persona>/main.go` (package main) — one **binary** per
   persona, mirroring `cmd/tf`; the handler is **also** registered in the
-  `runner/cmd/bbrunner` superset; only main wires adapters (D11 depguard). The "Registry
+  `cmd/bbrunner` superset; only main wires adapters (D11 depguard). The "Registry
   entry" column above = the persona's own `cmd/<persona>/main.go` binary (no
-  `runner/main.go` registry / argv[0] switch).
+  `main.go` registry / argv[0] switch).
 - Node id (`X-Block-Runner-Node-Id`): the plain runner uuid (no `-worker-N` suffix —
   that is tf history, plan 05 §16.5). New header for these runner types (§7.7).
 - `mgmt.NewServer` + `mgmt.RunMetrics` wired exactly as the tf persona (plan 04 §4.3);
@@ -382,9 +382,9 @@ Per persona (names are the published image names, D8):
 ### 5.6 Dockerfile + image switch
 
 - Each port adds one per-persona `containers/<persona>-block-runner/Dockerfile` building
-  only its own binary (`go build ./runner/cmd/<persona>`): alpine base (same digest pin),
+  only its own binary (`go build ./cmd/<persona>`): alpine base (same digest pin),
   `ca-certificates bash` only (these runners are HTTP-only — no git/tofu/nix), meshcloud
-  uid 2000, the built `./runner/cmd/<persona>` binary copied in directly at
+  uid 2000, the built `./cmd/<persona>` binary copied in directly at
   `/app/<persona-name>` (its own binary — no shared `bbrunner`, no symlink), a **direct**
   `ENTRYPOINT ["/app/entrypoint.sh", "/app/<persona-name>"]` (no argv[0] multiplexing),
   config at `/app/runner-config.yml` from `containers/<persona>-block-runner/`,
@@ -447,7 +447,7 @@ boundary); deleting jobs whose subject no longer exists is layout-forced, the pl
 
 Each sub-plan documents: one squash commit ⇒ one `git revert` restores the Kotlin
 module, its Gradle/CI legs, and the JVM image build; the persona's `cmd/<persona>/main.go`
-binary + its `cmd/bbrunner` superset registration (not a `runner/main.go` registry entry),
+binary + its `cmd/bbrunner` superset registration (not a `main.go` registry entry),
 handler package, per-persona Dockerfile and thresholds lines disappear. Because image names
 and the k8s/wire contracts are frozen (§8), `:main` floats back to a JVM-built image on
 the next CI run and **deployed operator configs need no change in either direction**
@@ -646,7 +646,7 @@ pins assert JSON.
 
 - **meshfed-release `local-dev-stack/SKILL.md` — must change in 06A (lock-step PR):**
   the manual-runner block (lines 64-71, `./gradlew :manual-block-runner:bootRun`)
-  becomes the Go persona start (`go run . manual-block-runner` in `runner/`, env
+  becomes the Go persona start (`go run . manual-block-runner` in the repo root, env
   `RUNNER_API_URL=http://localhost:8301` + config path); readiness table line ~103
   (`Started BlockRunnerApplication` marker in `/tmp/manual-runner.log`) gets the Go
   readiness marker; the pgrep hint (`BlockRunnerApplication`, lines 88-91) is updated.

@@ -6,7 +6,8 @@
 
 ## 1. Goal
 
-All apps in this repo become **one Go module** (`./runner`) with shared `internal/`
+All apps in this repo become **one Go module** (rooted at the repo root, `go.mod` at root)
+with shared `internal/`
 packages and **one fit-for-purpose binary per runner persona** (`cmd/<persona>/main.go`),
 plus a `bbrunner` **superset** binary that links all handlers + both dispatchers and *is*
 the run-controller (see D1/D2/D8). tf-block-runner and run-controller are the in-repo
@@ -131,12 +132,12 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
   replacement. Unlike the runner personas, the superset is a published image (it *is*
   run-controller), not an opt-in extra.
 - **D2 — one Go module, fit per-persona binaries + one adaptive superset (= run-controller).**
-  New module at `./runner`; shared code in `./runner/internal/*` (D11). Entrypoints are **one `main` package per runner persona**
-  under `./runner/cmd/<persona>/main.go` — `cmd/tf`, `cmd/manual`, `cmd/gitlab`, `cmd/github`,
+  New module at the **repo root** (`go.mod` at root, no `./runner` subdir); shared code in `internal/*` (D11). Entrypoints are **one `main` package per runner persona**
+  under `cmd/<persona>/main.go` — `cmd/tf`, `cmd/manual`, `cmd/gitlab`, `cmd/github`,
   `cmd/azdevops` — each a fit binary linking **only what its persona needs** (`cmd/tf` links
   go-git+terraform-exec but not k8s; the four runner binaries link neither k8s nor go-git/
   tofu; verified today the heavy trees are disjoint). **There is no separate `cmd/controller`
-  binary:** the controller collapses into `./runner/cmd/bbrunner` — one **environment-adaptive
+  binary:** the controller collapses into `cmd/bbrunner` — one **environment-adaptive
   superset** that links all handlers + both dispatchers and, at startup, **auto-detects the
   in-cluster k8s API** (client-go `rest.InClusterConfig()`, which keys off the kubelet-injected
   `KUBERNETES_SERVICE_HOST`/`KUBERNETES_SERVICE_PORT` — the official documented in-cluster
@@ -158,7 +159,7 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
   and wire contracts per D10, see plan 04).
   **Rationale:** fit per-persona binaries keep each dispatched-Job / slim-runner
   image's dependency / SBOM / CVE surface minimal and drop the argv[0]+symlink machinery, at
-  the cost of N build targets (`go build ./runner/cmd/...`). Merging the controller into the
+  the cost of N build targets (`go build ./cmd/...`). Merging the controller into the
   adaptive superset saves a whole persona/binary and gives one image that
   adapts to its environment; the accepted price is that the `run-controller` image carries all
   handler code even though in k8s mode it only dispatches Jobs — the bloat is concentrated in
@@ -311,9 +312,11 @@ terraform-provider-meshstack `AGENTS.md` + `modern-go` skill — applied to this
   dispatch to new runner images and vice versa (the k8s Job contract in D9 is frozen);
   mux claim contract unchanged; healthz ports unchanged; meshfed-release `local-dev-stack`
   + acceptance tests keep working (update that repo's docs in lock-step when layout changes).
-- **D11 — package layout: flat concept packages, one conceptual level deep.** The module
-  lives at `./runner` (coexists with legacy module dirs during migration; they are deleted
-  phase by phase); its per-persona entrypoints are `cmd/<persona>/main.go` + `cmd/bbrunner`
+- **D11 — package layout: flat concept packages, one conceptual level deep.** The single Go
+  module lives at the **repo root** (`go.mod` at root, NOT in a `./runner` subdir; coexists
+  with the legacy module dirs during migration — which are deleted phase by phase, the
+  `go.work`/`go.work.sum` workspace that bridged them removed outright at phase 4);
+  its per-persona entrypoints are `cmd/<persona>/main.go` + `cmd/bbrunner`
   (D2 — package `main`, wiring only, exempt from the concept-package rules below). Packages
   sit at exactly one level below the
   module root, under `internal/` (visibility mechanism, exempt from the depth count — the
@@ -469,8 +472,10 @@ reduced request bodies.
 `cmd/tf` (+ `cmd/bbrunner`, the superset that *is* run-controller) created this phase; the
 four runner personas' `cmd/<persona>/main.go` arrive in phase 6 (D1, D2); each fit binary
 links only its persona's deps; Dockerfiles get direct entrypoints, no symlinks (D8);
-CI/release matrix builds the binaries via `go build ./runner/cmd/...` → N images; module
-consolidation; update meshfed-release local-dev-stack docs (which use `bbrunner`). The
+CI/release matrix builds the binaries via `go build ./cmd/...` → N images; module
+consolidation (the single `go.mod` moves to the repo root, the `./runner` subdir is
+dropped, and `go.work`+`go.work.sum` are deleted outright — the workspace only bridged the
+phase 0–3 multi-module period); update meshfed-release local-dev-stack docs (which use `bbrunner`). The
 dispatcher auto-detect + `InProcessDispatcher` land in phase 5. **Exit:** `tf-block-runner`
 ships its fit binary and `run-controller` ships the `bbrunner` superset; old per-module
 mains deleted.
@@ -479,13 +484,17 @@ mains deleted.
 ### Phase 5 — Dispatcher abstraction & in-process concurrency
 `Dispatcher` interface behind the controller loop; extract `KubernetesJobDispatcher`;
 add `InProcessDispatcher` (go-func per run, per-run decrypt then runToken-only reporting —
-same trust model as the k8s Secret handover; `maxConcurrentRuns` mirrors
-`maxConcurrentJobs`; per-run working dirs; version-download locking in `TfBinaries`).
+same trust model as the k8s Secret handover; standalone in-process runs default to
+**`maxConcurrentRuns`=3** — an intentional throughput improvement over the former serial
+single-worker cadence — overridable via `RUNNER_MAX_CONCURRENT_RUNS` (negative = unlimited,
+with a 10-per-cycle backstop), playing the role `maxConcurrentJobs` does for the k8s
+dispatcher; per-run working dirs; version-download locking in `TfBinaries`).
 Standalone polling runner becomes in-process dispatch with one handler. Registered
 capability is explicit config (concrete type or `ALL`); claimed runs without a matching
 handler or job template fail fast with an actionable message (D5). **Exit:** one Docker
 container executes N concurrent TERRAFORM runs; `ALL` registration with fail-fast works;
-k8s mode bit-identical to today.
+k8s mode bit-identical to today, with the **one sanctioned exception** that the compiled-in
+`maxConcurrentJobs` default drops 20 → 10 (an intentional capacity retune).
 → `PLAN_DETAIL_05_dispatcher.md`
 
 ### Phase 6 — Port Kotlin runners as Go handlers (one PR per runner)
@@ -583,9 +592,10 @@ Each `PLAN_DETAIL_*.md` is authored by a subagent that receives:
   the merge path; controller re-base steps; alignment notes vs provider-client naming.
 - **04 per-persona binaries**: `cmd/tf` + `cmd/bbrunner` (the superset = run-controller,
   auto-detecting its dispatcher; no separate `cmd/controller`); the runner personas' mains
-  arrive in phase 6 (D1/D2); module/layout migration incl. `go.work` endgame, Dockerfile
+  arrive in phase 6 (D1/D2); module/layout migration (go.mod to repo root, `./runner` dropped,
+  `go.work`+`go.work.sum` deleted), Dockerfile
   matrix with direct entrypoints (no symlinks, D8), release workflow building the binaries
-  via `./runner/cmd/...`, meshfed-release doc updates (local-dev-stack uses `bbrunner`),
+  via `./cmd/...`, meshfed-release doc updates (local-dev-stack uses `bbrunner`),
   `MANAGEMENT_PORT` unification incl. per-persona defaults and the new standalone-runner
   metrics (D12).
 - **05 dispatcher**: `Dispatcher`/`RunHandler` interfaces, capacity semantics per

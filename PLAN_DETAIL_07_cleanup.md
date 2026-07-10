@@ -30,16 +30,16 @@ Implementation **begins by running every verification step**. Any material failu
 
 | # | Assumption | Promised by | Verification step |
 |---|---|---|---|
-| A1 | The phase-6d branch is green: `task test` (with `-race`), `task lint`, `task coverage` all pass; module `./runner`, no `go.work`. Five fit per-persona binaries under `./runner/cmd/*` (`cmd/tf`, `cmd/manual`, `cmd/gitlab`, `cmd/github`, `cmd/azdevops`) each linking only its deps, plus the `./runner/cmd/bbrunner` superset — which **is** the controller: it registers all six personas (`tf-block-runner`, `run-controller`, `manual-block-runner`, `gitlab-block-runner`, `azure-devops-block-runner`, `github-block-runner`) by subcommand, auto-detects the in-cluster k8s API (`rest.InClusterConfig()` / `KUBERNETES_SERVICE_HOST`) to pick KubernetesJobDispatcher (in-cluster) vs InProcessDispatcher (else) with `RUNNER_DISPATCHER` overriding, and is the binary published as the `run-controller` image. **No `cmd/controller`.** Six `cmd/` dirs total. + the legacy `tfrunner` binary alias. | Plans 00–06 | `git checkout refactor/single-go-binary/phase-6d-github && task test && task lint && task coverage`; `ls runner/cmd` (six dirs: `tf`, `manual`, `gitlab`, `github`, `azdevops`, `bbrunner`; **no `controller`**) + `grep -n "Persona" runner/cmd/bbrunner/main.go` |
+| A1 | The phase-6d branch is green: `task test` (with `-race`), `task lint`, `task coverage` all pass; the root Go module, no `go.work`. Five fit per-persona binaries under `./cmd/*` (`cmd/tf`, `cmd/manual`, `cmd/gitlab`, `cmd/github`, `cmd/azdevops`) each linking only its deps, plus the `./cmd/bbrunner` superset — which **is** the controller: it registers all six personas (`tf-block-runner`, `run-controller`, `manual-block-runner`, `gitlab-block-runner`, `azure-devops-block-runner`, `github-block-runner`) by subcommand, auto-detects the in-cluster k8s API (`rest.InClusterConfig()` / `KUBERNETES_SERVICE_HOST`) to pick KubernetesJobDispatcher (in-cluster) vs InProcessDispatcher (else) with `RUNNER_DISPATCHER` overriding, and is the binary published as the `run-controller` image. **No `cmd/controller`.** Six `cmd/` dirs total. + the legacy `tfrunner` binary alias. | Plans 00–06 | `git checkout refactor/single-go-binary/phase-6d-github && task test && task lint && task coverage`; `ls cmd` (six dirs: `tf`, `manual`, `gitlab`, `github`, `azdevops`, `bbrunner`; **no `controller`**) + `grep -n "Persona" cmd/bbrunner/main.go` |
 | A2 | **The JVM is gone**: no `*.gradle`, `gradlew*`, `gradle/`, `block-runner-core/`, module dirs, `containers/jvm.Dockerfile`, `entrypoint-jvm.sh`; `ci.yml` has no `jvm-runners-*` jobs; `flake.nix` has no `jdk21_headless`/`ktlint`; `.claude/settings.json` has no ktlint hook. | 06D §12.2 | `ls *.gradle gradlew 2>/dev/null` (empty); `grep -rn "gradle\|ktlint\|jvm" .github/workflows/ flake.nix .claude/settings.json` (no hits) |
-| A3 | Packages: `runner/internal/{tf,gitsource,tofu,meshapi,crypto,config,report,mgmt,dispatch,k8sjob,manual,gitlab,azdevops,github,build}`; `internal/controller` is gone. | Plans 04 §11, 05 §5, 06A–D | `ls runner/internal` |
+| A3 | Packages: `internal/{tf,gitsource,tofu,meshapi,crypto,config,report,mgmt,dispatch,k8sjob,manual,gitlab,azdevops,github,build}`; `internal/controller` is gone. | Plans 04 §11, 05 §5, 06A–D | `ls internal` |
 | A4 | Coverage gate: per-package thresholds at 90 for `tf,gitsource,tofu,meshapi,crypto,config,report,mgmt,dispatch,k8sjob,manual,gitlab,azdevops,github`; exclusions exactly `gitsource/git.go`, `tofu/tfbinaries.go`, `k8sjob/cluster.go`; CI (`go-runners-ci`) runs `tools/coverage/check.sh` gating. | Plans 04 §7.1, 05 §13, 06 §5.1 item 10 | `cat tools/coverage/thresholds.txt tools/coverage/exclusions.txt && task coverage` — record numbers |
-| A5 | **Zero `FIXME(bug)` markers** (2b exit) and **zero temporary `.golangci.yml` exclusion blocks** (plan 00 §5.3 categories owned by phases 2/2b/3 all paid off). | Plans 02 §7 R13, 00 §12 | `grep -rn "FIXME(bug)" runner/` (empty); read `.golangci.yml` — only permanent config remains |
-| A6 | Alias/deprecation warnings are already **implemented** where phases 03–06 introduced aliases: `RUNCONTROLLER_CONFIG_FILE`, `PORT`→`MANAGEMENT_PORT` (tf + 4 ported personas), `SPRING_PROFILES_ACTIVE` single-run trigger, `blockrunner:` yaml block, private-key key aliases, `logging./server./spring.` ignored-with-warning — via `config.EnvAlias`-style mechanics. Phase 7 audits wording + documents timeline; it does not invent the mechanism. | Plans 03 §5.3, 04 §4.3, 06 §5.4/§7.8 | `grep -rn "deprecat" runner/internal/config runner/persona_*.go`; run the alias tests |
-| A7 | **No metric was renamed** in phases 3–6 (all additions: `runner_*` set + `runner_runs_unhandled_total` + `runner_at_capacity_skips_total`; `run_controller_*` byte-identical) ⇒ the D12 metric-alias inventory is empty. | Plans 04 §6.2, 05 §10.3 | `grep -rn "prometheus.NewCounter\|NewHistogram" runner/internal/{mgmt,dispatch}` — names match plans 04/05 |
-| A8 | Logging is the umbrella-§10.12 interim state: phase-6 handler packages use `log/slog` (run id as attr); `config`, `report`, `mgmt`, `dispatch`, `k8sjob`, `tf`, `gitsource`, `tofu` and the persona bootstraps still use `*log.Logger` (persona prefixes `[TF RUNNER]`, `[RUN CONTROLLER]`; per-run `[RUN-<id>]` in the tf handler per plan 05 H3). | Umbrella §10.12, plans 03–05 signatures | `grep -rln "log/slog" runner/internal` vs `grep -rln "\*log.Logger" runner/internal` |
-| A9 | Workflows post-06D: `ci.yml` = `go-runners-ci` (one `runner` leg, coverage steps) + `go-runners-image`. 6 image legs — the five fit legs build `./runner/cmd/<persona>`, the `run-controller` leg builds `./runner/cmd/bbrunner` (no `./cmd/controller`) — each via its own `containers/<app>/Dockerfile` (direct entrypoint, no `target:`); `build-images.yml` = 6 legs, all per-app Dockerfiles, no `RUNNER_MODULE`; `release.yml`/`release-check.yml`/`pr-cleanup.yml` untouched since `main`. **No lint job exists** (plan 00: "No CI lint job until phase 7"). | Plans 04 §4.5, 06 §5.6/§5.8 | read the three workflow files; `grep -rn "golangci" .github/workflows/` (empty) |
-| A10 | Single-run exit semantics are the 2b-R12 conditional; `BackoffLimit: 1` stands (plan 05 §16.3); the tf single-run path is still the *separate* `executeSingleRun`-shaped glue (plan 05 §2 deliberately did not unify it with the handler — deferred here, §16.7). | Plans 02 R12, 05 §2/§16.7 | read `runner/cmd/tf/main.go` single-run tail |
+| A5 | **Zero `FIXME(bug)` markers** (2b exit) and **zero temporary `.golangci.yml` exclusion blocks** (plan 00 §5.3 categories owned by phases 2/2b/3 all paid off). | Plans 02 §7 R13, 00 §12 | `grep -rn "FIXME(bug)" internal/ cmd/` (empty); read `.golangci.yml` — only permanent config remains |
+| A6 | Alias/deprecation warnings are already **implemented** where phases 03–06 introduced aliases: `RUNCONTROLLER_CONFIG_FILE`, `PORT`→`MANAGEMENT_PORT` (tf + 4 ported personas), `SPRING_PROFILES_ACTIVE` single-run trigger, `blockrunner:` yaml block, private-key key aliases, `logging./server./spring.` ignored-with-warning — via `config.EnvAlias`-style mechanics. Phase 7 audits wording + documents timeline; it does not invent the mechanism. | Plans 03 §5.3, 04 §4.3, 06 §5.4/§7.8 | `grep -rn "deprecat" internal/config persona_*.go`; run the alias tests |
+| A7 | **No metric was renamed** in phases 3–6 (all additions: `runner_*` set + `runner_runs_unhandled_total` + `runner_at_capacity_skips_total`; `run_controller_*` byte-identical) ⇒ the D12 metric-alias inventory is empty. | Plans 04 §6.2, 05 §10.3 | `grep -rn "prometheus.NewCounter\|NewHistogram" internal/{mgmt,dispatch}` — names match plans 04/05 |
+| A8 | Logging is the umbrella-§10.12 interim state: phase-6 handler packages use `log/slog` (run id as attr); `config`, `report`, `mgmt`, `dispatch`, `k8sjob`, `tf`, `gitsource`, `tofu` and the persona bootstraps still use `*log.Logger` (persona prefixes `[TF RUNNER]`, `[RUN CONTROLLER]`; per-run `[RUN-<id>]` in the tf handler per plan 05 H3). | Umbrella §10.12, plans 03–05 signatures | `grep -rln "log/slog" internal` vs `grep -rln "\*log.Logger" internal` |
+| A9 | Workflows post-06D: `ci.yml` = `go-runners-ci` (one `runner` leg, coverage steps) + `go-runners-image`. 6 image legs — the five fit legs build `./cmd/<persona>`, the `run-controller` leg builds `./cmd/bbrunner` (no `./cmd/controller`) — each via its own `containers/<app>/Dockerfile` (direct entrypoint, no `target:`); `build-images.yml` = 6 legs, all per-app Dockerfiles, no `RUNNER_MODULE`; `release.yml`/`release-check.yml`/`pr-cleanup.yml` untouched since `main`. **No lint job exists** (plan 00: "No CI lint job until phase 7"). | Plans 04 §4.5, 06 §5.6/§5.8 | read the three workflow files; `grep -rn "golangci" .github/workflows/` (empty) |
+| A10 | Single-run exit semantics are the 2b-R12 conditional; `BackoffLimit: 1` stands (plan 05 §16.3); the tf single-run path is still the *separate* `executeSingleRun`-shaped glue (plan 05 §2 deliberately did not unify it with the handler — deferred here, §16.7). | Plans 02 R12, 05 §2/§16.7 | read `cmd/tf/main.go` single-run tail |
 | A11 | The controller decrypt-failure quirk is intact and **pinned**: decrypt error ⇒ log + `run_controller_decryption_errors_total` + `processFailed`, **no status report** (transcript-empty pin from plan 05 step 1). | Plan 05 §10.2/§11.1 step 1 | run the k8sjob decrypt-failure transcript test; confirm it asserts *no* register/PATCH |
 | A12 | `run-controller`'s sample config (post-04 path `containers/run-controller/runner-config.yml`) still ships `SPRING_PROFILES_ACTIVE: kubernetes` in the four pipeline-runner job templates (flip deferred here, umbrella §9). | Plan 04 §4.4, umbrella §9 | `grep -n "SPRING_PROFILES_ACTIVE" containers/run-controller/runner-config.yml` |
 | A13 | meshfed-release `local-dev-stack/SKILL.md` is the post-06A shape: tf via `go run . tf-block-runner`, manual via `go run . manual-block-runner`, readiness markers reference the current log lines (incl. the `[TF RUNNER]` prefix — plan 04 §9 verified it). | Plans 04 §9, 06A §15 | read the SKILL; note the exact readiness-marker strings (input to §8/§14) |
@@ -75,7 +75,8 @@ the outer net; diagnose/replan before merging.
 - **slog migration** of `config`, `report`, `mgmt`, `dispatch`, `k8sjob`, `tf`,
   `gitsource`, `tofu`, the persona bootstraps and `main` — ending the two-logging-stacks
   interim (§8; umbrella §10.12).
-- **Docs:** root `README.md` rewrite, `runner/README.md` refresh, new
+- **Docs:** root `README.md` rewrite + dev/build-section refresh (single root README —
+  the module lives at repo root), new
   `docs/ARCHITECTURE.md`, k8s example-manifest home, config-sample comment/flip,
   `.editorconfig` JVM-section removal, `.agents/skills/backend-go` rewrite (§6).
 - **Deprecation audit + documented timeline** for every alias from phases 3–6 (§7);
@@ -119,8 +120,8 @@ All references at `refactor/single-go-binary/plan` (= `main` @ `c3fce61`).
   (`:105-110`); `make start-*` (`:112-117`); module-README links (`:119-122`). The
   Release section (`:124-145`) and Support/Contributing/Security sections stay true.
 - **`tf-block-runner/README.md` / `run-controller/README.md`** — folded into
-  `runner/README.md` by plan 04 step 7; phase 7 only *refreshes* that file (post-5/6
-  content: dispatcher, `maxConcurrentRuns`, six personas).
+  the root `README.md` by plan 04 step 7; phase 7 only *refreshes* its dev/build sections
+  (post-5/6 content: dispatcher, `maxConcurrentRuns`, six personas).
 - **`run-controller/k8s/{deployment.yaml,rbac.yaml}`** — example manifests
   (`deployment.yaml:21` pins `ghcr.io/meshcloud/run-controller:main`). **No prior plan
   moves them** (plan 04 §4.4 moves only `runner-config.yml`/`known_hosts`); A14/§6
@@ -150,12 +151,12 @@ All references at `refactor/single-go-binary/plan` (= `main` @ `c3fce61`).
   `:174`; *post-0* + coverage steps, *post-4* single `runner` leg), `go-runners-image`
   (`:179-260`: two Dockerfile legs; *post-4/6* six
   `containers/<app>/Dockerfile` legs, no shared `target:`; the `run-controller`
-  leg builds `./runner/cmd/bbrunner` (the superset), the five fit legs build
-  `./runner/cmd/<persona>`; no separate slim controller image).
+  leg builds `./cmd/bbrunner` (the superset), the five fit legs build
+  `./cmd/<persona>`; no separate slim controller image).
   Tag scheme: `:main` + `:<sha>` on main, `pr-N` local-only on PRs (`:96-108`).
 - `build-images.yml`: release matrix (two go legs + four JVM legs with `RUNNER_MODULE`,
   `:26-43`; *post-4/6* six per-app-Dockerfile legs, the `run-controller` leg building
-  `./runner/cmd/bbrunner`); `workflow_call` from `release.yml` + `v*` tag fallback.
+  `./cmd/bbrunner`); `workflow_call` from `release.yml` + `v*` tag fallback.
 - `release.yml` (tag + GitHub-Release + calls build-images), `release-check.yml`
   (cron nag for unreleased commits), `pr-cleanup.yml` (deletes `pr-N` tags for the six
   image names, `:20-27,55-62`) — all operate on image *names*, which never change: no
@@ -267,7 +268,7 @@ it does **not** depend on `task` or nix (phase-0 decision carried forward).
 | Workflow | End state |
 |---|---|
 | `ci.yml` | Three jobs: `lint` (§5.2) · `test` (§5.3) · `images` (§5.5). Triggers/concurrency unchanged (`push: main`, `pull_request`, cancel-in-progress). |
-| `build-images.yml` | Already six legs post-06D (A9), each `containers/<app>/Dockerfile` with a direct entrypoint, no `target:`; the five fit legs build `./runner/cmd/<persona>` and the `run-controller` leg builds `./runner/cmd/bbrunner` (the superset — there is no `./cmd/controller`). Phase-7 delta: none expected; verify no `RUNNER_MODULE` residue and that the ldflags `VERSION` build-arg path is `…/runner/internal/build.Version`. |
+| `build-images.yml` | Already six legs post-06D (A9), each `containers/<app>/Dockerfile` with a direct entrypoint, no `target:`; the five fit legs build `./cmd/<persona>` and the `run-controller` leg builds `./cmd/bbrunner` (the superset — there is no `./cmd/controller`). Phase-7 delta: none expected; verify no `RUNNER_MODULE` residue and that the ldflags `VERSION` build-arg path is `…/internal/build.Version`. |
 | `release.yml` / `release-check.yml` / `pr-cleanup.yml` | **Unchanged** — they operate on tags and image names only (§3.2). Verified, not edited. |
 | `e2e.yml` (new) | Opt-in real-I/O tests (§5.4): `workflow_dispatch` + weekly `schedule`; never a PR gate. |
 
@@ -275,7 +276,7 @@ it does **not** depend on `task` or nix (phase-0 decision carried forward).
 
 - SHA-pinned `golangci/golangci-lint-action` (repo pinning convention, e.g.
   `ci.yml:39`; provider precedent `test.yml:55-58`).
-- `working-directory: runner`, `go-version-file: runner/go.mod`.
+- `go-version-file: go.mod` (module at repo root; no `working-directory`).
 - **Pinned lint version matching the flake** (2.12.2 line from nixos-25.11,
   plan 00 §4) — *not* the provider's `version: latest` + `only-new-issues: true`:
   after phases 0–6 the tree is clean, so full-run/fail-on-any is achievable and
@@ -297,7 +298,7 @@ plan 00 §11.3 resolved).
 
 ### 5.4 e2e split (L3)
 
-- `//go:build e2e` on `runner/internal/tofu/tfbinaries_test.go` (the real-download
+- `//go:build e2e` on `internal/tofu/tfbinaries_test.go` (the real-download
   suite — the only network consumer left after plan 01 CP1 made everything else
   hermetic) and on any real-git test that survived in `gitsource`.
 - `task test:e2e` = `go test -tags e2e ./internal/tofu/... ./internal/gitsource/...`;
@@ -314,10 +315,10 @@ plan 00 §11.3 resolved).
 
 One matrix, six legs — `app` = published image name = the Dockerfile
 `containers/<app>/Dockerfile` (direct entrypoint): `tf-block-runner` from
-`./runner/cmd/tf`, `run-controller` from `./runner/cmd/bbrunner` (the superset —
+`./cmd/tf`, `run-controller` from `./cmd/bbrunner` (the superset —
 this **is** the run-controller image, not an optional/non-default extra), and
 `manual-block-runner`/`gitlab-block-runner`/`azure-devops-block-runner`/`github-block-runner`
-from their fit `./runner/cmd/<persona>`. There is no `./cmd/controller` and no separate
+from their fit `./cmd/<persona>`. There is no `./cmd/controller` and no separate
 slim controller image. Shared steps exactly today's `go-runners-image` body
 (`ci.yml:196-260`: git-describe version, buildx, GHCR+DockerHub logins gated on
 `meshcloud`+main, build-push with `platforms: linux/amd64,linux/arm64`, PRs
@@ -342,7 +343,7 @@ scope creep in the final phase.
 |---|---|
 | Runner table (`:14-20`) | One table of the six *personas* (same published image names, all Go), one sentence on the binary design (the five fit personas each = their own `cmd/<persona>` binary + image; `run-controller` = the `cmd/bbrunner` superset image, which links all handlers + both dispatchers and auto-detects its dispatcher — so it also serves as the all-in-one/local-dev build; no separate `cmd/controller`), link to `docs/ARCHITECTURE.md` |
 | "Running a runner" (`:22-34`) | Content stays (still true); add `EXECUTION_MODE`/`MANAGEMENT_PORT` pointers and the config-precedence one-liner (defaults < YAML < env, D7) |
-| Repository structure (`:46-63`) | Rewritten: module `./runner` (wiring-only mains under `cmd/*` — five fit `cmd/<persona>` + the `cmd/bbrunner` superset that is published as `run-controller` (no `cmd/controller`), shared code under `internal/`), `containers/` (per-app `<app>/Dockerfile`s + assets incl. `run-controller/k8s/` examples, L18), `tools/coverage/`, `docs/`. `task --list` replaces `make help` |
+| Repository structure (`:46-63`) | Rewritten: the root Go module (wiring-only mains under `cmd/*` — five fit `cmd/<persona>` + the `cmd/bbrunner` superset that is published as `run-controller` (no `cmd/controller`), shared code under `internal/`), `containers/` (per-app `<app>/Dockerfile`s + assets incl. `run-controller/k8s/` examples, L18), `tools/coverage/`, `docs/`. `task --list` replaces `make help` |
 | Health endpoint (`:65-86`) | Becomes "Management endpoint": `/healthz` **and** `/metrics` on `MANAGEMENT_PORT`; per-persona default table gains `run-controller` = 2112 (now with healthz); `PORT` documented as deprecated alias with precedence `MANAGEMENT_PORT > PORT > default`; override examples become `MANAGEMENT_PORT=9000 go run . <persona>`; Docker default 8080 sentence stays true |
 | Development (`:88-117`) | Prerequisites: Go 1.26 (or `nix develop`); `task test/lint/fmt/tidy/coverage/test:e2e/start:*`; JVM section deleted; "Run locally" = `task start:<persona>` + `go run . <persona>` |
 | Release (`:124-145`) | Unchanged (verified true, §5.6) |
@@ -379,17 +380,18 @@ formatter authority is `task fmt`, plan 00 §5.1).
 
 ### 6.6 `.agents/skills/backend-go` (L17)
 
-Rewrite both files for the end state: cwd `runner/`, packages `internal/*`, commands
+Rewrite both files for the end state: cwd repo root, packages `internal/*`, commands
 `task test` / `go test ./internal/tf/... -run …`, goldie note updated to the post-move
 `testdata/` locations, a pointer to `docs/ARCHITECTURE.md` and the D11/D15 rules
 (depguard-enforced layering, slog). Description line (`SKILL.md:3`) loses
 "tf-block-runner service" — it is the repo-wide Go skill now.
 
-### 6.7 `runner/README.md` refresh
+### 6.7 Root `README.md` dev/build-section refresh
 
-Created by plan 04 step 7 (persona start commands, config paths); refresh for
-phases 5/6 content: `maxConcurrentRuns`, `registration:` section, the six personas,
-single-run activation (`EXECUTION_MODE` / deprecated `SPRING_PROFILES_ACTIVE`).
+The dev/build sections of the root `README.md` were folded in by plan 04 step 7 (persona
+start commands, config paths); refresh for phases 5/6 content: `maxConcurrentRuns`,
+`registration:` section, the six personas, single-run activation (`EXECUTION_MODE` /
+deprecated `SPRING_PROFILES_ACTIVE`).
 
 ### 6.8 Explicit no-ops (verified, §3.1)
 
@@ -534,10 +536,10 @@ A `docs/` file, not a README section: it is a maintainer/contributor record (~4-
 pages), while the README serves operators. Sections:
 
 1. **Fit persona binaries + the `bbrunner` superset (= run-controller)** — the five fit
-   personas are each their own binary `./runner/cmd/<persona>` (`cmd/tf`, `cmd/manual`,
+   personas are each their own binary `./cmd/<persona>` (`cmd/tf`, `cmd/manual`,
    `cmd/gitlab`, `cmd/github`,
    `cmd/azdevops`), each linking only its deps; `run-controller` is **not** a separate
-   binary — it is the `./runner/cmd/bbrunner` superset, which links all handlers + both
+   binary — it is the `./cmd/bbrunner` superset, which links all handlers + both
    dispatchers, selects the persona by subcommand (`bbrunner <persona>`), and
    auto-detects its dispatcher from the in-cluster k8s API (`rest.InClusterConfig()` /
    `KUBERNETES_SERVICE_HOST` ⇒ KubernetesJobDispatcher; else InProcessDispatcher;
@@ -545,7 +547,7 @@ pages), while the README serves operators. Sections:
    published `run-controller` image (default/auto mode) and as the local-dev /
    all-in-process build. **No `cmd/controller`.** The legacy `tfrunner` binary-name
    alias; persona ↔ image ↔ Identity-name table.
-2. **Package map** (D11) — every `runner/internal/*` package with its concept, the
+2. **Package map** (D11) — every `internal/*` package with its concept, the
    depguard direction rules (adapters ↛ consumers, only main wires, prometheus
    allowance, the §8.5 `log` deny), and the gate-excluded real-I/O files.
 3. **Execution model** — `dispatch.Loop` (capacity, claim, fail-fast taxonomy incl.
@@ -609,14 +611,14 @@ additions after the code they gate is clean, docs last (so they describe reality
 | 0 | **Preflight.** Run all §1 verifications on the phase-6d branch; branch `phase-7-cleanup`. Record: coverage numbers, A13 readiness markers, A14 manifest location. | nothing | A1–A14 verified (STOP-A) |
 | 1 | **Verification sweep (L4–L6, L19, L20, L36, L38).** Run every VERIFY row; each failure is triaged: trivial residue (gitignore lines, leftover grep hits) fixed in place, anything structural is a STOP. | at most residue deletions | grep gates green; sweep results table in the PR description |
 | 2 | **slog: shared packages.** `config`, `report` (process logging only, §8.2/§8.3 split first), `mgmt`, `gitsource`, `tofu` → `*slog.Logger`; §8.4 retargets 1–2. | signatures + call sites | full suite green; wire/golden tests untouched (STOP-B) |
-| 3 | **slog: dispatch/k8sjob/tf + personas + main.** Loop/dispatcher/engine process logging; persona attr replaces prefixes; per-run attr replaces `[RUN-<id>]` (§8.4.3); delete the `slog.NewLogLogger` bridges; §8.5 depguard deny. | rest of the tree | suite green incl. every characterization pin (SystemMessage bytes unchanged — §8.3); `grep -rn '"log"$' runner/internal` hits only the §8.2 allow |
+| 3 | **slog: dispatch/k8sjob/tf + personas + main.** Loop/dispatcher/engine process logging; persona attr replaces prefixes; per-run attr replaces `[RUN-<id>]` (§8.4.3); delete the `slog.NewLogLogger` bridges; §8.5 depguard deny. | rest of the tree | suite green incl. every characterization pin (SystemMessage bytes unchanged — §8.3); `grep -rn '"log"$' internal` hits only the §8.2 allow |
 | 4 | **Controller decrypt-failure fix (L14) — after STOP-D review.** `k8sjob.Dispatch` decrypt error path gains `reportRunFailure` with the actionable key-mismatch message; metric unchanged; flip the transcript-empty pin to assert register+FAILED-PATCH. | `internal/k8sjob` + its pin | new transcript pin green; all other controller goldens byte-identical |
-| 5 | **Single-run unification (L15) — STOP-E guarded.** `cmd/tf/main.go` single-run tail becomes: read file → `ClaimedRun` → tf handler with NoOp decryptor + provided runToken; the parallel DTO→engine glue is deleted. Exit semantics (R12 condition) preserved at the persona level. | `runner/cmd/tf/main.go`, `internal/tf` | single-run scenario suite green with zero assertion changes; exit-code tests green; if not ⇒ STOP-E (revert the step, record) |
+| 5 | **Single-run unification (L15) — STOP-E guarded.** `cmd/tf/main.go` single-run tail becomes: read file → `ClaimedRun` → tf handler with NoOp decryptor + provided runToken; the parallel DTO→engine glue is deleted. Exit semantics (R12 condition) preserved at the persona level. | `cmd/tf/main.go`, `internal/tf` | single-run scenario suite green with zero assertion changes; exit-code tests green; if not ⇒ STOP-E (revert the step, record) |
 | 6 | **e2e split (L3).** Build tag on the real-download/real-git tests; `task test:e2e`; verify `task coverage` totals unchanged. | test files, Taskfile | default `task test` runs offline (spot-check); tagged run passes locally |
 | 7 | **CI reshape (L1, L2, §5).** `lint` job; `test` job rename + tag-exclusion note; `images` consolidation; `e2e.yml`; verify `build-images.yml`/`pr-cleanup.yml`/`release*.yml` need nothing. | `.github/workflows/` | draft-PR run: lint+test+6 image legs green; e2e workflow dispatchable; job-name change coordinated with branch protection (flag §15.5) |
 | 8 | **File hygiene (L16–L18).** `.editorconfig` JVM sections out; `.agents/skills/backend-go` rewritten; k8s manifests moved to `containers/run-controller/k8s/` (+ commented probe example). | listed files | `task lint`/editors unaffected; skill commands execute; manifests `kubectl apply --dry-run=client` clean |
 | 9 | **Deprecation audit (L9, §7).** Wording unification through the shared helper; add missing warnings found; alias tests extended to assert the uniform message + link. | `internal/config`, persona files | alias test matrix green; one-startup-line rule verified in container smoke |
-| 10 | **Docs (L7, L8, L12, §6).** README rewrite; `docs/ARCHITECTURE.md`; `runner/README.md` refresh; config-sample flip + comments; §6.8 no-op verifications. | docs + samples | every README command executes; sample config boots the controller persona (config parse test); ARCHITECTURE follow-up register = §4 FUTURE rows exactly |
+| 10 | **Docs (L7, L8, L12, §6).** Root README rewrite + dev/build-section refresh (single root README); `docs/ARCHITECTURE.md`; config-sample flip + comments; §6.8 no-op verifications. | docs + samples | every README command executes; sample config boots the controller persona (config parse test); ARCHITECTURE follow-up register = §4 FUTURE rows exactly |
 | 11 | **Plan-file disposition (L40, §9.2).** `git mv` plans → `docs/plans/` + README + ERRATA.md; grep-gate path updates; tag the plan branch. | docs/plans/ | repo root contains no `PLAN_*.md`; gates green |
 | 12 | **Cross-repo lock-step + acceptance (L21, L22).** meshfed-release PR: readiness markers/pgrep hints for the slog format (§14); doc-truth verification of `how-to-run…` (expected no edit). Then the full local-dev-stack flow + ≥1 MANUAL and ≥1 TERRAFORM acceptance run + container smoke of all six images (healthz+metrics on default ports; legacy `PORT` override; `tfrunner` alias boot). | meshfed-release docs | evidence in PR description (STOP-F) |
 | 13 | **Self-review gate + PR.** P1–P8 walk; ledger cross-check: every §4 DO row maps to a diff hunk, every VERIFY row to a recorded result, every DROP/FUTURE row to an ARCHITECTURE.md line. PR description lists the two behavior deltas (L14, L15) and the log-format delta. | — | reviewer checklist; the ledger *is* the review script |

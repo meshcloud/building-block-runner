@@ -23,11 +23,11 @@ umbrella §1 verification steps (A1–A12)** — incorporated by reference — p
 
 | # | Assumption | Promised by | Verification step |
 |---|---|---|---|
-| T1 | `meshapi.SourceUpdateDTO`/`StepUpdateDTO` (the marshaled lean PATCH body the adapter produces from the changed steps, all fields `omitempty`) + the unified `report.Reporter{Register(RunStatus) error, Report(RunStatus) (abort bool, err error)}` over a run-scoped `RunPatcher`, stateless, link-based URL construction with `{sourceId}` substitution + missing-placeholder error. Ported handlers call `Report(RunStatus)` with only the changed/new steps present in `RunStatus.Steps` (backend upserts steps by id) and **discard the `abort` return** (no Observer/ticker for the ports; the handler still owns its own step dedup — stateless in the no-ticker sense). | 06A §4.3, steps 2 | read `runner/internal/report`; run the Go twins of C-P3–C-P7 |
-| T2 | `config.SingleRunMode` (`EXECUTION_MODE=single-run` OR `SPRING_PROFILES_ACTIVE` list-contains `kubernetes`, deprecation-logged), `config.BlockRunnerCompat` (incl. `privateKey`/`privateKeyFile` fields), `config.ResolvePrivateKey(log, fileKey, inlineKey)` reproducing `PrivateKeyLoader.kt:8-24` order (env `RUNNER_PRIVATE_KEY_FILE` > yaml file key > `/app/runner-private.pem`; missing file ⇒ inline fallback). | 06A §6.3–6.5 | read `runner/internal/config`; run its table tests. If 06A's reviewer deferred the `ResolvePrivateKey` *implementation* to 06B (06A flag §16.8), implement it here in step 3 against the fixed contract |
-| T3 | Shared `ClaimClassifier` (404 ⇒ no-run, 409 ⇒ no-run-logged, other ⇒ no-run-logged + `runner_poll_errors_total`, backoff 0) + persona wiring pattern (`cmd/manual/main.go` + its `cmd/bbrunner` superset registration), `MANAGEMENT_PORT`/`PORT` alias mechanics, R12 single-run exit tail, per-persona `containers/<persona>-block-runner/Dockerfile` pattern (direct entrypoint), `containers/<persona>-block-runner/runner-config.yml` layout, removal recipe, side-by-side comparison procedure + sanctioned-delta allowlist wording. | 06A §7, §8, §11.3, §12 | read `runner/cmd/manual/main.go`, `runner/cmd/bbrunner/main.go`, `containers/manual-block-runner/Dockerfile`; re-read 06A §11.3 evidence in its merged PR |
+| T1 | `meshapi.SourceUpdateDTO`/`StepUpdateDTO` (the marshaled lean PATCH body the adapter produces from the changed steps, all fields `omitempty`) + the unified `report.Reporter{Register(RunStatus) error, Report(RunStatus) (abort bool, err error)}` over a run-scoped `RunPatcher`, stateless, link-based URL construction with `{sourceId}` substitution + missing-placeholder error. Ported handlers call `Report(RunStatus)` with only the changed/new steps present in `RunStatus.Steps` (backend upserts steps by id) and **discard the `abort` return** (no Observer/ticker for the ports; the handler still owns its own step dedup — stateless in the no-ticker sense). | 06A §4.3, steps 2 | read `internal/report`; run the Go twins of C-P3–C-P7 |
+| T2 | `config.SingleRunMode` (`EXECUTION_MODE=single-run` OR `SPRING_PROFILES_ACTIVE` list-contains `kubernetes`, deprecation-logged), `config.BlockRunnerCompat` (incl. `privateKey`/`privateKeyFile` fields), `config.ResolvePrivateKey(log, fileKey, inlineKey)` reproducing `PrivateKeyLoader.kt:8-24` order (env `RUNNER_PRIVATE_KEY_FILE` > yaml file key > `/app/runner-private.pem`; missing file ⇒ inline fallback). | 06A §6.3–6.5 | read `internal/config`; run its table tests. If 06A's reviewer deferred the `ResolvePrivateKey` *implementation* to 06B (06A flag §16.8), implement it here in step 3 against the fixed contract |
+| T3 | Shared `ClaimClassifier` (404 ⇒ no-run, 409 ⇒ no-run-logged, other ⇒ no-run-logged + `runner_poll_errors_total`, backoff 0) + persona wiring pattern (`cmd/manual/main.go` + its `cmd/bbrunner` superset registration), `MANAGEMENT_PORT`/`PORT` alias mechanics, R12 single-run exit tail, per-persona `containers/<persona>-block-runner/Dockerfile` pattern (direct entrypoint), `containers/<persona>-block-runner/runner-config.yml` layout, removal recipe, side-by-side comparison procedure + sanctioned-delta allowlist wording. | 06A §7, §8, §11.3, §12 | read `cmd/manual/main.go`, `cmd/bbrunner/main.go`, `containers/manual-block-runner/Dockerfile`; re-read 06A §11.3 evidence in its merged PR |
 | T4 | The block-runner-core wire pins C-P1–C-P7 exist and are green (06B inherits, never re-writes). | 06A §3.3 | `./gradlew :block-runner-core:check`; grep the pin test names |
-| T5 | `dispatch.ClaimedRun.RawJson` carries the claimed run JSON **base64-encoded** (today's controller shape, `runapi.go:59`) and `Details` is the parsed `RunDetailsDTO` with `Links{Self, RegisterSource, UpdateSource, MeshstackBaseUrl}` (`go-meshapi-client/meshapi/dtos.go:19-28`). | Plan 05 §4.1 | read `runner/internal/dispatch`; `grep -n "RawJson" runner/internal/dispatch` |
+| T5 | `dispatch.ClaimedRun.RawJson` carries the claimed run JSON **base64-encoded** (today's controller shape, `runapi.go:59`) and `Details` is the parsed `RunDetailsDTO` with `Links{Self, RegisterSource, UpdateSource, MeshstackBaseUrl}` (`go-meshapi-client/meshapi/dtos.go:19-28`). | Plan 05 §4.1 | read `internal/dispatch`; `grep -n "RawJson" internal/dispatch` |
 | T6 | Handler-visible JSON decoding preserves number fidelity (`json.Decoder.UseNumber` or equivalent) — recorded as a template requirement in 06A §17 precisely because gitlab embeds run JSON in outbound payloads. | 06A §4.2/§17 | read the decode path; run 06A's M-P3 Go twin |
 | T7 | The Kotlin gitlab module + block-runner-core are byte-identical to `main` @ `c3fce61` (all §2 citations hold); `./gradlew :gitlab-block-runner:check` green on the phase-6a branch. | Umbrella A10, 06A scope | `git diff main..phase-6a-manual -- gitlab-block-runner/ block-runner-core/` — tests-only additions (the 06A C-pins) |
 | T8 | `crypto.MeshCertBasedCrypto.DecryptMeshCertBased` errors on empty input (`"encrypted value empty or too short"`, `go-meshapi-client/crypto/meshcertbasedcrypto.go:117-132`) while Kotlin's `decrypt("")` returns `""` (`MeshCertDecryptionService.kt:34-37`) — the `meshapi.Decryptor` seam (plan 03/05) either already skips empty strings or 06B adds that rule (§4.4). | Current `main` + plan 03 §5.2 | read the `Decryptor` implementation; scratch test `Decrypt("")` |
@@ -246,7 +246,7 @@ contract). JSON-body assertions compare parsed JSON with null ≡ absent (06A §
 
 ## 4. Go handler design
 
-Package `runner/internal/gitlab` (D11). Illustrative signatures only; umbrella §5.3
+Package `internal/gitlab` (D11). Illustrative signatures only; umbrella §5.3
 shape followed exactly (deviations = STOP-D via §4.6).
 
 ### 4.1 Handler
@@ -447,7 +447,7 @@ type Config struct {
     Api               config.Api // url + auth (API key wins, umbrella A6)
     PrivateKey        string     // inline PEM (blockrunner.privateKey — the Kotlin key)
     PrivateKeyFile    string     // path (blockrunner.privateKeyFile / RUNNER_PRIVATE_KEY_FILE)
-    MaxConcurrentRuns int        // new, default 1 (plan 05)
+    MaxConcurrentRuns int        // new, default 3 (plan 05)
     Registration      *dispatch.RegistrationConfig // opt-in (plan 05 §9)
 }
 ```
@@ -500,7 +500,7 @@ published-image defaults is a **phase-7** ledger item.
   06A §7.1). Persona bootstrap sets
   `meshapi.Identity{Name: "gitlab-block-runner", Version: build-or-VERSION}` (06A §6.2).
 - `dispatch.NewLoop(LoopConfig{PollInterval: 10s, ClaimBackoff: 0, MaxConcurrent:
-  cfg.MaxConcurrentRuns /* default 1 */}, …)` + `dispatch.NewInProcess(map[…]{
+  cfg.MaxConcurrentRuns /* default 3 */}, …)` + `dispatch.NewInProcess(map[…]{
   meshapi.RunnerTypeGitLabPipeline: handler})` — the type key via
   `meshapi.ToRunnerType(ImplTypeGitLabCICD)` (`dtos.go:285-295`), no new literals
   (umbrella §7.12). Shared `ClaimClassifier` (T3), `Done()` wake, graceful shutdown =
@@ -548,7 +548,7 @@ non-zero (the sanctioned delta, baseline pin G-P13).
 The 06A §8 template, mechanically repeated:
 
 - New per-persona `containers/gitlab-block-runner/Dockerfile` building only the gitlab binary
-  (`go build ./runner/cmd/gitlab`): same alpine digest pin, `ca-certificates bash` only
+  (`go build ./cmd/gitlab`): same alpine digest pin, `ca-certificates bash` only
   (HTTP-only runner), meshcloud uid 2000, the fit binary at `/app/gitlab-block-runner`
   (its own binary — no shared `bbrunner`, no symlink), `ENV PORT=8080`, `EXPOSE 8080`,
   and a **direct** `ENTRYPOINT ["/app/entrypoint.sh", "/app/gitlab-block-runner"]` (no
@@ -565,7 +565,7 @@ The 06A §8 template, mechanically repeated:
 - CI flip in the same PR as removal (§12): `ci.yml` — drop the gitlab entries from
   `jvm-runners-ci` (`ci.yml:34-35`) and `jvm-runners-image` (`:70-71`), add the
   `go-runners-image` leg (`dockerfile: containers/gitlab-block-runner/Dockerfile`) plus a
-  `./runner/cmd/gitlab` leg to the go build matrix; `build-images.yml:38-40` — the gitlab
+  `./cmd/gitlab` leg to the go build matrix; `build-images.yml:38-40` — the gitlab
   leg becomes `dockerfile: containers/gitlab-block-runner/Dockerfile` (a per-persona
   Dockerfile — no shared `target:` stage; drop `runner-module:`).
 - JVM `command:`-override incompatibility: same flag wording as 06A §16.9 (umbrella
@@ -584,9 +584,9 @@ until step 9.
 | 2 | **`meshapi.DecryptInputs`** (§4.4) + the `Decryptor` empty-string guard (T8) if missing. | `internal/meshapi` | table-driven tests: STRING/CODE/FILE decrypted, other-sensitive-type skip+warn, non-sensitive untouched, impl secret untouched, unknown-field passthrough, `UseNumber` fidelity, NoOp identity; cross-checked against a `MeshCertDecryptionServiceTest` fixture ciphertext (umbrella A9 style); `meshapi` stays ≥90 |
 | 3 | **`internal/gitlab` package:** `ExternalCallError` (§4.5), `sanitizeBaseUrl`, error classification, `valueString`, `buildTriggerForm`, `triggerPipeline`. | `internal/gitlab` | unit tests for the pure functions (sanitize table = `UrlSanitizerServiceTest` port, classification table, stringify table incl. G-P8 rows); fake-GitLab transcript tests for the multipart request (G-P1/G-P2 twins) and response taxonomy (G-P3–G-P5, G-P10 twins) |
 | 4 | **Handler.** `gitlab.Config`, `NewHandler`, `Execute` flow (§4.1). | `internal/gitlab` | Go scenario suite (§10.1): run JSON in → fake meshStack + fake GitLab transcripts out, matching the Kotlin pins |
-| 5 | **Persona wiring, polling.** `cmd/gitlab/main.go` + register the gitlab handler in the `cmd/bbrunner` superset; mgmt on 8103; loop + classifier + metrics; cert decryptor from resolved key. | `runner/cmd/gitlab/main.go`, `runner/cmd/bbrunner/main.go` | loop-wiring scenario (claim→register→trigger→handover→immediate re-claim→404); `cmd/bbrunner` subcommand-dispatch row; alias-precedence test (`MANAGEMENT_PORT`>`PORT`>8103); key-resolution failure = actionable startup error |
+| 5 | **Persona wiring, polling.** `cmd/gitlab/main.go` + register the gitlab handler in the `cmd/bbrunner` superset; mgmt on 8103; loop + classifier + metrics; cert decryptor from resolved key. | `cmd/gitlab/main.go`, `cmd/bbrunner/main.go` | loop-wiring scenario (claim→register→trigger→handover→immediate re-claim→404); `cmd/bbrunner` subcommand-dispatch row; alias-precedence test (`MANAGEMENT_PORT`>`PORT`>8103); key-resolution failure = actionable startup error |
 | 6 | **Single-run mode.** `SingleRunMode` activation, file source, NoOp decryptor, R12 exit tail. | `cmd/gitlab/main.go` (+ glue) | single-run scenario twin of G-P12 (pre-decrypted fixture ⇒ captured wire equal to the Kotlin capture modulo sanctioned deltas); exit-condition tests (G-P13 twins incl. the flagged tightening) |
-| 7 | **Gate + tooling.** `thresholds.txt` += `runner/internal/gitlab 90` (no exclusions); depguard: `gitlab` imports `dispatch`/`meshapi`/`report`/`config` + stdlib only; nothing imports `gitlab` but main. | `tools/coverage/*`, `.golangci.yml` | induced-failure check; `task coverage` green |
+| 7 | **Gate + tooling.** `thresholds.txt` += `internal/gitlab 90` (no exclusions); depguard: `gitlab` imports `dispatch`/`meshapi`/`report`/`config` + stdlib only; nothing imports `gitlab` but main. | `tools/coverage/*`, `.golangci.yml` | induced-failure check; `task coverage` green |
 | 8 | **Image.** `containers/gitlab-block-runner/Dockerfile` + `containers/gitlab-block-runner/runner-config.yml` (§8, incl. dev key §6.3). | containers/ | `docker build -f containers/gitlab-block-runner/Dockerfile`; container smoke: healthz `OK` on 8080, boots to claim loop against a stub |
 | 9 | **Acceptance gate (§11).** Side-by-side transcripts + manual smoke against a real GitLab; outer local-dev-stack/acceptance net green. | — | STOP-E lives here; evidence in the PR description |
 | 10 | **Removal.** Delete `gitlab-block-runner/`; `settings.gradle:6` include dropped; CI legs flipped per §8; grep gate. | module dir, gradle, workflows | full CI green incl. the flipped image leg; remaining modules' `./gradlew check` green |
@@ -628,7 +628,7 @@ temp files, test keypair).
 
 ### 10.3 Gate
 
-`tools/coverage/thresholds.txt` += `…/runner/internal/gitlab 90`; **no exclusion
+`tools/coverage/thresholds.txt` += `…/internal/gitlab 90`; **no exclusion
 entries** (whole package hermetic — fake meshStack + `httptest` GitLab). Touched
 shared packages (`meshapi`, `config`) stay ≥90 via step-2/3 tests. The package is
 ~350 lines of trigger/payload/error logic fully driven by the scenario suite;

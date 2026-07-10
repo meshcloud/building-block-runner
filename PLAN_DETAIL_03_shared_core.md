@@ -89,7 +89,7 @@ the retry policy is then wrong; replan the policy, do not weaken the pin.
 - Capability-config registration API, claim-and-fail-fast → **phase 5** (D5).
 - Any DTO unification of the two PATCH body shapes (`StatusUpdateDTO` vs
   `RunStatusUpdateDTO`) — both are frozen wire shapes (§8).
-- Module consolidation, `runner/` module, per-persona `cmd/<persona>` mains + `cmd/bbrunner` superset (D2) → **phase 4**.
+- Root Go module consolidation, per-persona `cmd/<persona>` mains + `cmd/bbrunner` superset (D2) → **phase 4**.
 - k8s dispatch restructuring (`kubernetes.go` stays a monolithic adapter; only its
   `AppConfig` reads become parameters) → **phase 5** (`KubernetesJobDispatcher`).
 - Cross-repo SDK extraction (explicitly out per high-level §8).
@@ -209,26 +209,27 @@ tests + acceptance checks, §6/§9); shared packages join the D6 gate at ≥90.
 
 ### 5.1 Module decision: shared packages live in `go-meshapi-client` during this phase
 
-D11's destination (`runner/internal/{meshapi,crypto,config,report}`) is **physically
-unreachable in phase 3**: Go's `internal/` rule means packages under `runner/internal/…`
-can only be imported from within the `runner` module — but the tf runner and controller
+D11's destination (`internal/{meshapi,crypto,config,report}` at repo root) is **physically
+unreachable in phase 3**: Go's `internal/` rule means packages under `internal/…`
+can only be imported from within the root module — but the tf runner and controller
 mains live in their own modules until phase 4. The alternatives:
 
-- **(rejected) new `runner` module now with temporarily-exported packages:** creates a
+- **(rejected) new root module now with temporarily-exported packages:** creates a
   public importable API surface in a public repo that phase 4 immediately breaks; also
-  contradicts D2 ("runner module = the binary", phase 4).
+  contradicts D2 (the module is the binary, phase 4).
 - **(chosen) grow `go-meshapi-client`:** it is already the shared module both binaries
   import via `replace` + `go.work` (`run-controller/go.mod`, `tf-block-runner/go.mod`,
   `go.work`), it is dependency-light, and phase 4's consolidation becomes a mechanical
-  `git mv go-meshapi-client/<pkg> runner/internal/<pkg>` + import rewrite (same trick as
+  `git mv go-meshapi-client/<pkg> internal/<pkg>` + import rewrite, with the `go.work`
+  workspace removed entirely (the root module needs no `use` directive) (same trick as
   plan 02 §5.1). Package names are chosen now exactly as their D11 destinations:
 
-| Phase 3 (module `…/go-meshapi-client`) | Phase 4+ (module `…/runner`) |
+| Phase 3 (module `…/go-meshapi-client`) | Phase 4+ (module `…/building-block-runner`) |
 |---|---|
-| `meshapi` (client, DTOs, errors, retry, run-JSON decryption) | `runner/internal/meshapi` |
-| `crypto` (unchanged algorithms) | `runner/internal/crypto` |
-| `config` (new) | `runner/internal/config` |
-| `report` (new) | `runner/internal/report` |
+| `meshapi` (client, DTOs, errors, retry, run-JSON decryption) | `internal/meshapi` |
+| `crypto` (unchanged algorithms) | `internal/crypto` |
+| `config` (new) | `internal/config` |
+| `report` (new) | `internal/report` |
 
 Dependency cost: `config` adds `gopkg.in/yaml.v2` to the module (already used by both
 consumers); `report` adds nothing (imports `meshapi` for the DTO mapping). Prometheus
@@ -691,8 +692,8 @@ working against any meshfed throughout (D10) because the wire is frozen.
 
 ## 12. Flags — findings the high-level/prior plans did not anticipate
 
-1. **Go's `internal/` visibility rule forecloses the "create `runner/` early" option**:
-   `runner/internal/*` cannot be imported from the legacy modules, so D11's target layout
+1. **Go's `internal/` visibility rule forecloses the "create the root module early" option**:
+   `internal/*` cannot be imported from the legacy modules, so D11's target layout
    is unreachable until phase 4 moves the mains. Shared packages therefore transit
    through `go-meshapi-client` (§5.1) — the high-level plan never says where phase-3
    packages live; this plan decides it.

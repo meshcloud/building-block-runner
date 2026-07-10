@@ -20,13 +20,13 @@ Plans 00–05 and 06A–C are **not implemented yet**. Implementation begins by 
 | # | Assumption | Promised by | Verification step |
 |---|---|---|---|
 | D1 | The github module and block-runner-core are byte-identical to `main` @ `c3fce61` (all §2 file:line citations hold). | Plans 00–06C scope (umbrella A10) | `git diff main..phase-6c-azdevops -- github-block-runner/ block-runner-core/` — only the 06A C-pin test additions (§3.3 there) appear |
-| D2 | 06A template artifacts exist and are consumed by 06B/06C already: the unified `report.Reporter{Register(RunStatus) error; Report(RunStatus) (abort bool, err error)}` (abort discarded here; stateless, link-based run-scoped client, `{sourceId}` substitution) whose marshaled lean PATCH body stays `meshapi.SourceUpdateDTO`/`StepUpdateDTO`, `config.SingleRunMode`, `config.BlockRunnerCompat`, `config.ResolvePrivateKey`, the shared `ClaimClassifier`, the R12 single-run exit tail, the Dockerfile final-stage pattern + `containers/<persona>/runner-config.yml` layout, the removal recipe + CI-flip mechanics, the side-by-side transcript procedure + delta allowlist wording. | 06A §4.3/§6.3–6.5/§7/§8/§11.3 | read `runner/internal/{report,config}`; `grep -rn "report.Reporter\|SingleRunMode\|ResolvePrivateKey" runner/` |
-| D3 | 06B artifacts exist: `ExternalCallError{UserMessage, SystemMessage, StatusCode, RequestUrl, ResponseBody}` (the `MeshHttpException` twin, 06A §4.4 contract) and `meshapi.DecryptInputs` (input-only decryption: sensitive STRING/CODE/FILE decrypted, other types logged + left as-is, impl secrets untouched — umbrella §4 row 8, signature reviewed against 06D's needs). | 06B (first consumer), umbrella §4 rows 8/14 | `grep -rn "ExternalCallError\|DecryptInputs" runner/internal` and read both contracts |
-| D4 | 06C established the in-handler sync-poll pattern (ctx-cancelable clock waits, 10s/30min constants as constructor defaults, poll-error-resilience shape) that 06D mirrors; poll-loop helpers are deliberately **local** per runner (06A §17 "gaps left to owners" — different step semantics), so no shared poller is expected. | 06C, 06A §17 | read `runner/internal/azdevops` poller; confirm no shared `poll` package exists |
-| D5 | `dispatch.RunHandler`/`ClaimedRun` per plan 05 §4 (A1): handler owns its timeout, decrypts per run, runToken-only run-scoped reporting, run-level FAILED reported by the handler then `nil` returned. | Plan 05 §4/§17 | read `runner/internal/dispatch` |
-| D6 | `meshapi.RunDetailsDTO` models everything the github service reads: `Metadata.Uuid`, `Spec.Behavior`, `Spec.RunToken`, `Spec.BuildingBlock.Spec.Inputs[]{Key, Value, Type, IsSensitive, IsEnvironment}`, `Spec.Definition.Spec.Implementation` (raw JSON), `Links{Self, RegisterSource, UpdateSource, MeshstackBaseUrl}`; `meshapi.GithubImplementation` carries all 11 fields incl. `OmitRunObjectInput` (`go-meshapi-client/meshapi/dtos.go:130-144` today, moved by plan 04; cross-checked against `MeshBuildingBlockGithubImplementation`, `MeshBuildingBlockRun.kt:179-198` — umbrella §10.11: no DTO gap). | Plans 03/04 moves | read `runner/internal/meshapi/dtos.go` |
+| D2 | 06A template artifacts exist and are consumed by 06B/06C already: the unified `report.Reporter{Register(RunStatus) error; Report(RunStatus) (abort bool, err error)}` (abort discarded here; stateless, link-based run-scoped client, `{sourceId}` substitution) whose marshaled lean PATCH body stays `meshapi.SourceUpdateDTO`/`StepUpdateDTO`, `config.SingleRunMode`, `config.BlockRunnerCompat`, `config.ResolvePrivateKey`, the shared `ClaimClassifier`, the R12 single-run exit tail, the Dockerfile final-stage pattern + `containers/<persona>/runner-config.yml` layout, the removal recipe + CI-flip mechanics, the side-by-side transcript procedure + delta allowlist wording. | 06A §4.3/§6.3–6.5/§7/§8/§11.3 | read `internal/{report,config}`; `grep -rn "report.Reporter\|SingleRunMode\|ResolvePrivateKey" .` |
+| D3 | 06B artifacts exist: `ExternalCallError{UserMessage, SystemMessage, StatusCode, RequestUrl, ResponseBody}` (the `MeshHttpException` twin, 06A §4.4 contract) and `meshapi.DecryptInputs` (input-only decryption: sensitive STRING/CODE/FILE decrypted, other types logged + left as-is, impl secrets untouched — umbrella §4 row 8, signature reviewed against 06D's needs). | 06B (first consumer), umbrella §4 rows 8/14 | `grep -rn "ExternalCallError\|DecryptInputs" internal` and read both contracts |
+| D4 | 06C established the in-handler sync-poll pattern (ctx-cancelable clock waits, 10s/30min constants as constructor defaults, poll-error-resilience shape) that 06D mirrors; poll-loop helpers are deliberately **local** per runner (06A §17 "gaps left to owners" — different step semantics), so no shared poller is expected. | 06C, 06A §17 | read `internal/azdevops` poller; confirm no shared `poll` package exists |
+| D5 | `dispatch.RunHandler`/`ClaimedRun` per plan 05 §4 (A1): handler owns its timeout, decrypts per run, runToken-only run-scoped reporting, run-level FAILED reported by the handler then `nil` returned. | Plan 05 §4/§17 | read `internal/dispatch` |
+| D6 | `meshapi.RunDetailsDTO` models everything the github service reads: `Metadata.Uuid`, `Spec.Behavior`, `Spec.RunToken`, `Spec.BuildingBlock.Spec.Inputs[]{Key, Value, Type, IsSensitive, IsEnvironment}`, `Spec.Definition.Spec.Implementation` (raw JSON), `Links{Self, RegisterSource, UpdateSource, MeshstackBaseUrl}`; `meshapi.GithubImplementation` carries all 11 fields incl. `OmitRunObjectInput` (`go-meshapi-client/meshapi/dtos.go:130-144` today, moved by plan 04; cross-checked against `MeshBuildingBlockGithubImplementation`, `MeshBuildingBlockRun.kt:179-198` — umbrella §10.11: no DTO gap). | Plans 03/04 moves | read `internal/meshapi/dtos.go` |
 | D7 | `crypto.MeshCertBasedCrypto` decrypts `appPem` in polling mode exactly as the controller does in k8s mode (`run-controller/controller/decryption.go:65-79` GitHub branch: `AppPem` non-empty ⇒ `DecryptMeshCertBased`); single-run mode receives the pre-decrypted PEM. | Umbrella A9, plan 05 §5 | run `crypto` tests; the controller goldens |
-| D8 | Run JSON decoding on the claim/file path preserves number fidelity (`json.Decoder.UseNumber()` or equivalent), recorded as a template requirement in 06A §17 precisely because github's `buildingBlockRun` payload embeds run values. | 06A §4.2/§17 | `grep -rn "UseNumber" runner/internal` |
+| D8 | Run JSON decoding on the claim/file path preserves number fidelity (`json.Decoder.UseNumber()` or equivalent), recorded as a template requirement in 06A §17 precisely because github's `buildingBlockRun` payload embeds run values. | 06A §4.2/§17 | `grep -rn "UseNumber" internal` |
 | D9 | The block-runner-core wire pins C-P1–C-P7 exist (06A §3.3) and are green — 06D deletes them **with** `block-runner-core` (§12); their Go twins are the surviving pin. | 06A step 1 | `./gradlew :block-runner-core:check` green on the phase-6c branch |
 | D10 | The Kotlin github suite is green as-is: `./gradlew :github-block-runner:check` passes on the phase-6c branch. | Current `main` CI | run it once before writing pins |
 | D11 | After 06A–C, the only remaining `jvm-runners-ci` matrix entries are `block-runner-core` and `github-block-runner`, and the only `jvm-runners-image`/`build-images.yml` JVM leg is github (`ci.yml:27-36`, `:66-73` and `build-images.yml:35-37` on `main`, shrunk by A/B/C). | 06A–C removal steps | read both workflows on the phase-6c branch |
@@ -299,7 +299,7 @@ regardless), the `Instant.now()` JWT clock, the exit-0 swallow (G-P11).
 
 ## 4. Go handler design
 
-Package `runner/internal/github` (D11). Illustrative signatures only; umbrella §5.3
+Package `internal/github` (D11). Illustrative signatures only; umbrella §5.3
 shape exactly.
 
 ### 4.1 Handler
@@ -466,7 +466,7 @@ type Config struct {
     Uuid              string
     Api               config.Api
     PrivateKey        config.PrivateKeySource // via config.ResolvePrivateKey (06A §6.5)
-    MaxConcurrentRuns int                     // new, default 1 (plan 05)
+    MaxConcurrentRuns int                     // new, default 3 (plan 05)
     Registration      *dispatch.RegistrationConfig // opt-in (plan 05 §9)
 }
 ```
@@ -529,7 +529,7 @@ argv[0] multiplexing. Only the deltas are listed:
 
 The 06A §8 template stage, instantiated:
 
-- `containers/github-block-runner/Dockerfile` builds `./runner/cmd/github` as its own
+- `containers/github-block-runner/Dockerfile` builds `./cmd/github` as its own
   image: alpine (same digest pin), `ca-certificates bash`
   only (HTTP-only), uid 2000, the persona binary at `/app/github-block-runner`,
   `ENV PORT=8080`, `EXPOSE 8080`, **direct entrypoint**
@@ -545,10 +545,10 @@ The 06A §8 template stage, instantiated:
   `SPRING_PROFILES_ACTIVE: kubernetes` honor (§6.2).
 - CI flip in the same PR as removal (§12): `ci.yml` github entries out of the JVM
   matrices, a `github-block-runner` image leg into `go-runners-image`. The leg builds
-  `./runner/cmd/github` via `containers/github-block-runner/Dockerfile`;
+  `./cmd/github` via `containers/github-block-runner/Dockerfile`;
   `build-images.yml:35-37` flips to `dockerfile: containers/github-block-runner/Dockerfile`
-  (no `target:`), paired with a `go build ./runner/cmd/...` build-matrix leg
-  `./runner/cmd/github`.
+  (no `target:`), paired with a `go build ./cmd/...` build-matrix leg
+  `./cmd/github`.
   Because 06D also deletes the now-empty JVM jobs, the flip and the §12 teardown are
   one motion here.
 - JVM `command:`-override incompatibility: same wording as 06A §16.9 (accepted,
@@ -567,7 +567,7 @@ Always-green steps for one reviewable single-commit PR; after every step `task t
 | 3 | **GitHub client.** `githubClient` (§4.3) + fake-GitHub transcript tests: the `GithubClientTest` twins (headers, paths, payload bytes, 422 heuristic table, permission gate). | `internal/github` | transcript suite green |
 | 4 | **Inputs builder.** Outbound payload struct + `dispatchInputs` (§4.4): `BuildingBlockWorkflowInputsBuilderTest` twins + Mode-A parsed-JSON parity against the Kotlin byte fixture (`GithubBlockRunnerServiceTest.kt:155-260` expected JSON) + G-P10 leak test. | `internal/github` | unit + fixture-parity tests |
 | 5 | **Handler + poller.** `NewHandler`/`Execute` + `pollWorkflow` (§4.1/§4.5): the scenario suite (§10.1) — run JSON in → fake meshStack + fake GitHub transcripts out, async/sync/error paths, fake clock driving find window and 30-min timeout. | `internal/github` | scenario suite matches the Kotlin pins |
-| 6 | **Persona wiring.** `cmd/github/main.go` + register the handler in the `cmd/bbrunner` superset; mgmt 8102; single-run tail. | `runner/cmd/github/main.go`, `runner/cmd/bbrunner` | loop-wiring scenario; alias precedence (`MANAGEMENT_PORT`>`PORT`>8102); single-run scenario incl. R12/G-P11 twins |
+| 6 | **Persona wiring.** `cmd/github/main.go` + register the handler in the `cmd/bbrunner` superset; mgmt 8102; single-run tail. | `cmd/github/main.go`, `cmd/bbrunner` | loop-wiring scenario; alias precedence (`MANAGEMENT_PORT`>`PORT`>8102); single-run scenario incl. R12/G-P11 twins |
 | 7 | **Gate + tooling.** `thresholds.txt` += `internal/github 90` (no exclusions); depguard: `github` imports `dispatch`/`meshapi`/`report`/`config` + stdlib only. | `tools/coverage/*`, `.golangci.yml` | induced-failure check; `task coverage` |
 | 8 | **Image.** Dockerfile stage + `containers/github-block-runner/runner-config.yml` (§8). | containers/ | `docker build --target github-block-runner` + healthz/claim-loop smoke |
 | 9 | **Acceptance gate (§11).** Side-by-side transcripts + real-GitHub smoke. | — | STOP-E; evidence in the PR description |
@@ -615,7 +615,7 @@ smoke. All hermetic (fake transport, fake clock).
 
 ### 10.3 Gate
 
-`thresholds.txt` += `github.com/meshcloud/building-block-runner/runner/internal/github 90`;
+`thresholds.txt` += `github.com/meshcloud/building-block-runner/internal/github 90`;
 **no exclusion entries** (whole package hermetic — fake HTTP for both meshStack and
 GitHub). Shortfall ⇒ STOP-C (add scenario cases). `-race` on; the fake clock keeps the
 poller deterministic. Keep-as-unit list is exactly: `Test_AppToken`, `Test_ParseAppPem`,
@@ -660,7 +660,7 @@ STOP-E: only after this gate do steps 10–11 land.
 3. `ci.yml`: drop the github entries from `jvm-runners-ci` and `jvm-runners-image`;
    add the go image leg (§8).
 4. `build-images.yml`: github leg → `dockerfile: containers/github-block-runner/Dockerfile`,
-   build-matrix leg `./runner/cmd/github` (no `target:`, drop `runner-module:`).
+   build-matrix leg `./cmd/github` (no `target:`, drop `runner-module:`).
 
 ### 12.2 JVM machinery teardown (step 11 — phase exit "Gradle build gone")
 

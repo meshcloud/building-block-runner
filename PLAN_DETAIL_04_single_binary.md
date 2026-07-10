@@ -1,7 +1,7 @@
 # Detail Plan 04 — Per-Persona Binaries & Module Consolidation (Phase 4)
 
 **Binary model:** each fit persona is its own `main` package under
-`./runner/cmd/<persona>` producing its own binary; images ship that binary directly as
+`./cmd/<persona>` producing its own binary; images ship that binary directly as
 ENTRYPOINT (no argv[0] multiplexing, no symlinks). `cmd/bbrunner` is **both the controller
 and the superset**: it links all handlers + both dispatchers (`KubernetesJobDispatcher`
 from `internal/k8sjob`, `InProcessDispatcher` from `internal/dispatch`) and auto-detects
@@ -21,10 +21,14 @@ through **phase 6**, at which point bbrunner is the full superset.
 (§5 high-level plan) · **Binding:** §3 P1–P8, D1 (persona = binary; mode stays
 env/config inside a persona), D2 (one module), D7 (config aliases), D8 (per-persona
 binary / thin images / published names stay), D10 (rollout compat), D11 (module at
-`./runner`, flat `internal/` concept packages; `cmd/*` wiring-only, exempt), D12
+repo root, flat `internal/` concept packages; `cmd/*` wiring-only, exempt), D12
 (`MANAGEMENT_PORT` — plan 03 §5.6 explicitly deferred the listener unification,
 per-persona defaults and standalone-runner metrics to this phase), D14 (CI reshaped only
-where image builds strictly need it) of `PLAN_HIGH_LEVEL.md`.
+where image builds strictly need it) of `PLAN_HIGH_LEVEL.md`. The consolidated Go module
+lands at the **repo root** (there is no `runner/` subdirectory); the root `go.mod`
+coexists with the still-Kotlin/Gradle runner dirs (separate build systems, deleted in
+phase 6/7) — Go tooling ignores them, so `go test ./...` at root compiles only Go
+packages.
 
 Phase character: **behavior-preserving on every frozen contract** (wire shapes, headers,
 k8s Job contract, image names, entrypoint paths, healthz port defaults, metric names),
@@ -83,10 +87,12 @@ the new layout — D10's outer safety net; diagnose/replan before merging.
 
 **In:**
 
-- New Go module `github.com/meshcloud/building-block-runner/runner` at `./runner` (D11)
-  with a fit per-persona entrypoint `runner/cmd/tf/main.go` (a `package main` linking
+- New Go module `github.com/meshcloud/building-block-runner` at the repo **root** (D11;
+  no `runner/` subdirectory — the root module coexists with the still-Kotlin/Gradle
+  runner dirs, which Go tooling ignores and which are deleted in phase 6/7)
+  with a fit per-persona entrypoint `cmd/tf/main.go` (a `package main` linking
   **only** its persona's deps — go-git+terraform-exec+hc-install, **not** k8s) and the
-  `runner/cmd/bbrunner/main.go` controller/superset entrypoint — a `package main` linking
+  `cmd/bbrunner/main.go` controller/superset entrypoint — a `package main` linking
   all handlers + both dispatchers (`KubernetesJobDispatcher` + `InProcessDispatcher`) that
   auto-detects the in-cluster k8s API at startup and is shipped as the `run-controller`
   image. The fit binaries stay minimal/disjoint; `cmd/bbrunner` links everything. Optional
@@ -94,9 +100,9 @@ the new layout — D10's outer safety net; diagnose/replan before merging.
 - Module consolidation: `git mv` of
   `tf-block-runner/internal/{tf,gitsource,tofu}`,
   `go-meshapi-client/{meshapi,crypto,config,report}`, `run-controller/controller` into
-  `runner/internal/…`; the two `build` packages merge into `runner/internal/build`;
+  `internal/…`; the two `build` packages merge into `internal/build`;
   the three legacy modules, both legacy mains, `go.work` + `go.work.sum` are deleted.
-- D12 completion (the part plan 03 §5.6 deferred here): `runner/internal/mgmt` —
+- D12 completion (the part plan 03 §5.6 deferred here): `internal/mgmt` —
   one management listener per process serving `/healthz` **and** `/metrics` on
   `MANAGEMENT_PORT` with per-persona defaults (§4.3), controller finally gains healthz,
   tf gains metrics, plus the new generic standalone-runner metrics wired into the tf
@@ -109,7 +115,7 @@ the new layout — D10's outer safety net; diagnose/replan before merging.
   Legacy `/app/tfrunner` stays reachable as a plain duplicate of the single-purpose tf
   binary. The two legacy Dockerfiles die; runtime assets move to `containers/<persona>/`.
 - Workflows: the *minimum* edits that keep tests/image builds working against the new
-  layout — `ci.yml` go test leg (one leg, `runner/`) and `build-images.yml` matrix
+  layout — `ci.yml` go test leg (one leg, at repo root) and `build-images.yml` matrix
   `file`/`target` where the `run-controller` leg builds `./cmd/bbrunner` and the
   `tf-block-runner` leg builds `./cmd/tf` — D14 boundary argued in §4.5.
 - Taskfile/thresholds/depguard/README path updates in lock-step with the moves.
@@ -267,13 +273,15 @@ bridge (consistent with plan 03's shared-core ruling). Every logger parameter be
 
 ### 4.1 Fit per-persona entrypoints & the `bbrunner` controller/superset (D1, D2, D8, D11)
 
-**Module path:** `github.com/meshcloud/building-block-runner/runner` at `./runner`.
+**Module path:** `github.com/meshcloud/building-block-runner` at the repo **root** (the
+root `go.mod` coexists with the still-Kotlin/Gradle runner dirs — separate build systems,
+deleted phase 6/7 — which Go tooling ignores).
 **Image names = published image names** (D8): `tf-block-runner`, `run-controller`. There
 is no argv[0] multiplexing and no persona-selecting symlinks. The `run-controller` image
 ships `cmd/bbrunner` directly; the fit `tf-block-runner` image ships `cmd/tf`.
 
 **Layout — fit `cmd/<persona>` binaries + one `cmd/bbrunner` controller/superset:**
-each fit persona is its own `main` package under `runner/cmd/`, linking **only** its
+each fit persona is its own `main` package under `cmd/`, linking **only** its
 persona's dependency tree; `cmd/bbrunner` links everything and is both the k8s controller
 and the in-process superset. This is the substance of D2's "`cmd/` persona registry", and
 D11 is satisfied by an explicit carve-out: **`cmd/*` is `package main`, wiring only
@@ -282,8 +290,8 @@ concept-package depth/naming rules**, which govern only `internal/*`.
 
 | Entrypoint | Package | Links | Role |
 |---|---|---|---|
-| `runner/cmd/tf/main.go` | `main` | go-git + terraform-exec + hc-install (+ tofu); **not** k8s | tf-block-runner fit persona binary (dispatched-Job image + slim standalone runner) |
-| `runner/cmd/bbrunner/main.go` | `main` | controller + superset; **all** handlers + both dispatchers (`KubernetesJobDispatcher` + `InProcessDispatcher`) | **auto-detects** k8s at startup (in-cluster ⇒ dispatch Jobs; else ⇒ in-process); default (no subcommand) = auto controller/superset; optional `bbrunner <persona>` forces one persona in-process for local-dev. **Shipped AS the `run-controller` image** (NOT optional) |
+| `cmd/tf/main.go` | `main` | go-git + terraform-exec + hc-install (+ tofu); **not** k8s | tf-block-runner fit persona binary (dispatched-Job image + slim standalone runner) |
+| `cmd/bbrunner/main.go` | `main` | controller + superset; **all** handlers + both dispatchers (`KubernetesJobDispatcher` + `InProcessDispatcher`) | **auto-detects** k8s at startup (in-cluster ⇒ dispatch Jobs; else ⇒ in-process); default (no subcommand) = auto controller/superset; optional `bbrunner <persona>` forces one persona in-process for local-dev. **Shipped AS the `run-controller` image** (NOT optional) |
 
 Each fit `cmd/<persona>/main.go` body is the verbatim post-phase-3 main body of that
 persona (identity, config read, signal-driven `Stop()`, `wg.Wait()`), so no argv/flag
@@ -335,10 +343,10 @@ func run(args []string) error
 
 ### 4.2 Identity & version (single `build` package)
 
-`runner/internal/build` with the single `Version = "dev"` var replaces the two
+`internal/build` with the single `Version = "dev"` var replaces the two
 identical legacy packages (`tf-block-runner/build`, `run-controller/build`); the ldflags
 path in every image build becomes
-`-X 'github.com/meshcloud/building-block-runner/runner/internal/build.Version=${VERSION}'`.
+`-X 'github.com/meshcloud/building-block-runner/internal/build.Version=${VERSION}'`.
 Each fit `cmd/<persona>/main.go` constructs
 `meshapi.Identity{Name: "<canonical persona>", Version: build.Version}` with its own
 hard-coded canonical name and passes it to the shared bootstrap func; **`cmd/bbrunner`
@@ -349,9 +357,9 @@ today's `SetClientMetadata` literals (`main.go:26`, `run-controller/main.go:21`)
 same bytes whether launched from the tf image's `/app/tf-block-runner`, the legacy
 `/app/tfrunner` path, `bbrunner tf`, or the run-controller image's default `bbrunner`.
 
-### 4.3 `MANAGEMENT_PORT` & `runner/internal/mgmt` (D12)
+### 4.3 `MANAGEMENT_PORT` & `internal/mgmt` (D12)
 
-**Package decision (P3 justification):** a new concept package `runner/internal/mgmt`
+**Package decision (P3 justification):** a new concept package `internal/mgmt`
 (management listener + process-level run metrics). Not in `report` (that is the run-
 status backchannel to the meshStack API — different concept, plan 03 §5.4) and not in
 `config` (mgmt *consumes* config). Consumers: both personas now, four more in phase 6 —
@@ -370,7 +378,7 @@ func (s Server) Start() error // binds, then serves in a goroutine (today's patt
 func NewRunMetrics(reg prometheus.Registerer, runnerUuid string) *RunMetrics
 ```
 
-Port resolution lives in `runner/internal/config` (it is D7 alias mechanics):
+Port resolution lives in `internal/config` (it is D7 alias mechanics):
 
 ```go
 // ManagementPort resolves MANAGEMENT_PORT, then the persona's legacy aliases
@@ -419,7 +427,7 @@ Stages:
 
 | Stage | Base | Content |
 |---|---|---|
-| `builder` | `golang:1.26-alpine` (`--platform=$BUILDPLATFORM`) | `COPY runner/go.mod runner/go.sum` → `go mod download` → `COPY runner/` → `CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags "-s -w -X '…/runner/internal/build.Version=${VERSION}'" -o /out/tf-block-runner ./cmd/tf` and `… -o /out/run-controller ./cmd/bbrunner` (the run-controller binary is the superset built from `./cmd/bbrunner`; the fit tf binary links only its own disjoint tree, §3.6). No go.work needed (§4.6) |
+| `builder` | `golang:1.26-alpine` (`--platform=$BUILDPLATFORM`) | `COPY go.mod go.sum` → `go mod download` → copy the module from the root build context (`COPY . .`) → `CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags "-s -w -X 'github.com/meshcloud/building-block-runner/internal/build.Version=${VERSION}'" -o /out/tf-block-runner ./cmd/tf` and `… -o /out/run-controller ./cmd/bbrunner` (the run-controller binary is the superset built from `./cmd/bbrunner`; the fit tf binary links only its own disjoint tree, §3.6). No go.work needed (§4.6) |
 | `run-controller` (final) | `alpine:3.22.4` (digest-pinned as today) | apk/user layers verbatim from `run-controller/Dockerfile:28-36`; `COPY --from=builder /out/run-controller /app/run-controller` (binary built from `./cmd/bbrunner` — the controller/superset, auto-detects k8s); config = base `containers/runner-config.yml` + per-persona `containers/run-controller/runner-config.yml` (deep-merged, §4.4); `ENTRYPOINT ["/app/entrypoint.sh", "/app/run-controller"]` (default/auto mode — no subcommand) |
 | `tf-block-runner` (final) | `alpine:3.22.4` (same pin) | apk/user/nix layers verbatim from `tf-block-runner/Dockerfile:28-59`; `COPY --from=builder /out/tf-block-runner /app/tf-block-runner` **and** the same binary to the legacy path `/app/tfrunner` (plain duplicate — the binary is single-purpose, so argv[0] is irrelevant); config = base `containers/runner-config.yml` + per-persona `containers/tf-block-runner/runner-config.yml` (deep-merged, §4.4) + `known_hosts` from `containers/tf-block-runner/`; `ENV SSH_KNOWN_HOSTS=/app/known_hosts`, `ENV PORT=8080` (kept, §4.3), `EXPOSE 8080`; `ENTRYPOINT ["/app/entrypoint.sh", "/app/tf-block-runner"]` |
 
@@ -456,29 +464,33 @@ own binary inside the shared Dockerfile.
 | File | Delta | Why strictly needed |
 |---|---|---|
 | `build-images.yml:26-31` | go matrix legs become `dockerfile: containers/runner.Dockerfile` + new `target: run-controller` (builds `./cmd/bbrunner`) / `target: tf-block-runner` (builds `./cmd/tf`); build step gains `target: ${{ matrix.target }}` (empty for JVM legs ⇒ default stage of `jvm.Dockerfile` — behavior unchanged) | old Dockerfile paths cease to exist; image names/tags unchanged; N images preserved |
-| `ci.yml:150-155` (`go-runners-ci`) | matrix collapses to one **test** leg `app: runner, go-dir: runner` (`go test ./...` covers every `cmd/*` + `internal/*`; the *post-0* `go-meshapi-client` leg dies with the module); `go-version-file: runner/go.mod` | `working-directory: tf-block-runner` etc. cease to exist. Coverage artifact becomes `coverage-runner` (flag §10.6 — artifact *names* change) |
+| `ci.yml:150-155` (`go-runners-ci`) | matrix collapses to one **test** leg run at repo root (drop `go-dir`/`working-directory`; `go test ./...` covers every `cmd/*` + `internal/*`; the *post-0* `go-meshapi-client` leg dies with the module); `go-version-file: go.mod` | `working-directory: tf-block-runner` etc. cease to exist. Coverage artifact becomes `coverage` (flag §10.6 — artifact *names* change) |
 | `ci.yml:189-193` (`go-runners-image`) | `file: containers/runner.Dockerfile` + `target:` per app (per-persona binary built in-stage); matrix keys and image names unchanged | old Dockerfile paths |
 | `release.yml`, `pr-cleanup.yml`, `release-check.yml`, JVM jobs | **untouched** | operate on image names / Gradle, both unchanged |
 
 ### 4.6 go.work endgame & tooling
 
-- **`go.work` and `go.work.sum` are deleted** in the final consolidation step. D2's
-  "workspace stays during migration" ends here: one module needs
-  no workspace, a one-entry workspace is pure ceremony (P2), and the Docker builder gets
-  simpler (§4.4 copies only `runner/`). Consequence: repo-root `go run ./runner` no
-  longer resolves — all Go commands run in `runner/` (Taskfile handles cwd via `dir:`).
-- **Taskfile:** module loops collapse (`MODULES` →
-  `runner`); `task work-sync` is deleted; per-module test subtargets collapse into
-  `task test` (`go test ./...`, kept: `task test`, `lint`, `fmt`, `tidy`, `coverage`);
-  start targets become `task start:tf-block-runner` =
-  `RUNNER_CONFIG_FILE=../containers/tf-block-runner/runner-config.yml go run ./cmd/tf`
-  (dir `runner/`) and `task start:run-controller` =
+- **`go.work` and `go.work.sum` are deleted outright** at the phase-4 consolidation
+  (step 1) — there is no workspace end-state and no intermediate `use ./runner`. With the
+  module at repo root there is no second module to coordinate, a workspace is pure
+  ceremony (P2), and the Docker builder gets simpler (§4.4 copies `go.mod`/`go.sum` then
+  the module from the root build context). Consequence: repo-root `go run ./cmd/tf` /
+  `go run ./cmd/bbrunner` resolve natively (no workspace needed) — every Go command runs
+  at repo root.
+- **Taskfile:** the module loop collapses to a single root module (`MODULES` →
+  the one root module); `task work-sync` is deleted; per-module test subtargets collapse
+  into `task test` (`go test ./...` at repo root, kept: `task test`, `lint`, `fmt`,
+  `tidy`, `coverage`); no `dir: runner/` — every Go command runs at repo root.
+  Start targets become `task start:tf-block-runner` =
+  `RUNNER_CONFIG_FILE=containers/tf-block-runner/runner-config.yml go run ./cmd/tf`
+  (config path now relative to root) and `task start:run-controller` =
   `… go run ./cmd/bbrunner` (auto/default — the controller/superset) with its config
   path — same env semantics as `Makefile:28-32`/plan 00 §5.1. A new
-  `task build` = `go build ./cmd/...` compiles the fit persona binaries + `cmd/bbrunner`.
+  `task build` = `go build ./cmd/...` (at root) compiles the fit persona binaries +
+  `cmd/bbrunner`.
   **New promise set for plans 05+ recorded in §11.**
 - **Lint:** `.golangci.yml` depguard module-prefix
-  rewrite (`…/runner/internal/…`); direction rules preserved (adapters ↛ consumers; only
+  rewrite (`…/internal/…`); direction rules preserved (adapters ↛ consumers; only
   `cmd/*` package-main wires — genuinely enforceable now that persona wiring is in
   `cmd/*`); new rules: only `mgmt` + `controller` (+ the wiring in `cmd/*`) may import
   `prometheus/*`; `tf` may not import `controller`/`mgmt` (it sees its own metrics
@@ -488,7 +500,7 @@ own binary inside the shared Dockerfile.
   `localmodule` — a mechanical import-block reshuffle across every moved file, part of
   the move step's diff (anticipated by plan 00 §5.2).
 - Test fixtures that today resolve module-relative (e.g. `../resources/test.pem`
-  referenced from tf test helpers, plan 01 CP1) move to `runner/resources/` with the
+  referenced from tf test helpers, plan 01 CP1) move to `resources/` at repo root with the
   same relative-depth adjustment in the move step — hermetic suites stay hermetic.
 
 ---
@@ -497,7 +509,7 @@ own binary inside the shared Dockerfile.
 
 **Shims vs atomic cutover — decided: atomic, forced by Go.** A "legacy mains become
 thin shims first" sequence is impossible: once `internal/tf` etc. move under
-`runner/internal/`, the legacy `tf-block-runner` module *cannot* import them (Go's
+`internal/`, the legacy `tf-block-runner` module *cannot* import them (Go's
 `internal/` visibility is module-scoped — the same wall as plan 03 flag §12.1), and a
 shim cannot exec its way out. So the instruction's "legacy modules keep building until
 their final removal step" is satisfied degenerately: steps before step 1 don't touch
@@ -514,13 +526,13 @@ numbers per working commit (squashed on merge).
 | # | Step | What changes | What proves it |
 |---|---|---|---|
 | 0 | **Preflight.** Run all §1 verifications on the phase-3 branch; branch `phase-4-single-binary`. Record: coverage numbers per package (A5), the R12 exit condition (A10), the post-3 main shapes (A2/A3). | nothing | A1–A12 verified (STOP-A) |
-| 1 | **Atomic module consolidation (mechanical; the big diff).** (a) create `runner/go.mod` (union of the three requires, §3.6) + `go mod tidy`; (b) `git mv tf-block-runner/internal/{tf,gitsource,tofu} runner/internal/`; `git mv go-meshapi-client/{meshapi,crypto,config,report} runner/internal/`; `git mv run-controller/controller runner/internal/controller` (transitional name — phase 5 dissolves it into `dispatch`/`k8sjob`, flag §10.3); merge the two `build` packages into `runner/internal/build`; (c) write the entrypoints per §4.1 — the fit `runner/cmd/tf/main.go` (a single-purpose `package main`, body = **verbatim** post-phase-3 tf main body incl. the old ad-hoc listener — D12 lands in step 3) and `runner/cmd/bbrunner/main.go` (the controller bootstrap becomes bbrunner's **default path**, body = verbatim post-phase-3 run-controller main incl. its ad-hoc `:2112` listener, plus the optional fit-persona subcommand registry); delete the legacy mains + module files; (d) rewrite import paths (mechanical sed) + gci run; (e) `go.work` shrinks to `use ./runner` (deleted fully in step 7 — kept one step so tooling transitions are reviewable separately); (f) lock-step tooling paths: `thresholds.txt` per §7.1, `exclusions.txt` paths, depguard/module prefixes, Taskfile module list + start targets, test-fixture paths (§4.6). | everything moves; **zero semantic edits** — the diff is `git mv` + import paths + the new `cmd/*` frames | `task test`/`task lint`/`task coverage` green (STOP-B, STOP-C live here); `go run ./cmd/tf` & `go run ./cmd/bbrunner` (and `go run ./cmd/bbrunner tf`) boot to their config-read stage; `git diff --find-renames` shows moves, not rewrites; controller transcripts + k8s goldens (A7) and tf characterization suite green with **zero assertion changes** |
-| 2 | **bbrunner dispatch hardening + tests.** `cmd/bbrunner` `run` table tests: **no subcommand → the default controller/superset bootstrap** with the canonical `run-controller` Identity name (phase-4: `KubernetesJobDispatcher`; auto-detect + `InProcessDispatcher` arrive phase 5); `bbrunner tf` → the tf bootstrap in-process with the canonical `tf-block-runner` Identity name; unknown subcommand → usage error; trailing-garbage rejection. Assert the fit `cmd/tf` binary needs **no** subcommand (single-purpose). | `runner/cmd/bbrunner/*` + `_test.go` | new tests green (cmd packages — outside the gate denominator, like today's mains) |
+| 1 | **Atomic module consolidation (mechanical; the big diff).** (a) create the root `go.mod` (union of the three requires, §3.6) + `go mod tidy`; (b) `git mv tf-block-runner/internal/{tf,gitsource,tofu} internal/`; `git mv go-meshapi-client/{meshapi,crypto,config,report} internal/`; `git mv run-controller/controller internal/controller` (transitional name — phase 5 dissolves it into `dispatch`/`k8sjob`, flag §10.3); merge the two `build` packages into `internal/build`; (c) write the entrypoints per §4.1 — the fit `cmd/tf/main.go` (a single-purpose `package main`, body = **verbatim** post-phase-3 tf main body incl. the old ad-hoc listener — D12 lands in step 3) and `cmd/bbrunner/main.go` (the controller bootstrap becomes bbrunner's **default path**, body = verbatim post-phase-3 run-controller main incl. its ad-hoc `:2112` listener, plus the optional fit-persona subcommand registry); delete the legacy mains + module files; (d) rewrite import paths (mechanical sed) + gci run; (e) **delete `go.work` + `go.work.sum` outright** (the module now lives at root — no workspace, no intermediate `use ./runner`); (f) lock-step tooling paths: `thresholds.txt` per §7.1, `exclusions.txt` paths, depguard/module prefixes, Taskfile single-module list + start targets (drop `task work-sync`), test-fixture paths (§4.6). | everything moves; **zero semantic edits** — the diff is `git mv` + import paths + the new `cmd/*` frames | `task test`/`task lint`/`task coverage` green (STOP-B, STOP-C live here); `go run ./cmd/tf` & `go run ./cmd/bbrunner` (and `go run ./cmd/bbrunner tf`) boot to their config-read stage; `git diff --find-renames` shows moves, not rewrites; controller transcripts + k8s goldens (A7) and tf characterization suite green with **zero assertion changes** |
+| 2 | **bbrunner dispatch hardening + tests.** `cmd/bbrunner` `run` table tests: **no subcommand → the default controller/superset bootstrap** with the canonical `run-controller` Identity name (phase-4: `KubernetesJobDispatcher`; auto-detect + `InProcessDispatcher` arrive phase 5); `bbrunner tf` → the tf bootstrap in-process with the canonical `tf-block-runner` Identity name; unknown subcommand → usage error; trailing-garbage rejection. Assert the fit `cmd/tf` binary needs **no** subcommand (single-purpose). | `cmd/bbrunner/*` + `_test.go` | new tests green (cmd packages — outside the gate denominator, like today's mains) |
 | 3 | **D12 listener unification.** Add `internal/mgmt` (Server + RunMetrics, §4.3) and `config.ManagementPort`; the controller bootstrap (bbrunner's default path in `cmd/bbrunner`) drops the ad-hoc `:2112` block (`main.go:26-35` shape) for `mgmt.NewServer` (default 2112, now with healthz, fatal bind — sanctioned §6); the tf bootstrap drops `startHealthServer` for `mgmt.NewServer` (default 8100, `PORT` alias, now with metrics; still polling-mode-only). | `internal/mgmt`, `internal/config`, both persona bootstraps | httptest-level tests: `/healthz` body byte-identical `OK`; `/metrics` exposition contains `run_controller_*` (controller) resp. the go-collector baseline (tf); alias/default table test incl. `MANAGEMENT_PORT>PORT>8100` precedence and unparseable-value fatal; gate: `mgmt` ≥90 (§7.1) |
 | 4 | **Generic run metrics (D12).** `mgmt.NewRunMetrics`; consumer-side meter interface in `internal/tf`; polling-loop hooks (claim/succeed/fail/duration/poll-error); wire in the tf bootstrap. | `internal/mgmt`, `internal/tf` (loop only), tf bootstrap | fake-meter loop tests (claim→success increments; fetch-error→poll_errors); scenario suite untouched; `-race` clean (A6) |
 | 5 | **Docker matrix.** Add `containers/runner.Dockerfile` (§4.4 — the `tf-block-runner` target builds `./cmd/tf`, the `run-controller` target builds `./cmd/bbrunner`; each ships its binary as direct ENTRYPOINT, no symlinks); `git mv` runtime assets to `containers/<persona>/`; delete the two legacy Dockerfiles. | containers/, asset moves | `docker build --target tf-block-runner` + `--target run-controller` succeed locally (amd64 at minimum) and the fit tf image links no k8s (the run-controller image links everything — the one fat image); smoke: default entrypoint boots each image (`run-controller` boots the auto-detecting controller); `docker run --entrypoint /app/tfrunner <tf-img>` boots the tf persona (legacy duplicate path, no argv[0] dispatch); `wget -qO- localhost:8080/healthz` inside the tf container → `OK`; controller container serves `/healthz`+`/metrics` on 2112; `docker run <run-controller-img> tf` boots the tf persona forced in-process (STOP-D) |
 | 6 | **Workflows.** Apply the §4.5 table to `ci.yml` + `build-images.yml`; nothing else. | 2 workflow files | draft-PR run: single `runner - test` leg green with coverage summary; both per-persona image jobs build their own binary (N images; PRs build without push, `ci.yml:137,257`); JVM jobs byte-identical logs |
-| 7 | **Tooling endgame.** Delete `go.work` + `go.work.sum`; drop `task work-sync`; README truth pass: root `README.md:66-86` health section → `MANAGEMENT_PORT` + controller row + Kotlin note, component links `tf-block-runner/`→`runner/`; fold the two module READMEs' still-true content into `runner/README.md` (`go run . <persona>`, config paths). | go.work, Taskfile, READMEs | every README command executes; repo grep: no reference to the dead module paths outside CHANGELOG/plan docs |
+| 7 | **Tooling endgame.** README truth pass: root `README.md:66-86` health section → `MANAGEMENT_PORT` + controller row + Kotlin note, component links `tf-block-runner/` → the repo-root `cmd/`+`internal/` layout; fold the two module READMEs' still-true content into the root `README.md` (`go run ./cmd/<persona>`, config paths). (`go.work`/`go.work.sum` deletion and the `task work-sync` drop already landed in step 1.) | READMEs | every README command executes; repo grep: no reference to the dead module paths outside CHANGELOG/plan docs |
 | 8 | **Cross-repo lock-step docs.** meshfed-release PR editing `local-dev-stack/SKILL.md` per §9 (exact lines); merged together with (not before) this phase's PR. | meshfed-release only | skill's commands executed verbatim against this branch |
 | 9 | **Acceptance + self-review gate.** Full local-dev-stack flow with the tf runner started the *new* way; ≥1 MANUAL + ≥1 TERRAFORM acceptance run; controller persona smoke vs a kind/minikube namespace **or** (fallback) the A7 goldens + container smoke as the documented k8s evidence; P1–P8 walk; PR description lists sanctioned changes (§6), flags (§10), and the new promise set (§11). | — | evidence in PR description (STOP-E) |
 
@@ -566,24 +578,24 @@ vars (only *additive* `MANAGEMENT_PORT`).
 line each; check.sh matches by prefix, A5):
 
 ```
-github.com/meshcloud/building-block-runner/runner/internal/tf         90
-github.com/meshcloud/building-block-runner/runner/internal/gitsource  90
-github.com/meshcloud/building-block-runner/runner/internal/tofu       90
-github.com/meshcloud/building-block-runner/runner/internal/meshapi    90
-github.com/meshcloud/building-block-runner/runner/internal/crypto     90
-github.com/meshcloud/building-block-runner/runner/internal/config     90
-github.com/meshcloud/building-block-runner/runner/internal/report     90
-github.com/meshcloud/building-block-runner/runner/internal/mgmt       90   (step 3)
+github.com/meshcloud/building-block-runner/internal/tf         90
+github.com/meshcloud/building-block-runner/internal/gitsource  90
+github.com/meshcloud/building-block-runner/internal/tofu       90
+github.com/meshcloud/building-block-runner/internal/meshapi    90
+github.com/meshcloud/building-block-runner/internal/crypto     90
+github.com/meshcloud/building-block-runner/internal/config     90
+github.com/meshcloud/building-block-runner/internal/report     90
+github.com/meshcloud/building-block-runner/internal/mgmt       90   (step 3)
 ```
 
 Why the split: the phase-2 aggregate line (`…/tf-block-runner/internal 90`) cannot be
-transplanted as `…/runner/internal 90` — that prefix would newly gate
+transplanted as `…/internal 90` — that prefix would newly gate
 `internal/controller` (deliberately ungated until phase 5, plan 03 §9/§12.4). The
 `tf`/`gitsource`/`tofu` aggregate therefore becomes three per-package lines. Risk: the
 aggregate hid per-package variance; if any package lands <90 individually → **STOP-C**
 (preferred fix: the small test top-up; reviewed fallback: comma-joined prefix support in
 check.sh so one line can express the old aggregate). `exclusions.txt` paths become
-`runner/internal/gitsource/git.go`, `runner/internal/tofu/tfbinaries.go` (same files,
+`internal/gitsource/git.go`, `internal/tofu/tfbinaries.go` (same files,
 same justifications). Step-1 checkpoint includes the plan-00 induced-failure exercise
 (temporarily set one line to 99 → check.sh fails → revert) proving the rewritten paths
 actually match.
@@ -636,9 +648,9 @@ this phase's PR precisely so the pair reverts together).
   PR, step 8):** local-dev runs the tf runner via `bbrunner tf` (the superset forcing tf
   in-process) — or the fit `cmd/tf` binary.
   - line 78: `cd ../building-block-runner/tf-block-runner && : > /tmp/tf-runner.log`
-    → `cd ../building-block-runner/runner && : > /tmp/tf-runner.log`
+    → `cd ../building-block-runner && : > /tmp/tf-runner.log`
   - lines 79-82 (the `nohup go run .` block): add
-    `RUNNER_CONFIG_FILE=../containers/tf-block-runner/runner-config.yml` to the env list
+    `RUNNER_CONFIG_FILE=containers/tf-block-runner/runner-config.yml` to the env list
     and change the command to `nohup go run ./cmd/bbrunner tf > /tmp/tf-runner.log 2>&1 &`
     (equivalently the standalone `go run ./cmd/tf`)
   - lines 88-91: pgrep hint `'multiplexing-block-runner|tf-block-runner|BlockRunnerApplication'`
@@ -672,7 +684,7 @@ this phase's PR precisely so the pair reverts together).
    (package main, wiring only) is exempt from D11's concept-package rules, which govern
    only `internal/*` (§4.1).
 3. **D11's package list has no home for the controller.** `dispatch`/`k8sjob` are
-   phase-5 shapes; this phase needs a transitional `runner/internal/controller`
+   phase-5 shapes; this phase needs a transitional `internal/controller`
    (moved verbatim). Named here so phase 5's plan starts from it.
 4. **D12's "every persona serves healthz+metrics" meets the single-run mode.** Today
    single-run serves nothing (`main.go:56-59`); a listener inside short-lived Job pods
@@ -691,7 +703,7 @@ this phase's PR precisely so the pair reverts together).
 8. **CI must change more than D14's letter suggests**: the per-module test matrix and
    `go-version-file` paths die with the modules — reshaping the go test job is
    *layout-forced*, not the phase-7 CI redesign (§4.5). Coverage artifact names change
-   (`coverage-<module>` → `coverage-runner`).
+   (`coverage-<module>` → `coverage`).
 9. **Controller bind failure flips from silent to fatal** with the healthz addition
    (§6.1) — a behavior change D12 implies but never states.
 10. **The thresholds aggregate cannot survive the move as one line** (§7.1) — the gate
@@ -708,14 +720,15 @@ this phase's PR precisely so the pair reverts together).
 
 ## 11. Promise set for later phases (05+)
 
-- Module `github.com/meshcloud/building-block-runner/runner` at `./runner`; **no go.work**;
-  **fit per-persona binaries** under `runner/cmd/<persona>` (`cmd/tf` this phase) each
-  linking only its own dep tree, plus `cmd/bbrunner` — the controller/superset that links
-  everything, auto-detects k8s, and is shipped as the run-controller image. Adding a fit
-  persona (phase 6 template hook) = one `runner/cmd/<persona>/main.go` + one `bbrunner`
+- Module `github.com/meshcloud/building-block-runner` at the repo **root** (no `runner/`
+  subdirectory; coexists with the still-Kotlin/Gradle runner dirs, deleted phase 6/7);
+  **no go.work**; **fit per-persona binaries** under `cmd/<persona>` (`cmd/tf` this phase)
+  each linking only its own dep tree, plus `cmd/bbrunner` — the controller/superset that
+  links everything, auto-detects k8s, and is shipped as the run-controller image. Adding a
+  fit persona (phase 6 template hook) = one `cmd/<persona>/main.go` + one `bbrunner`
   subcommand entry + one Dockerfile final stage + one build-matrix leg.
-- Packages: `runner/internal/{tf,gitsource,tofu,meshapi,crypto,config,report,mgmt,
-  controller,build}` (concept packages, D11) + `runner/cmd/*` (package main, wiring-only,
+- Packages: `internal/{tf,gitsource,tofu,meshapi,crypto,config,report,mgmt,
+  controller,build}` (concept packages, D11) + `cmd/*` (package main, wiring-only,
   D11-exempt) — `internal/controller` is transitional for phase 5.
 - Task targets: `task test`, `task lint`, `task fmt`, `task tidy`, `task coverage`,
   `task build` (`go build ./cmd/...`), `task start:tf-block-runner`
@@ -729,7 +742,7 @@ this phase's PR precisely so the pair reverts together).
 - Images: `containers/runner.Dockerfile` multi-target — the `run-controller` target
   builds/ships `./cmd/bbrunner` and each fit target its own `./cmd/<persona>` binary, as a
   direct ENTRYPOINT (no shared binary, no symlink); persona assets under
-  `containers/<persona>/`; ldflags path `…/runner/internal/build.Version`.
+  `containers/<persona>/`; ldflags path `…/internal/build.Version`.
 
 ## 12. Open questions
 

@@ -10,7 +10,8 @@ concurrency) and #5 (secret hygiene) drive §7 and §8.
 
 Phase character: **behavior-preserving for the run-controller persona** — the k8s dispatch
 path stays **bit-identical** (claim wire, decryption order, Job/Secret/ServiceAccount
-manifests per the plan-03 goldens, registration PUT, metrics names). The tf persona's
+manifests per the plan-03 goldens, registration PUT, metrics names), **with one sanctioned
+exception**: the compiled-in `maxConcurrentJobs` default changes 20 → 10 (§12, §16). The tf persona's
 polling loop is restructured onto the same dispatch loop with in-process execution; its
 wire pins stay green, with a short list of sanctioned, flagged deltas (§12). All code
 references are `main` @ `c3fce61` unless marked *post-N* (shape promised by plan N).
@@ -26,18 +27,18 @@ reviewed, then resume.
 
 | # | Assumption | Promised by | Verification step |
 |---|---|---|---|
-| A1 | Phase-4 promise set holds: module `./runner`, no go.work, personas as **per-persona binaries** (the fit binaries `runner/cmd/tf/main.go` + the four runner mains `manual`/`gitlab`/`github`/`azdevops` — each linking only its persona's deps — plus the `runner/cmd/bbrunner` superset binary that links all handlers + both dispatchers; no argv[0] multiplexing / persona registry; no separate `runner/cmd/controller` — `cmd/bbrunner` **is** both the controller and the superset (= the `run-controller` image) and auto-detects its dispatcher at startup (`rest.InClusterConfig()`/`KUBERNETES_SERVICE_HOST` ⇒ k8sjob; else ⇒ InProcess; `RUNNER_DISPATCHER` overrides)); packages `runner/internal/{tf,gitsource,tofu,meshapi,crypto,config,report,mgmt,controller,build}`; task targets `test`/`lint`/`coverage`/`fmt`/`tidy`/`start:*`. | Plan 04 §11 | `git checkout refactor/single-go-binary/phase-4-single-binary && ls runner/internal && task test && task lint && task coverage` |
-| A2 | `runner/internal/controller` is the verbatim post-phase-3 controller code (drain loop `drainRuns`/`availableCapacity`/`processNextRun`/`reportRunFailure`, `JobManager` seam, `KubernetesClient`, de-globaled config/metrics), moved not rewritten, and declared transitional for this phase. | Plan 04 §5 step 1, §10.3 | `git diff --find-renames phase-3..phase-4 -- '**/controller/'` shows moves; read `runner/internal/controller/controller.go` against §3.1 |
-| A3 | Controller wire-characterization tests + k8s Job manifest goldens (fake clientset) exist and are green: claim transcript incl. node-id `run-controller-<uuid>`, registration PUT + v1-preview media type + WIF golden, `StatusUpdateDTO` PATCH shape, Job/Secret/SA goldens incl. `/var/run/secrets/meshstack` mount, `RUN_JSON_FILE_PATH`/`RUNNER_UUID`/`RUNNER_API_URL` env, no `EXECUTION_MODE`, `CountActiveJobs` finished-job filtering. | Plan 03 §6 step 1 | run the controller test files; `grep -rn "golden" runner/internal/controller` |
-| A4 | tf code has the plan-02/03 shape: one `tf.Engine.Execute(ctx, run)`; ports `StatusReporter`(→`report.Reporter`)/`ArtifactSource`/`Decryptor`(shared in `meshapi`)/`TfProvider`/`Source`/`Clock`; `Manager` polling loop with token protocol `work/done/norun/failed/stop/stopped`, delays 10s/60s, `atomic.Bool` shutdown; `handleFetchRunError` semantics verbatim incl. the chunked-transport string match. | Plan 02 §5.3/§5.4, Plan 03 §5.2.5 | `grep -rn "func (e Engine) Execute\|norun\|chunked" runner/internal/tf` |
-| A5 | Shared client is split: `meshapi.RunClient` (claim/register/patch/artifact), `meshapi.RunnerClient.Update` (registration PUT, 404 ⇒ actionable error), `HttpError{StatusCode,ResponseBody}` with `IsNotFound/IsConflict`, `meshapi.DecryptRunDetails(runJsonBase64, dec Decryptor)` with all five impl-type branches, `NodeId` typed. Claim POST and status PATCH are **never retried** by the retry transport. | Plan 03 §5.2 | `grep -rn "RunnerClient\|DecryptRunDetails\|WhitelistedPosts" runner/internal/meshapi` |
-| A6 | `report` package: `Progress` (mutate-under-lock, deep-copy `Snapshot()`), `RunLog`, `Observer` (10s ticker, abort-cancel, async `SUCCEEDED→IN_PROGRESS`, no-final-after-cancel), value-typed `Steps []StepStatus` (B10 fixed). `-race` is ON; zero package-level mutable state anywhere. | Plan 02 §5.5/2b R1, Plan 03 §5.4 | read `runner/internal/report`; `grep -rn '\-race' Taskfile.yml .github/workflows/`; `grep -rn "^var [A-Z]" runner/internal --include='*.go' \| grep -v _test` |
-| A7 | `mgmt.RunMetrics` (`runner_runs_claimed_total`, `runner_runs_succeeded_total`, `runner_runs_failed_total`, `runner_run_duration_seconds`, `runner_poll_errors_total`, all labeled `runner_uuid`) exists; the tf polling loop drives it via a consumer-side meter interface declared in `internal/tf`; success/failure classification is keyed on `Engine.Execute`'s error return. **Record the exact classification** — this plan's handler metrics (§10) must reproduce it. | Plan 04 §4.3 step 4 | read `runner/internal/mgmt` + the meter interface + its polling-loop hooks |
+| A1 | Phase-4 promise set holds: module `github.com/meshcloud/building-block-runner` at the **repo root** (no `./runner` subdir), no go.work/workspace, personas as **per-persona binaries** (the phase-4 fit binary `cmd/tf/main.go` — linking only its persona's deps — plus the `cmd/bbrunner` superset binary that links all handlers + both dispatchers; the four further runner mains `manual`/`gitlab`/`github`/`azdevops` arrive in phase 6; no argv[0] multiplexing / persona registry; no separate `cmd/controller` — `cmd/bbrunner` **is** both the controller and the superset (= the `run-controller` image) and auto-detects its dispatcher at startup (`rest.InClusterConfig()`/`KUBERNETES_SERVICE_HOST` ⇒ k8sjob; else ⇒ InProcess; `RUNNER_DISPATCHER` overrides)); packages `internal/{tf,gitsource,tofu,meshapi,crypto,config,report,mgmt,controller,build}`; binaries present at phase 4 `cmd/{tf,bbrunner}` (phase 6 adds `manual`/`gitlab`/`github`/`azdevops`); task targets `test`/`lint`/`coverage`/`fmt`/`tidy`/`start:*`. | Plan 04 §11 | `git checkout refactor/single-go-binary/phase-4-single-binary && ls internal && task test && task lint && task coverage` |
+| A2 | `internal/controller` is the verbatim post-phase-3 controller code (drain loop `drainRuns`/`availableCapacity`/`processNextRun`/`reportRunFailure`, `JobManager` seam, `KubernetesClient`, de-globaled config/metrics), moved not rewritten, and declared transitional for this phase. | Plan 04 §5 step 1, §10.3 | `git diff --find-renames phase-3..phase-4 -- '**/controller/'` shows moves; read `internal/controller/controller.go` against §3.1 |
+| A3 | Controller wire-characterization tests + k8s Job manifest goldens (fake clientset) exist and are green: claim transcript incl. node-id `run-controller-<uuid>`, registration PUT + v1-preview media type + WIF golden, `StatusUpdateDTO` PATCH shape, Job/Secret/SA goldens incl. `/var/run/secrets/meshstack` mount, `RUN_JSON_FILE_PATH`/`RUNNER_UUID`/`RUNNER_API_URL` env, no `EXECUTION_MODE`, `CountActiveJobs` finished-job filtering. | Plan 03 §6 step 1 | run the controller test files; `grep -rn "golden" internal/controller` |
+| A4 | tf code has the plan-02/03 shape: one `tf.Engine.Execute(ctx, run)`; ports `StatusReporter`(→`report.Reporter`)/`ArtifactSource`/`Decryptor`(shared in `meshapi`)/`TfProvider`/`Source`/`Clock`; `Manager` polling loop with token protocol `work/done/norun/failed/stop/stopped`, delays 10s/60s, `atomic.Bool` shutdown; `handleFetchRunError` semantics verbatim incl. the chunked-transport string match. | Plan 02 §5.3/§5.4, Plan 03 §5.2.5 | `grep -rn "func (e Engine) Execute\|norun\|chunked" internal/tf` |
+| A5 | Shared client is split: `meshapi.RunClient` (claim/register/patch/artifact), `meshapi.RunnerClient.Update` (registration PUT, 404 ⇒ actionable error), `HttpError{StatusCode,ResponseBody}` with `IsNotFound/IsConflict`, `meshapi.DecryptRunDetails(runJsonBase64, dec Decryptor)` with all five impl-type branches, `NodeId` typed. Claim POST and status PATCH are **never retried** by the retry transport. | Plan 03 §5.2 | `grep -rn "RunnerClient\|DecryptRunDetails\|WhitelistedPosts" internal/meshapi` |
+| A6 | `report` package: `Progress` (mutate-under-lock, deep-copy `Snapshot()`), `RunLog`, `Observer` (10s ticker, abort-cancel, async `SUCCEEDED→IN_PROGRESS`, no-final-after-cancel), value-typed `Steps []StepStatus` (B10 fixed). `-race` is ON; zero package-level mutable state anywhere. | Plan 02 §5.5/2b R1, Plan 03 §5.4 | read `internal/report`; `grep -rn '\-race' Taskfile.yml .github/workflows/`; `grep -rn "^var [A-Z]" internal --include='*.go' \| grep -v _test` |
+| A7 | `mgmt.RunMetrics` (`runner_runs_claimed_total`, `runner_runs_succeeded_total`, `runner_runs_failed_total`, `runner_run_duration_seconds`, `runner_poll_errors_total`, all labeled `runner_uuid`) exists; the tf polling loop drives it via a consumer-side meter interface declared in `internal/tf`; success/failure classification is keyed on `Engine.Execute`'s error return. **Record the exact classification** — this plan's handler metrics (§10) must reproduce it. | Plan 04 §4.3 step 4 | read `internal/mgmt` + the meter interface + its polling-loop hooks |
 | A8 | Coverage thresholds are per-package lines at 90 for `tf,gitsource,tofu,meshapi,crypto,config,report,mgmt`; `internal/controller` is deliberately **ungated** (its gating was deferred to this phase); exclusions name `gitsource/git.go`, `tofu/tfbinaries.go`. | Plan 04 §7.1, Plan 03 §9 | `cat tools/coverage/thresholds.txt tools/coverage/exclusions.txt && task coverage` — record numbers |
 | A9 | Single-run exit semantics are the 2b-R12 conditional form (non-zero only when no terminal status was reported), and plan 02 R12 deferred the k8s `BackoffLimit: 1` alignment question **to this phase** (§16.3 resolves it). | Plan 02 §7 R12 | read `persona_tf.go` single-run tail; note the exact condition |
-| A10 | `TfBinaries` (post-04 `runner/internal/tofu`) still guards install with a struct-embedded `sync.Mutex` around the stat/remove/install sequence, and `testMode` bypasses the mutex early. | unchanged since `main` (`tfbinaries.go:33,92-93,83-90`) | read `runner/internal/tofu/tfbinaries.go` |
-| A11 | `ClearRunToken`/`SetRunToken` pins exist in their phase-2 retargeted form (polling adapter clears after execution; single-run sets from the run spec) — the **single shared mutable token** design is still in place. | Plan 02 §5.4, `tfrun/runapi.go:73-80` today | `grep -rn "ClearRunToken\|SetRunToken" runner/internal/tf` |
-| A12 | The depguard rules use `…/runner/internal/…` prefixes; only `mgmt` + `controller` (+ main) may import prometheus; only main wires adapters. | Plan 04 §4.6 | read `.golangci.yml` |
+| A10 | `TfBinaries` (post-04 `internal/tofu`) still guards install with a struct-embedded `sync.Mutex` around the stat/remove/install sequence, and `testMode` bypasses the mutex early. | unchanged since `main` (`tfbinaries.go:33,92-93,83-90`) | read `internal/tofu/tfbinaries.go` |
+| A11 | `ClearRunToken`/`SetRunToken` pins exist in their phase-2 retargeted form (polling adapter clears after execution; single-run sets from the run spec) — the **single shared mutable token** design is still in place. | Plan 02 §5.4, `tfrun/runapi.go:73-80` today | `grep -rn "ClearRunToken\|SetRunToken" internal/tf` |
+| A12 | The depguard rules use `…/internal/…` prefixes (`github.com/meshcloud/building-block-runner/internal/...`); only `mgmt` + `controller` (+ main) may import prometheus; only main wires adapters. | Plan 04 §4.6 | read `.golangci.yml` |
 
 **STOP-A (before any coding):** any of A1–A12 materially false ⇒ update this plan first.
 **STOP-B (any time):** a characterization/golden/transcript assertion must change beyond
@@ -57,24 +58,28 @@ N-concurrent smoke fails — D10's outer net; diagnose/replan before merging.
 
 **In:**
 
-- New package `runner/internal/dispatch`: the generalized claim/drain loop (`Loop`,
+- New package `internal/dispatch`: the generalized claim/drain loop (`Loop`,
   extracted from `controller.Controller`), the `Dispatcher` and `RunHandler` interfaces,
   `InProcess` dispatcher (go-func per run, in-flight counter, completion wake, drain on
   shutdown), typed failure errors (`UnhandledTypeError`), claim-error classification
   ports, the loop-side fail-fast reporting (today's `reportRunFailure` pattern).
-- New package `runner/internal/k8sjob`: today's `KubernetesClient` as the
+- New package `internal/k8sjob`: today's `KubernetesClient` as the
   `KubernetesJobDispatcher` (manifest building, Secret/SA handling, `RunTooLargeError`,
   `CountActiveJobs`, per-run decryption before Job creation — moved, not changed),
   `JobSpecTemplate`+volume/toleration config types, `DiscoverOIDCIssuer`, the WIF
   registration-DTO builder.
-- **`runner/internal/controller` is dissolved** into the two packages above + persona
+- **`internal/controller` is dissolved** into the two packages above + persona
   wiring (§5); the transitional package named by plan 04 §10.3 ceases to exist.
 - tf persona cutover: `Manager` + poll worker + polling `RunSource` adapter are replaced
   by `dispatch.Loop` + `dispatch.InProcess` + a `tf` run handler; per-run
   reporter/artifact clients with runToken-only auth (kills the shared mutable
   `SetRunToken`/`ClearRunToken` slot, §8); per-run logger prefixes.
-- New config, all **additive**: tf persona `maxConcurrentRuns` (default 1, mirroring
-  `maxConcurrentJobs`; env alias `RUNNER_MAX_CONCURRENT_RUNS`), optional tf persona
+- New config, all **additive**: tf persona `maxConcurrentRuns` (**default 3** — the
+  standalone tf runner executes up to 3 runs concurrently by default, an intentional
+  throughput improvement, **not** byte-identical to today's single serial worker; env
+  `RUNNER_MAX_CONCURRENT_RUNS` overrides; negative = unlimited with the 10-per-cycle
+  backstop; `maxConcurrentRuns=1` reproduces today's exact serial cadence for operators
+  who want it — sanctioned behavior change §12), optional tf persona
   `registration:` section (displayName, ownedByWorkspace, publicKey, capability) enabling
   standalone self-registration incl. `ALL`; controller `capability:` key (default `ALL`,
   preserving today's hardcoded value, `controller/dtos.go:23`).
@@ -196,8 +201,9 @@ N-concurrent smoke fails — D10's outer net; diagnose/replan before merging.
   `ALL` (`meshapi/dtos.go:273-282`); `"ALL" is a registration concept only and cannot be
   used as a handler key` (`controller/config.go:320-333`). `ToRunnerType` maps run
   impl-types to handler keys (`meshapi/dtos.go:284-295`).
-- `maxConcurrentJobs`: field + semantics `controller/config.go:22`, default 20
-  (`config.go:139-143`), negative = unlimited.
+- `maxConcurrentJobs`: field + semantics `controller/config.go:22`, today's code default
+  20 (`config.go:139-143`), negative = unlimited. **This phase changes the compiled-in
+  default to 10** (field/semantics/backstop otherwise unchanged; sanctioned §12/§16).
 
 ### 3.4 What the phase-6 handlers will need (interface-sizing input, not code)
 
@@ -221,7 +227,7 @@ bridge (consistent with plans 03/04). Every logger parameter below is a `*slog.L
 
 ### 4.1 `dispatch.Loop`, `Dispatcher`, `ClaimedRun`
 
-All declared in `runner/internal/dispatch` — the loop is the consumer (P3). The loop owns
+All declared in `internal/dispatch` — the loop is the consumer (P3). The loop owns
 what is generic (ticker, capacity math, claim, type extraction, fail-fast reporting);
 dispatchers own what is backend-specific (routing to a template/handler, decryption
 placement, in-flight tracking).
@@ -352,7 +358,7 @@ four ported runners (manual/gitlab/azdevops/github) consume this same `Reporter`
 keeps `report.Progress` + `report.Observer`). One unified `Reporter`; ports discard abort
 and run no Observer; tf alone uses Progress+Observer.
 
-The tf handler lives in `runner/internal/tf` and implements `dispatch.RunHandler`
+The tf handler lives in `internal/tf` and implements `dispatch.RunHandler`
 directly (imports `dispatch` for the parameter types — the same
 consumer-declares/adapter-imports relationship `JobManager` has today; depguard §5.3):
 
@@ -397,17 +403,17 @@ any claimed run without a handler/template fails fast regardless of configured c
 
 ---
 
-## 5. Package fate of `runner/internal/controller` (dissolved per D11)
+## 5. Package fate of `internal/controller` (dissolved per D11)
 
 Plan 04 §10.3 moved the controller verbatim into a transitional package and handed its
 fate to this phase. Decision: **dissolve into `internal/dispatch` + `internal/k8sjob`**,
 exactly the D11 names — justified per file:
 
 The destinations below are **shared `internal/*` packages**; the *binaries* that link them
-are `runner/cmd/<persona>/main.go` (one per persona) plus the `runner/cmd/bbrunner`
+are `cmd/<persona>/main.go` (one per persona) plus the `cmd/bbrunner`
 superset. Wherever a row (or a §11 migration step — "persona_controller re-wired",
 "persona_tf.go") says wiring goes to `persona_<name>.go`, read
-`runner/cmd/<persona>/main.go`. `internal/k8sjob` (`KubernetesJobDispatcher`) is linked
+`cmd/<persona>/main.go`. `internal/k8sjob` (`KubernetesJobDispatcher`) is linked
 **only** by `cmd/bbrunner` (= the `run-controller` image, the superset);
 `internal/dispatch.InProcess` by every persona binary and by `cmd/bbrunner`.
 
@@ -442,7 +448,7 @@ claim-before-dispatch up to it — `controller.go:122-165`).
 
 | Aspect | `k8sjob` (controller persona) | `InProcess` (standalone persona) |
 |---|---|---|
-| `MaxConcurrent` source | `maxConcurrentJobs` (default 20, `config.go:139-143`) — unchanged | **new** `maxConcurrentRuns` (default **1** = today's single worker; negative = unlimited with backstop; env `RUNNER_MAX_CONCURRENT_RUNS`) |
+| `MaxConcurrent` source | `maxConcurrentJobs` (**new default 10**; today's code default is 20 at `config.go:139-143`; negative = unlimited with backstop) — sanctioned default change §12/§16 | **new** `maxConcurrentRuns` (**default 3** — up to 3 concurrent runs, an intentional throughput improvement, **not** today's single serial worker; negative = unlimited with backstop; env `RUNNER_MAX_CONCURRENT_RUNS`; `=1` reproduces today's exact serial cadence) |
 | `InFlight()` | `CountActiveJobs` — label selector `meshcloud.io/runner-id=<uuid>`, finished Jobs excluded (`kubernetes.go:209-241`) | atomic in-flight counter; **incremented synchronously inside `Dispatch` before the goroutine spawns**, decremented on run completion |
 | `InFlight()` error | count error ⇒ capacity 0, skip cycle, log (`controller.go:154-158`) — preserved | cannot error |
 | Oversubscription safety | best-effort (k8s eventual consistency, as today) | exact: the loop is single-goroutine, so claim→`Dispatch`→increment is sequential; concurrent completions only *increase* capacity (H6 test) |
@@ -451,13 +457,17 @@ claim-before-dispatch up to it — `controller.go:122-165`).
 | Claim-error cadence | next tick (10s); non-404 logged + `runsFetchErrors` metric (`runapi.go:51-57`) | 60s `ClaimBackoff` (heir of `FAILED_WORKER_DELAY`); classification per `handleFetchRunError` incl. 409⇒no-run-logged and the chunked-transport quirk (`worker.go:66-91`) — injected `ClaimClassifier`, both policies preserved verbatim |
 | Shutdown | stop claiming; loop exits after current cycle; Jobs continue out-of-process (unchanged) | stop claiming; persona main drains a **configurable grace period (default 120s; new additive knob)** via `InProcess.Wait()` — short in-flight runs finish and report their own terminal status; **sync-polling runs still active at grace expiry get their run context cancelled** and MUST report a **terminal** `ABORTED` status (fallback `FAILED`, **never** `SUCCEEDED`) so the coordinator never sees a stale `IN_PROGRESS`; logs flushed during shutdown. This deliberately **diverges** from today's unbounded manager/worker drain: k8s/docker grace periods make a ~30-min poll drain illusory (Kotlin parity — a JVM SIGKILL mid-`Thread.sleep` orphaned the run identically). SIGKILL semantics unchanged |
 
-**Claim-rate consequence:** with `maxConcurrentRuns = 1` the standalone tf persona claims
-at most one run at a time and refetches immediately after completion — byte-for-byte the
-cadence of today's token loop (10s no-run, 60s fetch-error, immediate after done). With
-`maxConcurrentRuns = N` it drains up to N claims back-to-back per cycle, exactly like the
-controller's job draining; the 10-per-cycle backstop bounds the unlimited case. The
-`Manager`/token protocol (`work/done/norun/failed/stop/stopped`) is **deleted**; its
-pinned observables map onto `Loop` as declared retargets (§11.2.3).
+**Claim-rate consequence:** **by default (`maxConcurrentRuns = 3`)** the standalone tf
+persona drains up to 3 claims back-to-back per cycle and executes them concurrently —
+**not** byte-for-byte today's single serial worker, but an intentional throughput
+improvement (sanctioned §12). Setting `maxConcurrentRuns = 1` restores the exact cadence
+of today's token loop (one run at a time, refetch immediately after completion, 10s
+no-run, 60s fetch-error, immediate after done). With `maxConcurrentRuns = N` it drains up
+to N claims back-to-back per cycle, exactly like the controller's job draining; the
+10-per-cycle backstop bounds the unlimited case. Because the default is now 3, the
+concurrency paths (H1–H8, §7) are **default-on** rather than opt-in. The `Manager`/token
+protocol (`work/done/norun/failed/stop/stopped`) is **deleted**; its pinned observables
+map onto `Loop` as declared retargets (§11.2.3).
 
 ---
 
@@ -520,7 +530,7 @@ required** — the 404 ⇒ "create it via the meshStack UI or API" contract,
 | Persona | Dispatcher | Self-registers? | Capability | WIF | Notes |
 |---|---|---|---|---|---|
 | `run-controller` | `k8sjob` | **yes** (unchanged): startup PUT with 10-min retry (`main.go:48-64`) | new `capability:` key, **default `ALL`** = today's hardcoded value (`dtos.go:23`) — default behavior byte-identical | yes (discovered OIDC issuer + namespace, `k8sjob/registration.go`) | bit-identical by default; a concrete capability is an operator opt-in |
-| `tf-block-runner`, polling (default config) | `InProcess{TERRAFORM}` | **no** (unchanged — the standalone never self-registers today, §3.2) | effective capability = whatever the pre-created runner object carries (normally TERRAFORM) | n/a | zero behavior change. Operator may flip the runner object to `ALL` server-side today already — fail-fast (§10) then covers unported types with **no runner config at all** |
+| `tf-block-runner`, polling (default config) | `InProcess{TERRAFORM}` | **no** (unchanged — the standalone never self-registers today, §3.2) | effective capability = whatever the pre-created runner object carries (normally TERRAFORM) | n/a | zero wire/registration change (still never self-registers); the one sanctioned behavior change is default concurrency **`maxConcurrentRuns = 3`** (§6/§12), not today's single serial worker. Operator may flip the runner object to `ALL` server-side today already — fail-fast (§10) then covers unported types with **no runner config at all** |
 | `tf-block-runner`, polling + new `registration:` section | `InProcess{TERRAFORM}` | **yes, opt-in**: startup PUT (reusing the controller's retry shape) when the section is present | `registration.capability`, required in the section: concrete type or `ALL` | **no** WIF block (no k8s, no projected tokens — a WIF-less `MeshBuildingBlockRunnerSpecDTO`, the field is `omitempty`, `dtos.go:314-319`) | the D5 scenario "standalone runner registers ALL before all Kotlin ports exist"; requires `displayName`, `ownedByWorkspace`, `publicKey` in the section (same keys as the controller yaml); still requires the pre-created runner (404 contract) |
 | `tf-block-runner`, single-run (k8s Job) | none (direct engine) | **never** (frozen k8s contract) | n/a | n/a | untouched |
 | Kotlin personas | — | untouched until phase 6 | — | — | phase 6 rows reuse the `registration:` section shape |
@@ -654,14 +664,15 @@ runToken-only auth, R12 exit semantics) — diff-empty; controller claim wire (n
 `run-controller-<uuid>`, media types, base64 handover), registration PUT + v1-preview
 media type + WIF DTO (default `capability` = ALL), `StatusUpdateDTO` fail-fast body and
 the frozen `no implementation handler configured for type '%s'` message,
-`run_controller_*` metric names/labels, `maxConcurrentJobs` semantics incl. default 20
-and the unlimited backstop; tf claim node-id `<uuid>-worker-1`, `RunStatusUpdateDTO`
+`run_controller_*` metric names/labels, `maxConcurrentJobs` field/semantics and the
+unlimited backstop (**default excepted** — the compiled-in default changes 20 → 10, the
+one run-controller-persona behavior change, sanctioned-delta 6 below); tf claim node-id `<uuid>-worker-1`, `RunStatusUpdateDTO`
 PATCH bodies, 10s status ticker, abort-cancel, async `IN_PROGRESS` handover, decrypt-
 failure guidance, workspace naming, backend fallback, pre-run script contract; healthz/
 `MANAGEMENT_PORT`/image names/entrypoints (untouched this phase); mux claim contract;
 all existing env vars and yaml keys (new keys are additive only).
 
-**Sanctioned, flagged deltas (all on the standalone persona or additive):**
+**Sanctioned, flagged deltas (standalone-persona, additive, or the one noted controller default):**
 1. The `Manager` token loop is replaced by `dispatch.Loop` — external cadence is
    preserved by construction (§6); the `[WORKER-001]` log prefix becomes per-run
    `[RUN-<id>]` (operator-visible log format, not a wire contract — §16.9).
@@ -671,6 +682,20 @@ all existing env vars and yaml keys (new keys are additive only).
 3. New additive config keys (§2) and additive metric names (§10.3).
 4. `SetRunToken`/`ClearRunToken` deleted — the pinned auth observables hold via per-run
    clients (§11.2.4).
+5. **Standalone `maxConcurrentRuns` defaults to 3** (was effectively 1 = today's single
+   serial worker): the standalone tf runner executes up to 3 runs concurrently by
+   default — an intentional throughput improvement, **not** byte-identical to today's
+   serial cadence. Rationale: safe concurrency is the whole point of phase 5; the hazards
+   are covered by the §7 H1–H8 suite under `-race`. `RUNNER_MAX_CONCURRENT_RUNS`
+   overrides; negative = unlimited with the 10-per-cycle backstop; `maxConcurrentRuns=1`
+   reproduces today's exact serial cadence for operators who want it. This makes the
+   concurrency paths (H1–H8) **default-on** rather than opt-in.
+6. **Controller `maxConcurrentJobs` compiled-in default changes 20 → 10** — the sole
+   exception to the run-controller persona's bit-identical/behavior-preserving claim
+   (top-of-file, §3.3, §6). Field/semantics and the unlimited backstop are otherwise
+   unchanged; today's code value is 20 (`config.go:139-143`) and operators can still set
+   any value. Rationale: a more conservative default for cluster job pressure; no
+   wire/manifest/metric-shape changes.
 
 ---
 
@@ -679,11 +704,11 @@ all existing env vars and yaml keys (new keys are additive only).
 **Gate (`tools/coverage/thresholds.txt`) after this phase** — two new lines:
 
 ```
-github.com/meshcloud/building-block-runner/runner/internal/dispatch  90   (new)
-github.com/meshcloud/building-block-runner/runner/internal/k8sjob    90   (new)
+github.com/meshcloud/building-block-runner/internal/dispatch  90   (new)
+github.com/meshcloud/building-block-runner/internal/k8sjob    90   (new)
 ```
 
-`exclusions.txt` gains `runner/internal/k8sjob/cluster.go` (real cluster I/O:
+`exclusions.txt` gains `internal/k8sjob/cluster.go` (real cluster I/O:
 kubeconfig loading via clientcmd, OIDC discovery HTTP against the API server —
 `kubernetes.go:49-59,650-708` today; isolated into one file in §5 precisely so the
 exclusion stays per-file honest). Everything else in `k8sjob` is hermetically testable
@@ -816,7 +841,7 @@ No cross-repo edits exist to co-revert (§15).
 - Per-run reporting pattern: run-scoped `meshapi.RunClient` (runToken-only) +
   `report.Progress`/`Observer` (async `IN_PROGRESS` mapping) — the template for every
   async handover port.
-- Packages: `runner/internal/{dispatch,k8sjob}` exist, gated at 90 (with the
+- Packages: `internal/{dispatch,k8sjob}` exist, gated at 90 (with the
   `k8sjob/cluster.go` exclusion); `internal/controller` is gone.
 - Loop policy knobs available to phase-6 personas: `LoopConfig{PollInterval,
   ClaimBackoff, MaxConcurrent}`, `ClaimClassifier`, wake channel.

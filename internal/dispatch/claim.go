@@ -19,14 +19,30 @@ type RunClaimClient struct {
 	auth            meshapi.AuthProvider
 	identity        meshapi.Identity
 	metrics         *MetricsCollector
+	// requesterFn builds the node-id from the runner uuid. Defaults to the prefix-first
+	// "<requesterPrefix>-<runnerUuid>" shape; a caller with a differently-shaped frozen
+	// header (the tf persona's "<runnerUuid>-worker-1") overrides it via WithRequester.
+	requesterFn func(runnerUuid string) string
+}
+
+// ClaimOption customizes a RunClaimClient at construction (functional options keep the
+// positional constructor signature stable for the controller and phase-6 personas).
+type ClaimOption func(*RunClaimClient)
+
+// WithRequester overrides the node-id builder. The default is
+// "<requesterPrefix>-<runnerUuid>" (controller "run-controller-<uuid>"; phase-6 personas
+// "<identity.Name>-<uuid>"). The tf persona needs the frozen "<runnerUuid>-worker-1" node-id
+// (D9 observable header), which is uuid-first and so does not fit the prefix-first default.
+func WithRequester(fn func(runnerUuid string) string) ClaimOption {
+	return func(c *RunClaimClient) { c.requesterFn = fn }
 }
 
 // NewRunClaimClient builds the claim/fail-fast-report adapter for one runner/controller
-// identity. requesterPrefix is stamped into the fetch node-id as "<prefix>-<runnerUuid>"
-// (e.g. "run-controller-<uuid>", the frozen controller header, or "<uuid>-worker-1" for the
-// tf persona) -- callers own their own frozen prefix (D9).
-func NewRunClaimClient(url, runnerUuid, requesterPrefix string, auth meshapi.AuthProvider, identity meshapi.Identity, metrics *MetricsCollector) *RunClaimClient {
-	return &RunClaimClient{
+// identity. By default requesterPrefix is stamped into the node-id as "<prefix>-<runnerUuid>"
+// (e.g. "run-controller-<uuid>", the frozen controller header) -- callers own their own
+// frozen prefix (D9); pass WithRequester to stamp a differently-shaped frozen node-id.
+func NewRunClaimClient(url, runnerUuid, requesterPrefix string, auth meshapi.AuthProvider, identity meshapi.Identity, metrics *MetricsCollector, opts ...ClaimOption) *RunClaimClient {
+	c := &RunClaimClient{
 		url:             url,
 		runnerUuid:      runnerUuid,
 		requesterPrefix: requesterPrefix,
@@ -34,6 +50,10 @@ func NewRunClaimClient(url, runnerUuid, requesterPrefix string, auth meshapi.Aut
 		identity:        identity,
 		metrics:         metrics,
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 func (c *RunClaimClient) newMeshClient(nodeID string) *meshapi.RunClient {
@@ -41,6 +61,9 @@ func (c *RunClaimClient) newMeshClient(nodeID string) *meshapi.RunClient {
 }
 
 func (c *RunClaimClient) requester() string {
+	if c.requesterFn != nil {
+		return c.requesterFn(c.runnerUuid)
+	}
 	return fmt.Sprintf("%s-%s", c.requesterPrefix, c.runnerUuid)
 }
 

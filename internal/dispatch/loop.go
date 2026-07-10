@@ -43,7 +43,26 @@ type LoopDeps struct {
 	// the run-controller persona's frozen policy.
 	Classify ClaimClassifier
 	Metrics  *MetricsCollector
-	Logger   *slog.Logger
+	// Standalone is the optional per-persona meter for the two additive standalone-runner
+	// counters the run_controller_* MetricsCollector has no equivalent of: unhandled run
+	// type and at-capacity skip (PLAN_DETAIL_05 §16, the runner_runs_unhandled_total /
+	// runner_at_capacity_skips_total series, structurally satisfied by *mgmt.RunMetrics).
+	// nil for the run-controller persona -- its run_controller_* series already covers
+	// capacity skips (MetricsCollector.IncJobsAtCapacitySkips) and it has no unhandled-type
+	// concept worth a dedicated series (frozen surface unchanged, additive-only).
+	Standalone StandaloneMetrics
+	Logger     *slog.Logger
+}
+
+// StandaloneMetrics is the optional standalone-persona meter Loop drives for the two events
+// the frozen run_controller_* collector does not model (D5 unhandled-type fail-fast and the
+// in-process at-capacity skip). Declared here (consumer-side, P3) so *mgmt.RunMetrics
+// satisfies it structurally without dispatch importing mgmt or prometheus for it.
+type StandaloneMetrics interface {
+	// RunUnhandled records a claimed run whose type had no handler (fail-fast).
+	RunUnhandled(runnerType string)
+	// AtCapacitySkip records a polling cycle skipped because the runner was at capacity.
+	AtCapacitySkip()
 }
 
 // Loop is the backend-agnostic claim/drain loop (PLAN_DETAIL_05 §4.1), generalized from the
@@ -136,6 +155,9 @@ func (l *Loop) drainRuns() {
 	if capacity <= 0 {
 		l.logger.Info("at capacity, skipping run fetch this cycle", "max_concurrent", l.cfg.MaxConcurrent)
 		l.deps.Metrics.IncJobsAtCapacitySkips(l.deps.RunnerUuid)
+		if l.deps.Standalone != nil {
+			l.deps.Standalone.AtCapacitySkip()
+		}
 		return
 	}
 
@@ -203,6 +225,9 @@ func (l *Loop) processNextRun() processResult {
 		var unhandled *UnhandledTypeError
 		if errors.As(err, &unhandled) {
 			l.logger.Warn("no handler configured for run type", "run_id", run.Id, "type", run.Type)
+			if l.deps.Standalone != nil {
+				l.deps.Standalone.RunUnhandled(string(run.Type))
+			}
 			l.reportRunFailure(run.Id, unhandled.Message)
 			return processFailed
 		}

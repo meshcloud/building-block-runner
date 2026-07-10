@@ -59,6 +59,27 @@ func TestRunMetrics_PollError_IncrementsCounter(t *testing.T) {
 	assert.InDelta(t, 1, testutil.ToFloat64(m.pollErrors.WithLabelValues("runner-1")), 0)
 }
 
+func TestRunMetrics_RunUnhandled_IncrementsCounterByType(t *testing.T) {
+	m := NewRunMetrics(prometheus.NewRegistry(), "runner-1")
+
+	m.RunUnhandled("TERRAFORM")
+	m.RunUnhandled("TERRAFORM")
+	m.RunUnhandled("MANUAL")
+
+	assert.InDelta(t, 2, testutil.ToFloat64(m.unhandled.WithLabelValues("runner-1", "TERRAFORM")), 0)
+	assert.InDelta(t, 1, testutil.ToFloat64(m.unhandled.WithLabelValues("runner-1", "MANUAL")), 0)
+	// Fail-fast is deliberately NOT counted as an executed-and-failed run (plan §16).
+	assert.InDelta(t, 0, testutil.ToFloat64(m.failed.WithLabelValues("runner-1")), 0)
+}
+
+func TestRunMetrics_AtCapacitySkip_IncrementsCounter(t *testing.T) {
+	m := NewRunMetrics(prometheus.NewRegistry(), "runner-1")
+
+	m.AtCapacitySkip()
+
+	assert.InDelta(t, 1, testutil.ToFloat64(m.atCapacitySkip.WithLabelValues("runner-1")), 0)
+}
+
 func TestRunMetrics_LabelsSeriesByRunnerUuid(t *testing.T) {
 	m := NewRunMetrics(prometheus.NewRegistry(), "runner-a")
 

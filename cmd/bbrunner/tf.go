@@ -9,6 +9,7 @@ import (
 
 	"github.com/meshcloud/building-block-runner/internal/build"
 	"github.com/meshcloud/building-block-runner/internal/config"
+	"github.com/meshcloud/building-block-runner/internal/dispatch"
 	"github.com/meshcloud/building-block-runner/internal/mgmt"
 	"github.com/meshcloud/building-block-runner/internal/tf"
 )
@@ -66,6 +67,31 @@ func runTfPolling() int {
 		return 1
 	}
 
+	// Same dispatcher selection as cmd/tf (§12): in-process dispatch.Loop opt-in via
+	// RUNNER_DISPATCHER=inprocess, else the legacy Manager loop (default).
+	if os.Getenv("RUNNER_DISPATCHER") == "inprocess" {
+		logger.Info("using in-process dispatcher (dispatch.Loop)")
+		metrics := dispatch.NewMetricsCollectorWithRegistry(reg)
+		loop, inproc, err := tf.NewDispatchRunner(logger, tfBinaryProvider, dec, meter, metrics)
+		if err != nil {
+			logger.Error("failed to start in-process dispatcher", "error", err)
+			return 1
+		}
+		var wg sync.WaitGroup
+		wg.Add(1)
+		loop.Start(&wg)
+		signalChan := make(chan os.Signal, 1)
+		signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
+		go func() {
+			<-signalChan
+			loop.Stop()
+		}()
+		wg.Wait()
+		inproc.Wait()
+		return 0
+	}
+
+	logger.Info("using legacy Manager polling loop")
 	var wg sync.WaitGroup
 	wg.Add(1)
 

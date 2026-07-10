@@ -10,6 +10,7 @@ import (
 
 	"github.com/meshcloud/building-block-runner/internal/build"
 	"github.com/meshcloud/building-block-runner/internal/config"
+	"github.com/meshcloud/building-block-runner/internal/dispatch"
 	meshapi "github.com/meshcloud/building-block-runner/internal/meshapi"
 	"github.com/meshcloud/building-block-runner/internal/mgmt"
 	"github.com/meshcloud/building-block-runner/internal/tf"
@@ -18,7 +19,18 @@ import (
 const (
 	ENV_RUN_JSON_FILE_PATH = "RUN_JSON_FILE_PATH"
 	ENV_EXECUTION_MODE     = "EXECUTION_MODE"
+	// ENV_RUNNER_DISPATCHER selects the polling-mode dispatch backend (PLAN_DETAIL_05 §12):
+	// "inprocess" opts into the dispatch.Loop + InProcess + tf handler path; any other value
+	// (incl. unset) keeps the legacy Manager/Worker polling loop, which stays the default
+	// until full characterization-through-loop equivalence is proven (run-log addendum).
+	ENV_RUNNER_DISPATCHER = "RUNNER_DISPATCHER"
 )
+
+// useInProcessDispatcher reports whether the tf persona should run on the new dispatch.Loop
+// path. It is opt-in (RUNNER_DISPATCHER=inprocess); the Manager path remains the default.
+func useInProcessDispatcher() bool {
+	return os.Getenv(ENV_RUNNER_DISPATCHER) == "inprocess"
+}
 
 func main() {
 	// Persona identity carried as an attribute (§8.1) — replaces the former "[TF RUNNER]"
@@ -86,6 +98,32 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Dispatcher selection (§12): the new in-process dispatch.Loop path is opt-in; the legacy
+	// Manager/Worker loop stays the default. The run_controller_* loop metrics register on the
+	// same dedicated registry the tf persona already serves, via the injectable §5.6 seam.
+	if useInProcessDispatcher() {
+		logger.Info("using in-process dispatcher (dispatch.Loop)")
+		metrics := dispatch.NewMetricsCollectorWithRegistry(reg)
+		loop, inproc, err := tf.NewDispatchRunner(logger, tfBinaryProvider, dec, meter, metrics)
+		if err != nil {
+			logger.Error("failed to start in-process dispatcher", "error", err)
+			os.Exit(1)
+		}
+		var wg sync.WaitGroup
+		wg.Add(1)
+		loop.Start(&wg)
+		signalChan := make(chan os.Signal, 1)
+		signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
+		go func() {
+			<-signalChan
+			loop.Stop()
+		}()
+		wg.Wait()
+		inproc.Wait()
+		os.Exit(0)
+	}
+
+	logger.Info("using legacy Manager polling loop")
 	var wg sync.WaitGroup
 	wg.Add(1)
 

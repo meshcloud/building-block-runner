@@ -4,6 +4,25 @@ wsTimeoutMins: 5
 initTimeoutMins: 3
 workingDir: /tmp/runner/wd
 tfInstallDir: /tmp/runner/tfbin
+# maxConcurrentRuns caps in-process concurrent runs when running on the dispatch.Loop path
+# (opt in with RUNNER_DISPATCHER=inprocess). Default 3 (env: RUNNER_MAX_CONCURRENT_RUNS).
+# Set to 1 to reproduce the historic single serial worker cadence; a negative value means
+# unlimited (bounded by a 10-per-cycle backstop). Ignored by the legacy Manager loop (the
+# current default), which always runs one worker.
+# maxConcurrentRuns: 3
+#
+# registration: (optional) opt the standalone tf runner into a startup self-registration
+# PUT to the meshfed API. Absent => the runner never self-registers (default, as today).
+# The runner object must already exist in meshfed (a 404 tells you to create it in the UI).
+# No workload-identity-federation block is sent (a standalone runner has no projected tokens).
+# registration:
+#   displayName: "My TF Runner"
+#   ownedByWorkspace: my-workspace
+#   publicKey: |
+#     -----BEGIN PUBLIC KEY-----
+#     ...
+#     -----END PUBLIC KEY-----
+#   capability: TERRAFORM   # a concrete type or ALL
 api:
   url: http://localhost:8300
   # Option 1: Basic auth (user/password) is also still supported via RUNNER_API_USERNAME / RUNNER_API_PASSWORD but is deprecated;

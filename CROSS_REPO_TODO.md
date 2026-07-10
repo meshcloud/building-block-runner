@@ -280,3 +280,27 @@ gate (side-by-side transcript equivalence + a real-GitHub smoke) not runnable he
   the Kotlin `decrypt("") == ""` empty-string guard that `meshapi.CertDecryptor` has; github
   never decrypts a legitimately-empty ciphertext (appPem/token are always present), so this is
   inert today, but a future convergence onto `meshapi.CertDecryptor` would be strictly safer.
+
+## Phase-3/5 remediation (2026-07-10)
+
+- **New optional tf-block-runner env/config (meshfed-release local-dev-stack, awareness):**
+  The tf persona now supports an in-process dispatch mode alongside the legacy Manager loop.
+  All additive; the legacy Manager loop remains the DEFAULT, so no meshfed-release change is
+  required unless you want to try the new path. New knobs:
+  - `RUNNER_DISPATCHER=inprocess` — opt into the dispatch.Loop + InProcess + tf-handler path.
+  - `RUNNER_MAX_CONCURRENT_RUNS` (or `maxConcurrentRuns:` in runner-config.yml, default 3) —
+    concurrent in-process runs; set to 1 for the historic serial cadence.
+  - an optional `registration:` section (displayName / ownedByWorkspace / publicKey /
+    capability) enabling a WIF-less startup self-registration PUT. Absent => never
+    self-registers, exactly as today.
+  No meshfed-release edits are required today. When the in-process tf path is later promoted to
+  the default (after live acceptance — see PLAN_IMPL_RUN_LOG_ADDENDUM.md), revisit the
+  local-dev-stack tf-block-runner deployment to pick a `maxConcurrentRuns`.
+
+- **Deferred: retire the meshfed-release multiplexing-block-runner (still owed).** The
+  `cmd/bbrunner` dispatcher auto-detect now EXISTS (in-cluster => k8sjob, else => InProcess,
+  `RUNNER_DISPATCHER` override), but the out-of-cluster InProcess *superset* (all five persona
+  handlers in one process) is not yet wired — it needs each persona's config loaded into the
+  controller bootstrap. Until that lands, the run-controller image still only serves the k8s
+  dispatch role; the multiplexing-block-runner cannot be retired yet. Tracked in
+  PLAN_IMPL_RUN_LOG_ADDENDUM.md.

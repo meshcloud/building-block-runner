@@ -29,9 +29,9 @@ reviewed, then resume.
 | A2 | The gate script matches profile lines by **import-path prefix** (so a rename `tfrun` → `internal/…` is a one-line thresholds edit, and a prefix line can cover several packages). | Plan 00 §5.4 ("`<import-path-prefix> <min-percent>`") | Read `tools/coverage/check.sh`; test with a dummy prefix line. |
 | A3 | Measured coverage on the phase-1 branch is ≈92% (plan 01 §8 projected 1281/1387), i.e. ≥ ~2pp buffer above the gate. | Plan 01 §8 | `task coverage`, record the number. **STOP-A2** if < 91%: the refactor will shave fractions during moves; replan buffer (extra tests) before starting. |
 | A4 | The exclusion list contains exactly `tfrun/git.go` and `tfrun/tfbinaries.go` (per-file, with justifications). | Plan 01 §7 | `cat tools/coverage/exclusions.txt`. |
-| A5 | Characterization suites are **black-box at the declared seams**: run-JSON in → captured HTTP requests + `MockedTfFacade` calls out, driven through `Worker.work()` / `SingleRunWorker.ExecuteRun()`; plus the three *declared* seam-test groups that phase 2 keeps or retargets: `auth` (CP10), manager token protocol (CP12), constructor-default pins (CP3/CP12). Harness construction is centralized in helpers (CP1 promised extraction of `SetupTest` worker construction). | Plan 01 §4, §9 CP1, Q2 | Read the suites' `SetupSuite`/`SetupTest`; confirm assertions never dereference `RunContextInfo`, `GenericTfCmd`, or `reportStatus` internals. |
+| A5 | Characterization suites are **black-box at the declared seams**: run-JSON in → captured HTTP requests + `MockedTfFacade` calls out, driven through `Worker.work()` / `SingleRunWorker.ExecuteRun()`; plus the three *declared* seam-test groups that phase 2 keeps or retargets: `auth` (CP10), manager token protocol (CP12), constructor-default pins (CP3/CP12). Harness construction is centralized in helpers (CP1 promised extraction of `SetupTest` worker construction). | Plan 01 §4, §9 CP1 | Read the suites' `SetupSuite`/`SetupTest`; confirm assertions never dereference `RunContextInfo`, `GenericTfCmd`, or `reportStatus` internals. |
 | A6 | Suites are hermetic (local git fixture repos, no network except gate-excluded `tfbinaries_test.go`). | Plan 01 CP1 | Run `go test ./tfrun` with network disabled (or inspect: no `github.com` URLs left in scenario fixtures). |
-| A7 | `-race` is OFF in CI and Taskfile; bugs B6/B10 are pinned functionally only (the races themselves are not asserted). | Plan 01 A5/Q4 | `grep -rn "\-race" .github/workflows Taskfile.yml`. |
+| A7 | `-race` is OFF in CI and Taskfile; bugs B6/B10 are pinned functionally only (the races themselves are not asserted). | Plan 01 A5 | `grep -rn "\-race" .github/workflows Taskfile.yml`. |
 | A8 | Bug inventory is final: 13 entries B1–B13, with `// FIXME(bug):` markers in tests for B1–B5, B7, B12, B13 (+ B6/B10 functional-only pins); B8, B9, B11 are inventory-only (no pin test). | Plan 01 §6 | `grep -rn "FIXME(bug)" tf-block-runner/` and diff against plan 01 §6. |
 | A9 | Task targets from plan 00 §12 exist (`task test`, `task lint -- --fix`, `task coverage`, …); `.golangci.yml` contains a temporary `tfrun` exclusions block whose removal is owned by phase 2/2b. | Plan 00 §12 | `task --list`; read `.golangci.yml` exclusion comments. |
 | A10 | `Test_UseCustomPredicate_*` (`runapi_test.go:533-742`) still test a non-existent feature and are earmarked for phase-2 renaming. | Plan 01 F4 | `grep -n CustomPredicate tf-block-runner/tfrun/runapi_test.go`. |
@@ -74,7 +74,7 @@ reviewed, then resume.
 - Every functional bug fix B1–B5, B7–B9, B11–B13 → **phase 2b** (§7).
 - Flipping `-race` on → phase 2b (verifies B6/B10).
 - `run-controller`, `go-meshapi-client` restructuring (incl. the `meshapi`
-  `runnerName`/`runnerVersion` package globals, §4.1 item 3) → phase 3.
+  `runnerName`/`runnerVersion` package globals, §3.1 item 3) → phase 3.
 - Module consolidation / move to `internal/` → phase 4 (§5.1 says NOW vs THEN).
 - Any new feature, any contract change (D9/D10 stay frozen, §8).
 - The errcheck-class lint pins in production code whose fix changes behavior → 2b.
@@ -314,7 +314,7 @@ func (e Engine) Execute(ctx context.Context, run Run) error
   **parametrized per behavior** (`initFailureHint(b Behavior) string` returning "" for
   APPLY) — deliberately awkward, so 2b's fix is a one-liner and phase 2 changes no pinned
   message.
-- **Polling loop:** the manager token protocol is a pinned seam (plan 01 CP12/Q2), so
+- **Polling loop:** the manager token protocol is a pinned seam (plan 01 CP12), so
   `Manager` survives with the same channel protocol (`work/done/norun/failed/stop/
   stopped`), delays (10s/60s) and `Start/Stop` surface — de-globaled (takes `Config`,
   `RunSource`, `Engine`) and with `shutdownCalled` as `atomic.Bool` (§5.5). The poll

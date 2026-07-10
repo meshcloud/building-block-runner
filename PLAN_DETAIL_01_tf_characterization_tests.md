@@ -58,8 +58,8 @@ until 2b, or D13 gets a reviewed exception for data races.
 - Any production-code change, including trivially safe ones (1000ns sleep B4, typo "perpare") → phase 2b.
 - Real-tofu / real-git e2e task (opt-in, per D6) → phase 0/7 CI concern, not this gate.
 - Coverage for `tf-block-runner/main.go` and `util/` — the D6 gate starts on `tfrun` only.
-  The k8s single-run *wiring* in `main.go:112-159` is pinned only partially (see §5 pin 16 and
-  Open-questions resolution Q3).
+  The k8s single-run *wiring* in `main.go:112-159` is pinned only partially (see §5 pin 16;
+  the remainder is owned by acceptance tests, §12).
 - run-controller / go-meshapi-client coverage (phase 3).
 
 ---

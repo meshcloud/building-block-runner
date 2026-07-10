@@ -360,7 +360,7 @@ and run no Observer; tf alone uses Progress+Observer.
 
 The tf handler lives in `internal/tf` and implements `dispatch.RunHandler`
 directly (imports `dispatch` for the parameter types — the same
-consumer-declares/adapter-imports relationship `JobManager` has today; depguard §5.3):
+consumer-declares/adapter-imports relationship `JobManager` has today; depguard §5):
 
 ```go
 // tf package. Shared deps injected once (TfProvider, Config, Clock, Identity, base URL,

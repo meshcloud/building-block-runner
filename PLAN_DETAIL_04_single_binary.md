@@ -32,7 +32,7 @@ packages.
 
 Phase character: **behavior-preserving on every frozen contract** (wire shapes, headers,
 k8s Job contract, image names, entrypoint paths, healthz port defaults, metric names),
-with three **sanctioned additive observability changes** mandated by D12 (§5.4): the
+with three **sanctioned additive observability changes** mandated by D12 (§6): the
 controller gains `/healthz`, the tf runner gains `/metrics` + generic run metrics, and
 `MANAGEMENT_PORT` is introduced (existing `PORT` keeps working as a tf-persona alias).
 Kotlin runners are untouched — their personas arrive in phase 6.
@@ -73,11 +73,11 @@ test/golden changes under the lifted versions, **do not bump k8s.io or pin x/\* 
 per-package lines for `tf`/`gitsource`/`tofu`) leaves any individual package below 90.
 Do not touch `exclusions.txt`; either add the missing tests or adopt the reviewed
 fallback mechanism (comma-joined prefix field in check.sh computing a combined total).
-**STOP-D (step 5):** a per-persona image cannot be built from the shared
-`containers/runner.Dockerfile` (buildx `target` × platform quirk, per-cmd `go build`
-failure, nix-install layer breakage) in a way that would change a published image's name,
-entrypoint path, or runtime behavior — that breaks D10; stop and replan the matrix. The
-risk is the multi-`target` build graph itself.
+**STOP-D (step 5):** a per-app image cannot be built from its own
+`containers/<app>/Dockerfile` (per-cmd `go build` failure, nix-install layer breakage, the
+disjoint-tree link property) in a way that would change a published image's name,
+entrypoint path, or runtime behavior — that breaks D10; stop and replan. The risk is a
+per-app build/link failure, not a shared-graph quirk (there is no shared Dockerfile).
 **STOP-E (step 9):** the meshfed-release local-dev-stack + acceptance flow fails against
 the new layout — D10's outer safety net; diagnose/replan before merging.
 
@@ -107,13 +107,16 @@ the new layout — D10's outer safety net; diagnose/replan before merging.
   `MANAGEMENT_PORT` with per-persona defaults (§4.3), controller finally gains healthz,
   tf gains metrics, plus the new generic standalone-runner metrics wired into the tf
   polling loop.
-- Docker: one `containers/runner.Dockerfile` (shared builder + per-image final stages);
-  each final stage COPYs its own binary and sets it as the direct ENTRYPOINT (no shared
-  binary, no persona-selecting symlink). The `run-controller` image builds/ships
-  `./cmd/bbrunner` (the controller/superset — carries all handler code, but in k8s mode
-  only dispatches Jobs); the `tf-block-runner` image ships the lean `./cmd/tf` binary.
-  Legacy `/app/tfrunner` stays reachable as a plain duplicate of the single-purpose tf
-  binary. The two legacy Dockerfiles die; runtime assets move to `containers/<persona>/`.
+- Docker: two standalone per-app Dockerfiles created this phase —
+  `containers/run-controller/Dockerfile` (builds/ships `./cmd/bbrunner`, the
+  controller/superset — carries all handler code, in k8s mode only dispatches Jobs) and
+  `containers/tf-block-runner/Dockerfile` (builds/ships the lean `./cmd/tf`). Each has its
+  own builder + final stage, copies only its own binary, sets it as the direct ENTRYPOINT
+  (no shared binary, no persona-selecting symlink), and takes **no `--target`** — the
+  uniform per-app model phase 6 extends (one `containers/<app>/Dockerfile` per persona,
+  `<app>` = published image name). Legacy `/app/tfrunner` stays reachable as a plain
+  duplicate of the single-purpose tf binary. The two legacy Dockerfiles die; runtime
+  assets move to `containers/<app>/`.
 - Workflows: the *minimum* edits that keep tests/image builds working against the new
   layout — `ci.yml` go test leg (one leg, at repo root) and `build-images.yml` matrix
   `file`/`target` where the `run-controller` leg builds `./cmd/bbrunner` and the
@@ -415,21 +418,26 @@ process — no default-registry globals, consistent with plan 03 §5.6):
   `Engine.Execute`, `PollError()` on non-norun fetch errors — hooked into the polling
   loop, not the engine (single-run stays metrics-free).
 
-### 4.4 Dockerfile matrix (D8)
+### 4.4 Per-app Dockerfiles (D8)
 
-One new `containers/runner.Dockerfile` (sibling of `jvm.Dockerfile`, which already proves
-the shared-file + matrix-arg pattern, §3.4); the two legacy Dockerfiles are deleted. The
-shared `builder` stage compiles each image's own binary (`./cmd/tf` for the fit image,
-`./cmd/bbrunner` for the run-controller image); every final stage COPYs only its own
-binary and names it as the direct ENTRYPOINT — no shared binary crosses into a final
-image, no persona-selecting symlinks. The superset **is** the run-controller image.
-Stages:
+Two standalone per-app Dockerfiles are created this phase —
+`containers/run-controller/Dockerfile` and `containers/tf-block-runner/Dockerfile` — each
+with its own builder + final stage; the two legacy Dockerfiles are deleted. **No shared
+Dockerfile, no `--target`, no persona-selecting symlink:** each builds only its own binary
+and ships it as the direct ENTRYPOINT. This is the uniform model phase 6 extends (one
+`containers/<app>/Dockerfile` per persona, `<app>` = published image name). `jvm.Dockerfile`
+is untouched (Kotlin, dies phase 6/7).
 
-| Stage | Base | Content |
-|---|---|---|
-| `builder` | `golang:1.26-alpine` (`--platform=$BUILDPLATFORM`) | `COPY go.mod go.sum` → `go mod download` → copy the module from the root build context (`COPY . .`) → `CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags "-s -w -X 'github.com/meshcloud/building-block-runner/internal/build.Version=${VERSION}'" -o /out/tf-block-runner ./cmd/tf` and `… -o /out/run-controller ./cmd/bbrunner` (the run-controller binary is the superset built from `./cmd/bbrunner`; the fit tf binary links only its own disjoint tree, §3.6). No go.work needed (§4.6) |
-| `run-controller` (final) | `alpine:3.22.4` (digest-pinned as today) | apk/user layers verbatim from `run-controller/Dockerfile:28-36`; `COPY --from=builder /out/run-controller /app/run-controller` (binary built from `./cmd/bbrunner` — the controller/superset, auto-detects k8s); config = base `containers/runner-config.yml` + per-persona `containers/run-controller/runner-config.yml` (deep-merged, §4.4); `ENTRYPOINT ["/app/entrypoint.sh", "/app/run-controller"]` (default/auto mode — no subcommand) |
-| `tf-block-runner` (final) | `alpine:3.22.4` (same pin) | apk/user/nix layers verbatim from `tf-block-runner/Dockerfile:28-59`; `COPY --from=builder /out/tf-block-runner /app/tf-block-runner` **and** the same binary to the legacy path `/app/tfrunner` (plain duplicate — the binary is single-purpose, so argv[0] is irrelevant); config = base `containers/runner-config.yml` + per-persona `containers/tf-block-runner/runner-config.yml` (deep-merged, §4.4) + `known_hosts` from `containers/tf-block-runner/`; `ENV SSH_KNOWN_HOSTS=/app/known_hosts`, `ENV PORT=8080` (kept, §4.3), `EXPOSE 8080`; `ENTRYPOINT ["/app/entrypoint.sh", "/app/tf-block-runner"]` |
+Both builder stages share the same structure — `golang:1.26-alpine`
+(`--platform=$BUILDPLATFORM`), `COPY go.mod go.sum` → `go mod download` → `COPY . .`
+(module built from the root build context) → `CGO_ENABLED=0 go build -trimpath
+-buildvcs=false -ldflags "-s -w -X 'github.com/meshcloud/building-block-runner/internal/build.Version=${VERSION}'"
+-o /out/<binary> ./cmd/<entry>` (no go.work needed, §4.6):
+
+| Dockerfile | Builds | Final base | Final content |
+|---|---|---|---|
+| `containers/run-controller/Dockerfile` | `-o /out/run-controller ./cmd/bbrunner` (the controller/superset, auto-detects k8s; links everything — the one fat image) | `alpine:3.22.4` (digest-pinned as today) | apk/user layers verbatim from `run-controller/Dockerfile:28-36`; `COPY --from=builder /out/run-controller /app/run-controller`; config = base `containers/runner-config.yml` + `containers/run-controller/runner-config.yml` (deep-merged, plan 03 §5.3); `ENTRYPOINT ["/app/entrypoint.sh", "/app/run-controller"]` (default/auto mode — no subcommand) |
+| `containers/tf-block-runner/Dockerfile` | `-o /out/tf-block-runner ./cmd/tf` (lean fit binary; links no k8s, §3.6) | `alpine:3.22.4` (same pin) | apk/user/nix layers verbatim from `tf-block-runner/Dockerfile:28-59`; `COPY --from=builder /out/tf-block-runner /app/tf-block-runner` **and** the same binary to the legacy path `/app/tfrunner` (plain duplicate — single-purpose, so argv[0] is irrelevant); config = base `containers/runner-config.yml` + `containers/tf-block-runner/runner-config.yml` (deep-merged, plan 03 §5.3) + `known_hosts` from `containers/tf-block-runner/`; `ENV SSH_KNOWN_HOSTS=/app/known_hosts`, `ENV PORT=8080` (kept, §4.3), `EXPOSE 8080`; `ENTRYPOINT ["/app/entrypoint.sh", "/app/tf-block-runner"]` |
 
 **Entrypoint table (per image — no symlinks):**
 
@@ -458,14 +466,14 @@ works via the plain duplicate binary at that path (no symlink, no argv[0] dispat
 D14 says CI is reshaped in phase 7; the phase-4 line is "the release matrix builds
 **N images**, the `run-controller` image from `./cmd/bbrunner` and each fit image from its
 own `./cmd/<persona>`". Reconciliation: **change only what the new layout makes false** —
-job structure, triggers, tag schemes, JVM legs all stay. Each image `target` compiles its
-own binary inside the shared Dockerfile.
+job structure, triggers, tag schemes, JVM legs all stay. Each image is built from its own
+per-app `containers/<app>/Dockerfile` (no `--target`).
 
 | File | Delta | Why strictly needed |
 |---|---|---|
-| `build-images.yml:26-31` | go matrix legs become `dockerfile: containers/runner.Dockerfile` + new `target: run-controller` (builds `./cmd/bbrunner`) / `target: tf-block-runner` (builds `./cmd/tf`); build step gains `target: ${{ matrix.target }}` (empty for JVM legs ⇒ default stage of `jvm.Dockerfile` — behavior unchanged) | old Dockerfile paths cease to exist; image names/tags unchanged; N images preserved |
-| `ci.yml:150-155` (`go-runners-ci`) | matrix collapses to one **test** leg run at repo root (drop `go-dir`/`working-directory`; `go test ./...` covers every `cmd/*` + `internal/*`; the *post-0* `go-meshapi-client` leg dies with the module); `go-version-file: go.mod` | `working-directory: tf-block-runner` etc. cease to exist. Coverage artifact becomes `coverage` (flag §10.6 — artifact *names* change) |
-| `ci.yml:189-193` (`go-runners-image`) | `file: containers/runner.Dockerfile` + `target:` per app (per-persona binary built in-stage); matrix keys and image names unchanged | old Dockerfile paths |
+| `build-images.yml:26-31` | the two go matrix legs become `dockerfile: containers/run-controller/Dockerfile` (builds `./cmd/bbrunner`) and `dockerfile: containers/tf-block-runner/Dockerfile` (builds `./cmd/tf`), **no `target:`**; JVM legs unchanged (`containers/jvm.Dockerfile` + `RUNNER_MODULE`) | old Dockerfile paths cease to exist; image names/tags unchanged; N images preserved |
+| `ci.yml:150-155` (`go-runners-ci`) | matrix collapses to one **test** leg run at repo root (drop `go-dir`/`working-directory`; `go test ./...` covers every `cmd/*` + `internal/*`; the *post-0* `go-meshapi-client` leg dies with the module); `go-version-file: go.mod` | `working-directory: tf-block-runner` etc. cease to exist. Coverage artifact becomes `coverage` (flag §10.8 — artifact *names* change) |
+| `ci.yml:189-193` (`go-runners-image`) | `file: containers/<app>/Dockerfile` per app (no `target:`; each Dockerfile builds its own binary); matrix keys and image names unchanged | old Dockerfile paths |
 | `release.yml`, `pr-cleanup.yml`, `release-check.yml`, JVM jobs | **untouched** | operate on image names / Gradle, both unchanged |
 
 ### 4.6 go.work endgame & tooling
@@ -530,7 +538,7 @@ numbers per working commit (squashed on merge).
 | 2 | **bbrunner dispatch hardening + tests.** `cmd/bbrunner` `run` table tests: **no subcommand → the default controller/superset bootstrap** with the canonical `run-controller` Identity name (phase-4: `KubernetesJobDispatcher`; auto-detect + `InProcessDispatcher` arrive phase 5); `bbrunner tf` → the tf bootstrap in-process with the canonical `tf-block-runner` Identity name; unknown subcommand → usage error; trailing-garbage rejection. Assert the fit `cmd/tf` binary needs **no** subcommand (single-purpose). | `cmd/bbrunner/*` + `_test.go` | new tests green (cmd packages — outside the gate denominator, like today's mains) |
 | 3 | **D12 listener unification.** Add `internal/mgmt` (Server + RunMetrics, §4.3) and `config.ManagementPort`; the controller bootstrap (bbrunner's default path in `cmd/bbrunner`) drops the ad-hoc `:2112` block (`main.go:26-35` shape) for `mgmt.NewServer` (default 2112, now with healthz, fatal bind — sanctioned §6); the tf bootstrap drops `startHealthServer` for `mgmt.NewServer` (default 8100, `PORT` alias, now with metrics; still polling-mode-only). | `internal/mgmt`, `internal/config`, both persona bootstraps | httptest-level tests: `/healthz` body byte-identical `OK`; `/metrics` exposition contains `run_controller_*` (controller) resp. the go-collector baseline (tf); alias/default table test incl. `MANAGEMENT_PORT>PORT>8100` precedence and unparseable-value fatal; gate: `mgmt` ≥90 (§7.1) |
 | 4 | **Generic run metrics (D12).** `mgmt.NewRunMetrics`; consumer-side meter interface in `internal/tf`; polling-loop hooks (claim/succeed/fail/duration/poll-error); wire in the tf bootstrap. | `internal/mgmt`, `internal/tf` (loop only), tf bootstrap | fake-meter loop tests (claim→success increments; fetch-error→poll_errors); scenario suite untouched; `-race` clean (A6) |
-| 5 | **Docker matrix.** Add `containers/runner.Dockerfile` (§4.4 — the `tf-block-runner` target builds `./cmd/tf`, the `run-controller` target builds `./cmd/bbrunner`; each ships its binary as direct ENTRYPOINT, no symlinks); `git mv` runtime assets to `containers/<persona>/`; delete the two legacy Dockerfiles. | containers/, asset moves | `docker build --target tf-block-runner` + `--target run-controller` succeed locally (amd64 at minimum) and the fit tf image links no k8s (the run-controller image links everything — the one fat image); smoke: default entrypoint boots each image (`run-controller` boots the auto-detecting controller); `docker run --entrypoint /app/tfrunner <tf-img>` boots the tf persona (legacy duplicate path, no argv[0] dispatch); `wget -qO- localhost:8080/healthz` inside the tf container → `OK`; controller container serves `/healthz`+`/metrics` on 2112; `docker run <run-controller-img> tf` boots the tf persona forced in-process (STOP-D) |
+| 5 | **Per-app Dockerfiles.** Add `containers/tf-block-runner/Dockerfile` (builds `./cmd/tf`) and `containers/run-controller/Dockerfile` (builds `./cmd/bbrunner`) per §4.4 — each ships its binary as direct ENTRYPOINT, no symlinks, no `--target`; `git mv` runtime assets to `containers/<app>/`; delete the two legacy Dockerfiles. | containers/, asset moves | `docker build -f containers/tf-block-runner/Dockerfile` + `-f containers/run-controller/Dockerfile` succeed locally (amd64 at minimum) and the fit tf image links no k8s (the run-controller image links everything — the one fat image); smoke: default entrypoint boots each image (`run-controller` boots the auto-detecting controller); `docker run --entrypoint /app/tfrunner <tf-img>` boots the tf persona (legacy duplicate path, no argv[0] dispatch); `wget -qO- localhost:8080/healthz` inside the tf container → `OK`; controller container serves `/healthz`+`/metrics` on 2112; `docker run <run-controller-img> tf` boots the tf persona forced in-process (STOP-D) |
 | 6 | **Workflows.** Apply the §4.5 table to `ci.yml` + `build-images.yml`; nothing else. | 2 workflow files | draft-PR run: single `runner - test` leg green with coverage summary; both per-persona image jobs build their own binary (N images; PRs build without push, `ci.yml:137,257`); JVM jobs byte-identical logs |
 | 7 | **Tooling endgame.** README truth pass: root `README.md:66-86` health section → `MANAGEMENT_PORT` + controller row + Kotlin note, component links `tf-block-runner/` → the repo-root `cmd/`+`internal/` layout; fold the two module READMEs' still-true content into the root `README.md` (`go run ./cmd/<persona>`, config paths). (`go.work`/`go.work.sum` deletion and the `task work-sync` drop already landed in step 1.) | READMEs | every README command executes; repo grep: no reference to the dead module paths outside CHANGELOG/plan docs |
 | 8 | **Cross-repo lock-step docs.** meshfed-release PR editing `local-dev-stack/SKILL.md` per §9 (exact lines); merged together with (not before) this phase's PR. | meshfed-release only | skill's commands executed verbatim against this branch |
@@ -617,8 +625,8 @@ actually match.
   on `RunMetrics`; `-race` (A6).
 - **Images:** step-5 smoke matrix (default entrypoint — the `run-controller` image boots
   the auto-detecting controller, the fit image boots tf; legacy `command:` paths via the
-  `/app/tfrunner` duplicate; healthz from inside the container; `--target` builds each
-  shipping its own binary — run-controller from `./cmd/bbrunner`, tf from `./cmd/tf`;
+  `/app/tfrunner` duplicate; healthz from inside the container; each per-app Dockerfile
+  builds/ships its own binary — run-controller from `./cmd/bbrunner`, tf from `./cmd/tf`;
   `docker run <run-controller-img> tf` forces tf in-process).
 - **End-to-end:** step 9 — local-dev-stack acceptance (TERRAFORM + MANUAL) with the tf
   persona from the new module; controller evidence via goldens + container smoke (the
@@ -726,7 +734,7 @@ this phase's PR precisely so the pair reverts together).
   each linking only its own dep tree, plus `cmd/bbrunner` — the controller/superset that
   links everything, auto-detects k8s, and is shipped as the run-controller image. Adding a
   fit persona (phase 6 template hook) = one `cmd/<persona>/main.go` + one `bbrunner`
-  subcommand entry + one Dockerfile final stage + one build-matrix leg.
+  subcommand entry + one per-app `containers/<app>/Dockerfile` + one build-matrix leg.
 - Packages: `internal/{tf,gitsource,tofu,meshapi,crypto,config,report,mgmt,
   controller,build}` (concept packages, D11) + `cmd/*` (package main, wiring-only,
   D11-exempt) — `internal/controller` is transitional for phase 5.
@@ -739,10 +747,10 @@ this phase's PR precisely so the pair reverts together).
   personas reuse all three; per-persona defaults per §4.3 (phase 6 assigns 8101–8104 to
   the ported personas).
 - Coverage: thresholds are per-package lines (§7.1); `mgmt` gated; `controller` not.
-- Images: `containers/runner.Dockerfile` multi-target — the `run-controller` target
-  builds/ships `./cmd/bbrunner` and each fit target its own `./cmd/<persona>` binary, as a
-  direct ENTRYPOINT (no shared binary, no symlink); persona assets under
-  `containers/<persona>/`; ldflags path `…/internal/build.Version`.
+- Images: per-app `containers/<app>/Dockerfile` (no shared file, no `--target`) — the
+  `run-controller` Dockerfile builds/ships `./cmd/bbrunner` and each fit Dockerfile its own
+  `./cmd/<persona>` binary, as a direct ENTRYPOINT (no shared binary, no symlink); persona
+  assets under `containers/<app>/`; ldflags path `…/internal/build.Version`.
 
 ## 12. Open questions
 

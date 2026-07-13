@@ -114,12 +114,23 @@ P2.3** (same frozen-pin surface). **Effort:** large. **Risk:** high (frozen tf w
 
 ## P3 — low (tidiness, dead code, consistency, narrow gaps)
 
-### P3.1 `config.Loader.Load` deep-merge is dead code
-The two-layer base+override YAML deep-merge (`internal/config/config.go:85`, PLAN_DETAIL §4.4, described in
-`ARCHITECTURE.md` §5) has **zero non-test callers** anywhere — every persona still loads a single self-contained
-`runner-config.yml`. Decide: wire the base+override layering in (so `containers/runner-config.yml` actually
-overlays per-persona files), **or** delete the unused machinery + the doc claim. Leaving it is a silent
-"documented-but-inert" feature.
+### P3.1 `config.Loader.Load` deep-merge — DONE (kept; premise was incorrect)
+**Investigated, then kept.** The premise ("zero non-test callers", "every persona loads a single self-contained
+file") did not hold up against the tree: `config.Loader.Load` is called by all four ported personas, and the
+two-layer base+override deep-merge is **exercised at runtime by gitlab**. The `gitlab-block-runner` Dockerfile bakes
+both `containers/runner-config.yml` → `/app/containers/runner-config.yml` and its per-impl file → `/app/runner-config.yml`
+(WORKDIR `/app`); gitlab's `LoadConfig` passes `basePath=containers/runner-config.yml`, so the shared base *is* read
+to supply the well-known dev private key (its per-impl file deliberately omits it). Pinned by
+`internal/gitlab/containerconfig_test.go` (real files, asserts the merged key) and `internal/config/basekey_test.go`.
+The other three ported personas pass an **empty** base path (single self-contained file: `manual` needs no key;
+`github`/`azdevops` bake the key into their own file), and `tf`/`run-controller` use their own
+`os.ReadFile`+`yaml.Unmarshal` loaders, not `config.Loader`.
+
+**Decision:** neither delete nor force-wire. The machinery is live and the shared base file is read at runtime, so
+deleting either would break gitlab and change behavior; broadening it onto `github`/`azdevops` would be gratuitous,
+behavior-neutral churn on frozen config. The only real defect was the **doc/reality gap** — `ARCHITECTURE.md` §5
+implied every persona used the two-file merge. §5 is corrected to describe the actual mixed model (gitlab uses
+base+override; the rest are single-file). No code change.
 
 ### P3.2 Unify the metrics seam across the four ported personas
 Only the controller mgmt listener and the tf in-process path use `dispatch.NewMetricsCollectorWithRegistry`;
@@ -132,10 +143,17 @@ The plan wants a grace-period-then-cancel reporting terminal `ABORTED`; the hand
 today's Manager behavior (an in-flight run finishes on its own `TfCommandTimeoutMins`). Belongs with P2.2
 (Manager deletion + a `report.ExecutionStatus` `ABORTED`). **Blocked by:** P2.2.
 
-### P3.4 `logging.*` / `server.*` / `spring.*` warn-on-ignore
-`ARCHITECTURE.md` §5.1 / `DEPRECATIONS.md` §4 intend these legacy YAML blocks to be *ignored-with-warning*, but
-`yaml.Unmarshal` silently drops unknown keys — no warning fires. Add known-fields/strict decoding to warn.
-(Docs now flag this as unimplemented.)
+### P3.4 `logging.*` / `server.*` / `spring.*` warn-on-ignore — DONE
+Implemented as a targeted warn-and-ignore in the shared `config.Loader`: `Load` records which of
+`{logging, server, spring}` appear as top-level keys in the merged config document (`recordIgnoredLegacyBlocks`),
+and each of the four ported personas calls `config.Loader.WarnIgnoredLegacyYAMLBlocks(log)` once at startup (right
+after `Load`), logging one warn-and-ignore line per block that points at `docs/DEPRECATIONS.md`. It is **warn-only,
+never fatal** — the deliberate mirror image of the `FailOnUnconsumedLegacyEnv("BLOCKRUNNER_")` fail-fast guard
+(a stray env override can silently misconfigure; a leftover Spring yaml block is inert). Scope is exactly these
+three well-known Spring block names, not "any unrecognized key" — a general strict/known-fields decode across every
+persona struct stays a larger future change. Pinned by `internal/config/legacyblocks_test.go` (warns on all three
+across both layers; silent when absent). `ARCHITECTURE.md` §5.1 flipped to "yes"; `DEPRECATIONS.md` §4 rewritten
+from "known gap" to the implemented behavior. Config coverage 97.4% (gate 90).
 
 ### P3.5 Minor code TODOs / narrow test gaps (from the repo sweep)
 - `internal/tf/authSsh.go:121` — TODO: auto-discover `known_hosts` (feature idea).

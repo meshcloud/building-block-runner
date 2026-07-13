@@ -161,13 +161,24 @@ byte-identical. The former `SilentDispatchFailure` seam is removed.
 ## 5. Configuration
 
 Precedence: **compiled-in defaults < shared base YAML < per-persona YAML < environment variables** (env always
-wins). The YAML layer is itself two files, deep-merged: a shared top-level base (`containers/runner-config.yml`,
-holding cross-persona defaults such as the well-known local-dev private key) overlaid by each image's own
-`containers/<persona>/runner-config.yml`. `${VAR}` interpolation inside either YAML layer is how legacy env-var
-spellings are honored declaratively, rather than via a growing alias table in code. A config loader that sees a
-`BLOCKRUNNER_*`-prefixed (or otherwise known-legacy) environment variable that no key or interpolation ever consumes
-fails startup with an actionable error — a stale Spring relaxed-binding-style override must never silently boot the
-runner on wrong defaults.
+wins). `${VAR}` interpolation inside either YAML layer is how legacy env-var spellings are honored declaratively,
+rather than via a growing alias table in code. A config loader that sees a `BLOCKRUNNER_*`-prefixed (or otherwise
+known-legacy) environment variable that no key or interpolation ever consumes fails startup with an actionable
+error — a stale Spring relaxed-binding-style override must never silently boot the runner on wrong defaults.
+
+**Two-layer deep-merge — available, and used by one persona today.** The shared
+`config.Loader.Load(basePath, perImplPath, into)` deep-merges an optional shared top-level base
+(`containers/runner-config.yml`) *under* a per-impl file (base < per-impl, key-wise, nested maps merged). It is a
+live, exercised mechanism — but only **gitlab** wires a non-empty base layer: its `gitlab-block-runner` image bakes
+both `containers/runner-config.yml` → `/app/containers/runner-config.yml` and its own file → `/app/runner-config.yml`
+(WORKDIR `/app`), so at runtime the base layer *is* read to supply the well-known local-dev private key, which
+gitlab's per-impl file intentionally does not duplicate (verified in `internal/gitlab/containerconfig_test.go` and
+`internal/config/basekey_test.go`). The other three ported personas call `Load` with an **empty** base path and load
+a single self-contained `containers/<persona>/runner-config.yml` (`manual` needs no key; `github` and `azdevops`
+each bake the dev key directly into their own per-impl file). The `tf` runner and the `run-controller` do not use
+`config.Loader` at all — each decodes its own single self-contained `runner-config.yml` via `os.ReadFile`+
+`yaml.Unmarshal`. So the base layer is neither dead code nor universally wired: it is the deliberate seam that keeps
+the one cross-persona default (the dev key) DRY for the persona that opted into it.
 
 ### 5.1 Alias inventory
 
@@ -177,7 +188,7 @@ runner on wrong defaults.
 | `RUNCONTROLLER_CONFIG_FILE` | `RUNNER_CONFIG_FILE` | yes |
 | `SPRING_PROFILES_ACTIVE` containing `kubernetes` | `EXECUTION_MODE=single-run` | yes |
 | `blockrunner:` YAML block (`uuid`, `version`, `api.url`, `auth.*` incl. kebab-case `api-key.client-id`, `debugMode`, `privateKey`/`privateKeyFile`) | flat, persona-level YAML keys | yes, per field applied |
-| `logging.*` / `server.*` / `spring.*` YAML blocks | — (ignored) | **not yet** — silently dropped by `yaml.Unmarshal`; the intended warn-on-ignore is an unimplemented gap (see `docs/DEPRECATIONS.md` §4, `FOLLOW_UP.md`) |
+| `logging.*` / `server.*` / `spring.*` YAML blocks | — (ignored) | **yes** — a top-level `logging:`/`server:`/`spring:` block in a config file loaded through the shared `config.Loader` (the four ported personas) logs one warn-and-ignore line (`config.Loader.WarnIgnoredLegacyYAMLBlocks`); warn-only, never fatal (see `docs/DEPRECATIONS.md` §4) |
 | `api.user` (tf) vs `api.username` (other personas) | both accepted | **no** — neither spelling was ever renamed; not a deprecation |
 | metric names | — | **none renamed** — no alias duty applies |
 

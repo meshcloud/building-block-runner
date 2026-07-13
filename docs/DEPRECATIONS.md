@@ -87,16 +87,36 @@ independently worded message. `cmd/bbrunner`'s controller-config-file resolution
 being rewired onto `config.Loader.Path` (out of scope for this audit — see
 `cmd/bbrunner/controller_config.go`'s `resolveControllerConfigFile` doc comment).
 
-## 4. Known gap found during this audit (not fixed here)
+## 4. Legacy Spring/JVM yaml blocks (`logging.*` / `server.*` / `spring.*`): warn-and-ignore
 
-The plan that preceded this document (`docs/plans/PLAN_DETAIL_07_cleanup.md` §7.2 row 6)
-asserted that yaml `logging.*`/`server.*`/`spring.*` blocks are "ignored-with-warning". That
-mechanism does not exist: `internal/config.Loader` decodes yaml with a plain
-`yaml.Unmarshal` (`internal/config/merge.go`), so an unrecognized top-level key in a mounted
-config file (from those blocks or any other stray key) is silently dropped by the yaml
-library — no warning, no error. Implementing a real "warn on unrecognized key" check would
-mean strict/known-fields decoding across every persona's config struct, which is a
-structural change to the shared `Loader` well beyond an alias-wording audit and risks
-disagreement with how `FailOnUnconsumedLegacyEnv` already defines "recognized" for env vars.
-Recorded here as a documented, honest gap rather than silently left inconsistent with the
-plan text; left to a future change, not this cleanup phase.
+A customer-mounted, Kotlin-era `runner-config.yml` can still carry top-level `logging:`,
+`server:` or `spring:` blocks — Spring Boot's own logging/embedded-server settings and the
+`spring.*` property tree. The Go runners consume none of them. When any of these top-level
+blocks appears in a config file loaded through the shared `internal/config.Loader` (the four
+ported personas — `manual`, `gitlab`, `azdevops`, `github`), the loader now logs one
+**warn-and-ignore** line per block, pointing back here:
+
+```
+ignoring unsupported legacy config block '<block>:'; it configured only the Spring/JVM runner
+generation and has no effect on this Go runner -- see docs/DEPRECATIONS.md
+```
+
+Implementation: `config.Loader.Load` records which of `{logging, server, spring}` appear as
+top-level keys in the merged config document (`recordIgnoredLegacyBlocks`), and each persona
+calls `config.Loader.WarnIgnoredLegacyYAMLBlocks(log)` once at startup, right after `Load`.
+
+This is deliberately a **warning, not a failure** — it is the mirror image of the
+`FailOnUnconsumedLegacyEnv("BLOCKRUNNER_")` guard: a stray legacy *env var* must halt startup
+(it could silently boot the runner on wrong defaults, P5), whereas a leftover Spring *yaml
+block* is inert and only warned. The warning fires once per process start, like every other
+warning in this document.
+
+**Scope / remaining honest gap.** The check targets exactly these three well-known Spring
+block names, not "any unrecognized key". `yaml.Unmarshal` still silently drops other stray
+top-level keys, and the tf runner and the run-controller (which decode with their own
+`os.ReadFile`+`yaml.Unmarshal` loaders, not the shared `config.Loader`) are out of scope —
+their config is Go-native and never spoke Spring. A general strict/known-fields decode across
+every persona struct remains a larger future change (it would have to reconcile with how
+`FailOnUnconsumedLegacyEnv` already defines "recognized" for env vars); this targeted check
+closes the concrete plan promise (`docs/plans/PLAN_DETAIL_07_cleanup.md` §7.2 row 6) without
+that structural churn.

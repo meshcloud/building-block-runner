@@ -51,6 +51,7 @@ func LoadConfig(log *slog.Logger, buildVersion string, singleRun bool) (Config, 
 	if _, err := loader.Load("", configPath, &cfg); err != nil {
 		return Config{}, err
 	}
+	loader.WarnIgnoredLegacyYAMLBlocks(log)
 
 	// blockrunner: block overrides the flat keys (a mounted Kotlin-era file fully configures
 	// the persona). debugMode is a manual-only key ⇒ warn-and-ignore here (§6.2).

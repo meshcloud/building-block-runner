@@ -10,6 +10,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"regexp"
 )
@@ -23,7 +24,21 @@ import (
 // exactly one, sequentially, which matches how config loading happens today.
 type Loader struct {
 	consumed map[string]bool
+	// ignoredLegacyBlocks records which legacyIgnoredBlockKeys Load saw as top-level keys in
+	// a config layer, so WarnIgnoredLegacyYAMLBlocks can warn about each one once.
+	ignoredLegacyBlocks []string
 }
+
+// legacyIgnoredBlockKeys are the top-level YAML keys that only ever configured the
+// Spring/JVM generation of these runners (Spring Boot's own logging and embedded-server
+// settings, plus any spring.* property tree). The Go runners consume none of them, so a
+// mounted config file that still carries one has no effect -- but yaml.Unmarshal silently
+// drops unknown top-level keys (merge.go), so without an explicit check an operator gets no
+// signal the block is inert. These are ignored-WITH-WARNING (docs/DEPRECATIONS.md §4),
+// deliberately distinct from the BLOCKRUNNER_*-prefixed env fail-fast guard
+// (FailOnUnconsumedLegacyEnv): a stray legacy env override must halt startup, but a leftover
+// Spring yaml block is harmless and only warned.
+var legacyIgnoredBlockKeys = []string{"logging", "server", "spring"}
 
 // NewLoader returns a Loader ready for one persona's startup sequence.
 func NewLoader() *Loader {
@@ -105,9 +120,37 @@ func (l *Loader) Load(basePath, perImplPath string, into any) (found bool, err e
 	}
 
 	merged := deepMerge(base, impl)
+	l.recordIgnoredLegacyBlocks(merged)
 
 	if err := decodeMap(merged, into); err != nil {
 		return false, fmt.Errorf("decoding merged config: %w", err)
 	}
 	return true, nil
+}
+
+// recordIgnoredLegacyBlocks notes which legacyIgnoredBlockKeys appear as top-level keys in
+// the merged config document (either layer), so WarnIgnoredLegacyYAMLBlocks can warn about
+// each one once. yaml.v2 decodes YAML mapping keys as `string` inside a
+// map[interface{}]interface{}, so a plain string index matches.
+func (l *Loader) recordIgnoredLegacyBlocks(merged map[interface{}]interface{}) {
+	for _, key := range legacyIgnoredBlockKeys {
+		if _, present := merged[key]; present {
+			l.ignoredLegacyBlocks = append(l.ignoredLegacyBlocks, key)
+		}
+	}
+}
+
+// WarnIgnoredLegacyYAMLBlocks logs one warn-and-ignore line per legacy Spring/JVM top-level
+// block (logging/server/spring) that Load found in a config layer. These blocks are ignored,
+// not consumed, so the wording says "ignoring" and points at docs/DEPRECATIONS.md rather than
+// naming a canonical replacement (there is none) -- matching the warn-and-ignore style the
+// ported personas already use for an inapplicable blockrunner.* key. It is a warning, not a
+// failure: unlike a stray BLOCKRUNNER_* env var (FailOnUnconsumedLegacyEnv, a hard error), a
+// leftover Spring yaml block cannot silently boot the runner on wrong defaults. Call it once,
+// after Load, during a persona's startup.
+func (l *Loader) WarnIgnoredLegacyYAMLBlocks(log *slog.Logger) {
+	for _, block := range l.ignoredLegacyBlocks {
+		log.Warn("ignoring unsupported legacy config block '"+block+":'; it configured only the Spring/JVM runner generation and has no effect on this Go runner -- see "+DeprecationDoc,
+			"block", block)
+	}
 }

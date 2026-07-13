@@ -3,6 +3,13 @@
 Notes accumulated during the single-Go-binary refactor that require action or awareness
 in another repo. Not actioned here — tracked for a human to follow up.
 
+> **STATUS UPDATE (2026-07-13, verified against code).** The *in-repo* "deferred to the removal PR" items in the
+> phase-4 and phase-6a–6d sections below (delete the Kotlin `*-block-runner/` modules, drop `settings.gradle`, flip
+> the CI legs to the Go `containers/*/Dockerfile`) are **already DONE** — the JVM/Gradle tree was removed in the
+> phase-7 "JVM endgame" commit and CI is Go-only. What remains here is genuinely **cross-repo** (meshfed-release
+> `local-dev-stack` edits, the mux retirement, per-type acceptance tests) plus the customer release-note call-outs.
+> The consolidated, code-verified forward list lives in the repo-root [`FOLLOW_UP.md`](FOLLOW_UP.md).
+
 ## Phase 2b (tf bug-fix pass, PLAN_DETAIL_02 §7)
 
 - **B2 fix — workspace-delete naming (meshfed-release, `local-dev-stack`):**

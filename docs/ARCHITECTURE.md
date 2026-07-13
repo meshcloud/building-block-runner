@@ -35,18 +35,22 @@ Invocation:
 Each persona bootstrap stamps its own identity name on the meshStack runner headers and keeps its own log-line
 identity regardless of whether it runs standalone or forced in-process via `bbrunner <persona>`.
 
-**Design intent vs. current implementation — an open gap.** The design that motivated this refactor
+**Design intent vs. current implementation — a partially-closed gap.** The design that motivated this refactor
 (`docs/plans/PLAN_HIGH_LEVEL.md` D1/D2) specifies that `bbrunner`'s default (no-subcommand) invocation should
 *auto-detect* whether it is running inside a Kubernetes cluster (`rest.InClusterConfig()`/
 `KUBERNETES_SERVICE_HOST`) and pick its dispatcher accordingly — `KubernetesJobDispatcher` in-cluster,
 an all-types `InProcessDispatcher` (registering every linked handler) out of cluster — overridable with
-`RUNNER_DISPATCHER=kubernetes|in-process`. This is the property that is meant to make the standalone
-`multiplexing-block-runner` in meshfed-release obsolete (§1 downstream goal). **As shipped, this auto-detection is
-not implemented**: `bbrunner`'s default mode always builds a `KubernetesJobDispatcher`
-(`cmd/bbrunner/controller.go`), and there is no `RUNNER_DISPATCHER` env var anywhere in the code. The only way to get
-an in-process dispatcher today is the explicit `bbrunner <persona>` subcommand, which forces exactly *one* persona,
-not "all types in one process." This is recorded here as an open follow-up item (§8) rather than silently assumed —
-see the note there before relying on the auto-detect behavior described in the plan documents.
+`RUNNER_DISPATCHER`. This is the property meant to make the standalone `multiplexing-block-runner` in
+meshfed-release obsolete (§1 downstream goal). **As shipped, the detection mechanism and the `RUNNER_DISPATCHER`
+override now exist** (`cmd/bbrunner/dispatcher.go`: `KUBERNETES_SERVICE_HOST` present ⇒ `kubernetes`, else
+`inprocess`; `RUNNER_DISPATCHER` overrides; unit-tested), and the standalone per-persona in-process paths
+(`bbrunner <persona>` / `cmd/<persona>`) use it. **What is still missing is the controller *superset***: the
+default no-subcommand `bbrunner` still always builds a `KubernetesJobDispatcher` (`cmd/bbrunner/controller.go`),
+and an explicit `RUNNER_DISPATCHER=inprocess` on the controller **fails fast** with an actionable message rather
+than running all five persona handlers in one process — that needs each persona's config loaded into the
+controller bootstrap (not yet wired). So running the `run-controller` image out of cluster as an all-types,
+mux-replacing runner is still not possible; closing this remains the largest design-vs-shipped gap and is required
+before meshfed-release's `multiplexing-block-runner` can be retired. Tracked in [`FOLLOW_UP.md`](../FOLLOW_UP.md) and §8.
 
 ## 2. Package map
 
@@ -75,6 +79,12 @@ shape alone. Only `internal/mgmt`, `internal/dispatch`, `internal/k8sjob` and th
 packages may import `prometheus/*`; only `internal/meshapi`, `internal/crypto`, `internal/config`, `internal/report`
 and `internal/meshapitest` may import outside the module's own packages plus `gopkg.in/yaml.v2` (`internal-client`
 depguard group) — every other package is stdlib-plus-siblings only.
+
+> **Known gap ([`FOLLOW_UP.md`](../FOLLOW_UP.md)):** the per-package `depguard` file-globs in `.golangci.yml` are
+> written as `internal/X/**/*.go` without the leading `**/` that depguard needs to match the absolute file paths it
+> sees, so they currently match **zero files** — dependency direction is presently enforced by review and by the
+> `internal/build` logging-stack AST test, *not* by the linter. Correcting the globs to `**/internal/X/**/*.go`
+> re-activates this D11 enforcement (and may surface previously-masked violations).
 
 **Coverage-excluded, real-I/O adapter files** (one file, one justification, in
 [`tools/coverage/exclusions.txt`](../tools/coverage/exclusions.txt)): `internal/tf/git.go` (real git/SSH clone —
@@ -164,7 +174,7 @@ runner on wrong defaults.
 | `RUNCONTROLLER_CONFIG_FILE` | `RUNNER_CONFIG_FILE` | yes |
 | `SPRING_PROFILES_ACTIVE` containing `kubernetes` | `EXECUTION_MODE=single-run` | yes |
 | `blockrunner:` YAML block (`uuid`, `version`, `api.url`, `auth.*` incl. kebab-case `api-key.client-id`, `debugMode`, `privateKey`/`privateKeyFile`) | flat, persona-level YAML keys | yes, per field applied |
-| `logging.*` / `server.*` / `spring.*` YAML blocks | — (ignored) | yes (ignored-with-warning) |
+| `logging.*` / `server.*` / `spring.*` YAML blocks | — (ignored) | **not yet** — silently dropped by `yaml.Unmarshal`; the intended warn-on-ignore is an unimplemented gap (see `docs/DEPRECATIONS.md` §4, `FOLLOW_UP.md`) |
 | `api.user` (tf) vs `api.username` (other personas) | both accepted | **no** — neither spelling was ever renamed; not a deprecation |
 | metric names | — | **none renamed** — no alias duty applies |
 
@@ -231,12 +241,15 @@ hoped away.
 Items consciously deferred past this refactor, so the next engineer finds every one of them in a single place
 instead of re-discovering them:
 
-- **Dispatcher auto-detection (D1/D2) is not implemented** (§1). `bbrunner`'s default mode always uses the
-  Kubernetes-Job dispatcher; there is no in-cluster/out-of-cluster auto-detect and no `RUNNER_DISPATCHER` override.
-  Until this lands, running the `run-controller` image outside a cluster as an all-types, in-process,
-  mux-replacing runner is **not possible** — only `bbrunner <persona>` (one type at a time) is. This is the single
-  largest gap between the design record in `docs/plans/` and the shipped binary; closing it is required before the
-  `multiplexing-block-runner` in meshfed-release can actually be retired (the refactor's stated downstream goal).
+- **Dispatcher auto-detection is implemented; the controller in-process *superset* is not** (§1). The
+  `RUNNER_DISPATCHER` override and in-cluster/out-of-cluster detection now exist (`cmd/bbrunner/dispatcher.go`) and
+  drive the standalone per-persona in-process paths, but `bbrunner`'s default (no-subcommand) controller mode still
+  always uses the Kubernetes-Job dispatcher, and `RUNNER_DISPATCHER=inprocess` on the controller fails fast rather
+  than running all five handlers in one process (each persona's config must first be wired into the controller
+  bootstrap). Until that lands, running the `run-controller` image outside a cluster as an all-types, in-process,
+  mux-replacing runner is **not possible**. This is the single largest gap between the design record in
+  `docs/plans/` and the shipped binary; closing it is required before the `multiplexing-block-runner` in
+  meshfed-release can actually be retired (the refactor's stated downstream goal).
 - **tf single-run/handler unification (deferred).** The Kubernetes-Job single-run path (`cmd/tf/main.go`) still
   duplicates logic that the in-process tf handler also has, rather than calling through the same handler. This
   cleanup phase deliberately did **not** unify them (L15 was a guarded should-have, abandonable on any pinned-

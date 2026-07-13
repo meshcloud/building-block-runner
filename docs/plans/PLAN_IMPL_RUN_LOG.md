@@ -11,6 +11,14 @@ did not meet their own exit criteria** because the same block of phase-2/phase-3
 was deferred forward and never paid down, and two later customer-facing behavior changes
 landed without the sign-off their STOP markers ask for. Start with the review list below.
 
+> **POST-RUN UPDATE (2026-07-13).** Two of the five BLOCKERs below were subsequently CLOSED by the
+> phase-3/5 remediation pass — **BLOCKER 2** (phase-3 shared-core: injectable metrics seam, `Decryptor`→meshapi,
+> global removals) and **BLOCKER 3** (phase-5: `tf.NewHandler`, `maxConcurrentRuns`, `registration:`, `runner_*`
+> metrics, `cmd/bbrunner` dispatcher auto-detect + `RUNNER_DISPATCHER`). See
+> [`PLAN_IMPL_RUN_LOG_ADDENDUM.md`](PLAN_IMPL_RUN_LOG_ADDENDUM.md). Their prose below (incl. the phase-7 D1/D2
+> cross-plan note on lines ~142–145) describes the *pre-remediation* state and is retained for history. What
+> genuinely remains open — verified against code — is consolidated in the repo-root [`FOLLOW_UP.md`](../../FOLLOW_UP.md).
+
 ---
 
 ## Review this first

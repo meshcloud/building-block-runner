@@ -304,10 +304,18 @@ gate (side-by-side transcript equivalence + a real-GitHub smoke) not runnable he
   the default (after live acceptance — see PLAN_IMPL_RUN_LOG_ADDENDUM.md), revisit the
   local-dev-stack tf-block-runner deployment to pick a `maxConcurrentRuns`.
 
-- **Deferred: retire the meshfed-release multiplexing-block-runner (still owed).** The
-  `cmd/bbrunner` dispatcher auto-detect now EXISTS (in-cluster => k8sjob, else => InProcess,
-  `RUNNER_DISPATCHER` override), but the out-of-cluster InProcess *superset* (all five persona
-  handlers in one process) is not yet wired — it needs each persona's config loaded into the
-  controller bootstrap. Until that lands, the run-controller image still only serves the k8s
-  dispatch role; the multiplexing-block-runner cannot be retired yet. Tracked in
-  PLAN_IMPL_RUN_LOG_ADDENDUM.md.
+- **Retire the meshfed-release `multiplexing-block-runner` (P-X.3) — now UNBLOCKED in-repo.** The out-of-cluster
+  InProcess *superset* is wired as of P2.1 (`cmd/bbrunner/superset.go`): `bbrunner` with no subcommand, run outside a
+  cluster or with `RUNNER_DISPATCHER=inprocess`, now registers all five persona handlers (tf + manual + gitlab +
+  azdevops + github) into one `dispatch.InProcess` + `dispatch.Loop` serving one `/healthz` + `/metrics` listener,
+  claiming under the controller's single ALL identity — the exact fan-out the mux performed (claim upstream as one
+  runner, route by type). The in-cluster `run-controller` default is unchanged (still k8s-Job dispatch).
+  **Cross-repo action (meshfed-release, when ready):** replace the `multiplexing-block-runner` docker-compose service
+  in `local-dev-stack` with the `run-controller` image run out-of-cluster (`RUNNER_DISPATCHER=inprocess`), pointed at
+  the coordinator and configured with one runner uuid registered as capability `ALL`; drop the per-type mux port
+  fan-out (`:8300`–`:8304`). Do this in lock-step with a live acceptance pass (FOLLOW_UP P0.1) — the superset's
+  claim/report wiring is proven by hermetic tests, not yet observed against a live meshStack. Caveats to verify in
+  that pass: (a) the superset reports each run under the controller's single uuid + the run's own runToken (not five
+  per-persona uuids), so meshStack must accept status from the ALL runner for every type; (b) tf runs use the shipped
+  tf defaults (`/tmp/runner/{tfbin,wd}`, 60-min timeout) until the `tf.AppConfig` de-global follow-up threads full tf
+  config (FOLLOW_UP P2.3).

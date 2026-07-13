@@ -24,9 +24,13 @@ dependencies it actually needs:
 so that the same binary can act as the in-cluster controller *and* force any single persona to run standalone.
 Invocation:
 
-- `bbrunner` (no subcommand) — the **controller**: polls meshStack, decrypts run details, and dispatches each claimed
-  run as a Kubernetes Job running the corresponding fit persona image (`kubernetes.go`/`internal/k8sjob`). This is
-  the default and only mode of the published `run-controller` image today.
+- `bbrunner` (no subcommand) — the **controller/superset**: polls meshStack, decrypts run details, and dispatches
+  each claimed run. Its dispatcher is auto-detected (`cmd/bbrunner/dispatcher.go`, overridable with
+  `RUNNER_DISPATCHER`): **in-cluster** (`KUBERNETES_SERVICE_HOST` present) it dispatches each run as a Kubernetes Job
+  running the corresponding fit persona image (`kubernetes.go`/`internal/k8sjob`) — the published `run-controller`
+  image's default production mode; **out of cluster** (or with `RUNNER_DISPATCHER=inprocess`) it runs the *all-types
+  in-process superset* — every linked persona handler registered into one `dispatch.InProcess` dispatcher, so the same
+  image replaces meshfed-release's `multiplexing-block-runner` (`cmd/bbrunner/superset.go`, §1 downstream goal).
 - `bbrunner <persona>` (`tf`, `manual`, `gitlab`, `azdevops`, `github`) — forces that one persona in-process, the same
   wiring its standalone `cmd/<persona>` binary runs. Used for local development and as the multiplexing-block-runner
   (mux) replacement.
@@ -35,22 +39,27 @@ Invocation:
 Each persona bootstrap stamps its own identity name on the meshStack runner headers and keeps its own log-line
 identity regardless of whether it runs standalone or forced in-process via `bbrunner <persona>`.
 
-**Design intent vs. current implementation — a partially-closed gap.** The design that motivated this refactor
+**Design intent, now implemented (P2.1 closed).** The design that motivated this refactor
 (`docs/plans/PLAN_HIGH_LEVEL.md` D1/D2) specifies that `bbrunner`'s default (no-subcommand) invocation should
 *auto-detect* whether it is running inside a Kubernetes cluster (`rest.InClusterConfig()`/
 `KUBERNETES_SERVICE_HOST`) and pick its dispatcher accordingly — `KubernetesJobDispatcher` in-cluster,
-an all-types `InProcessDispatcher` (registering every linked handler) out of cluster — overridable with
-`RUNNER_DISPATCHER`. This is the property meant to make the standalone `multiplexing-block-runner` in
-meshfed-release obsolete (§1 downstream goal). **As shipped, the detection mechanism and the `RUNNER_DISPATCHER`
-override now exist** (`cmd/bbrunner/dispatcher.go`: `KUBERNETES_SERVICE_HOST` present ⇒ `kubernetes`, else
-`inprocess`; `RUNNER_DISPATCHER` overrides; unit-tested), and the standalone per-persona in-process paths
-(`bbrunner <persona>` / `cmd/<persona>`) use it. **What is still missing is the controller *superset***: the
-default no-subcommand `bbrunner` still always builds a `KubernetesJobDispatcher` (`cmd/bbrunner/controller.go`),
-and an explicit `RUNNER_DISPATCHER=inprocess` on the controller **fails fast** with an actionable message rather
-than running all five persona handlers in one process — that needs each persona's config loaded into the
-controller bootstrap (not yet wired). So running the `run-controller` image out of cluster as an all-types,
-mux-replacing runner is still not possible; closing this remains the largest design-vs-shipped gap and is required
-before meshfed-release's `multiplexing-block-runner` can be retired. Tracked in [`FOLLOW_UP.md`](../FOLLOW_UP.md) and §8.
+an all-types `InProcess` dispatcher (registering every linked handler) out of cluster — overridable with
+`RUNNER_DISPATCHER`. This is the property that makes the standalone `multiplexing-block-runner` in meshfed-release
+obsolete (§1 downstream goal). **All of it now ships.** The detection mechanism and the `RUNNER_DISPATCHER` override
+exist (`cmd/bbrunner/dispatcher.go`: `KUBERNETES_SERVICE_HOST` present ⇒ `k8sjob`, else `inprocess`; unit-tested), the
+standalone per-persona in-process paths (`bbrunner <persona>` / `cmd/<persona>`) use it, **and the controller
+*superset* is wired** (`cmd/bbrunner/superset.go`): out of cluster, or with an explicit `RUNNER_DISPATCHER=inprocess`,
+the no-subcommand `bbrunner` builds one `dispatch.InProcess` dispatcher holding a handler for *every* run type
+(tf + manual + gitlab + azdevops + github), driven by one `dispatch.Loop`, serving one unified `/healthz` + `/metrics`
+listener. It claims under the controller's single ALL identity and dispatches each claimed run to the matching handler
+in-process — the exact fan-out the mux performed (claim upstream as one runner, route by type), only in-process. The
+in-cluster default (no override) is unchanged and byte-identical: it still builds exactly the `KubernetesJobDispatcher`
+it did before (`runControllerK8sJob`, the published `run-controller` production mode). The superset reuses the
+controller's own config (one uuid, api, auth, key) as the single shared connection rather than five separate
+per-persona config files — the single-config `run-controller` image has exactly one of each, and five files would
+collide on the shared `RUNNER_*` env vars. Running the `run-controller` image out of cluster as an all-types,
+mux-replacing runner is therefore now possible; the cross-repo mux retirement it unblocks is tracked in
+[`CROSS_REPO_TODO.md`](../CROSS_REPO_TODO.md) (P-X.3).
 
 ## 2. Package map
 
@@ -255,15 +264,17 @@ hoped away.
 Items consciously deferred past this refactor, so the next engineer finds every one of them in a single place
 instead of re-discovering them:
 
-- **Dispatcher auto-detection is implemented; the controller in-process *superset* is not** (§1). The
-  `RUNNER_DISPATCHER` override and in-cluster/out-of-cluster detection now exist (`cmd/bbrunner/dispatcher.go`) and
-  drive the standalone per-persona in-process paths, but `bbrunner`'s default (no-subcommand) controller mode still
-  always uses the Kubernetes-Job dispatcher, and `RUNNER_DISPATCHER=inprocess` on the controller fails fast rather
-  than running all five handlers in one process (each persona's config must first be wired into the controller
-  bootstrap). Until that lands, running the `run-controller` image outside a cluster as an all-types, in-process,
-  mux-replacing runner is **not possible**. This is the single largest gap between the design record in
-  `docs/plans/` and the shipped binary; closing it is required before the `multiplexing-block-runner` in
-  meshfed-release can actually be retired (the refactor's stated downstream goal).
+- **Dispatcher auto-detection and the controller in-process *superset* are both implemented (P2.1 closed, §1).** The
+  `RUNNER_DISPATCHER` override and in-cluster/out-of-cluster detection (`cmd/bbrunner/dispatcher.go`) drive the
+  standalone per-persona in-process paths *and* `bbrunner`'s default (no-subcommand) controller mode: in-cluster it
+  builds the Kubernetes-Job dispatcher (byte-identical to before), out of cluster / `RUNNER_DISPATCHER=inprocess` it
+  builds the all-types in-process superset (`cmd/bbrunner/superset.go`) — every linked persona handler in one
+  `dispatch.InProcess` + `dispatch.Loop`, one unified listener, claiming under the controller's ALL identity. The
+  former fail-fast on `RUNNER_DISPATCHER=inprocess` is gone. Running the `run-controller` image outside a cluster as
+  an all-types, mux-replacing runner is now possible; the matching meshfed-release `multiplexing-block-runner`
+  retirement is the last remaining step (cross-repo, [`CROSS_REPO_TODO.md`](../CROSS_REPO_TODO.md) P-X.3). Remaining
+  superset refinements (threading full per-persona tf config instead of the shipped defaults) ride with the
+  `tf.AppConfig` de-globalization follow-up ([`FOLLOW_UP.md`](../FOLLOW_UP.md) P2.3).
 - **tf single-run/handler unification (deferred).** The Kubernetes-Job single-run path (`cmd/tf/main.go`) still
   duplicates logic that the in-process tf handler also has, rather than calling through the same handler. This
   cleanup phase deliberately did **not** unify them (L15 was a guarded should-have, abandonable on any pinned-

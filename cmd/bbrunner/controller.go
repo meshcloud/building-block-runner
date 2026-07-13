@@ -43,23 +43,26 @@ func runController() int {
 
 	cfg := readControllerConfig(logger)
 
-	// Dispatcher auto-detect (§A1/D1-D2): in-cluster => k8sjob (hand runs to Kubernetes Jobs);
-	// outside a cluster => InProcess superset. RUNNER_DISPATCHER overrides. The InProcess
-	// superset (running every persona handler in-process to retire meshfed-release's
-	// multiplexing-block-runner) needs each persona's own config loaded and is not yet wired
-	// here (run-log addendum): so the controller still runs k8sjob for the in-cluster AND the
-	// out-of-cluster-via-kubeconfig (local-dev) cases exactly as before -- only an EXPLICIT,
-	// not-yet-available RUNNER_DISPATCHER=inprocess request fails fast rather than silently
-	// running k8sjob. The detected kind is logged for observability.
+	// Dispatcher auto-detect (§A1/D1-D2): in-cluster => k8sjob (hand each run to a Kubernetes
+	// Job running the matching fit persona image); outside a cluster, or with an explicit
+	// RUNNER_DISPATCHER=inprocess, => the InProcess superset, running every linked persona
+	// handler in one process so the run-controller image can replace meshfed-release's
+	// multiplexing-block-runner (§1). The in-cluster default (KUBERNETES_SERVICE_HOST present,
+	// no override) is unchanged and byte-identical -- it still builds runControllerK8sJob.
 	detected := resolveDispatcherKind()
 	logger.Info("dispatcher auto-detect", "detected", detected)
-	if os.Getenv(envRunnerDispatcher) == string(dispatcherInProcess) {
-		logger.Error("in-process superset dispatcher is not yet wired in cmd/bbrunner; " +
-			"run the controller in-cluster or set RUNNER_DISPATCHER=k8sjob " +
-			"(standalone personas run in-process today via `bbrunner <persona>` / cmd/<persona>)")
-		return 1
+	if detected == dispatcherInProcess {
+		return runControllerSuperset(logger, cfg)
 	}
+	return runControllerK8sJob(logger, cfg)
+}
 
+// runControllerK8sJob is the run-controller's in-cluster production path: it dispatches each
+// claimed run as a Kubernetes Job running the matching fit persona image (§1). This is the
+// published run-controller image's default mode; its behavior -- the claim wire, decryption
+// order, Job/Secret/ServiceAccount manifests, registration PUT and metric names -- is
+// byte-identical to before P2.1 (extracted verbatim from runController, no logic change).
+func runControllerK8sJob(logger *slog.Logger, cfg *controllerConfig) int {
 	// D12: one listener serves /healthz + /metrics on MANAGEMENT_PORT (default 2112). A bind
 	// failure is fatal: a liveness-probed listener that fails to bind silently would defeat
 	// the point of adding healthz.

@@ -77,12 +77,25 @@ all 11 coverage gates hold. `docs/ARCHITECTURE.md` §2 updated to reflect that D
 
 ## P2 — medium (dormant / partial features; unblock the downstream goal)
 
-### P2.1 Wire the controller in-process **superset** (retires meshfed-release's mux)
-`cmd/bbrunner` auto-detect exists, but `RUNNER_DISPATCHER=inprocess` on the *controller* (no subcommand)
-**fails fast** — it does not run all five persona handlers in one process (`cmd/bbrunner/controller.go:46-61`).
-This needs each persona's config loaded into the controller bootstrap. Until it lands, the `run-controller`
-image cannot replace meshfed-release's `multiplexing-block-runner` — **the refactor's stated downstream goal**.
-**Effort:** medium (per-persona config wiring). **Blocks:** cross-repo mux retirement (P-X.3).
+### P2.1 Wire the controller in-process **superset** (retires meshfed-release's mux) — DONE
+The controller (`bbrunner`, no subcommand) no longer fails fast on `RUNNER_DISPATCHER=inprocess`. `runController`
+now branches on the auto-detected dispatcher: **in-cluster** (no override) it builds `runControllerK8sJob` — the
+Kubernetes-Job dispatch path, extracted verbatim, byte-identical to before (the published `run-controller`
+production mode is unchanged); **out of cluster / `RUNNER_DISPATCHER=inprocess`** it builds `runControllerSuperset`
+(`cmd/bbrunner/superset.go`), which registers a handler for **every** run type (tf + manual + gitlab + azdevops +
+github) into one `dispatch.InProcess` dispatcher, driven by one `dispatch.Loop`, serving one `/healthz` + `/metrics`
+listener, and claims under the controller's single ALL identity (self-registering WIF-less as `ALL`). Each handler is
+built with its persona package's own `NewHandler` + `NewReporterFactory` (`buildSupersetHandlers`); per-run reporting
+uses the run's own runToken (H5). **Design decision:** the superset reuses the controller's one config (uuid, api,
+auth, key) as the single shared connection instead of loading five separate per-persona config files — the
+single-config `run-controller` image has exactly one of each, and five files would collide on the shared `RUNNER_*`
+env vars and point reporters at the retired mux ports (the FOLLOW_UP's original "load each persona's config" framing
+did not survive that constraint; the single-ALL-identity model matches what the mux actually did — claim upstream as
+one runner, fan out by type). tf uses the shipped tf defaults (`/tmp/runner/{tfbin,wd}`, 60-min timeout) via the
+`tf.AppConfig` global until P2.3 threads full tf config. Unit-tested (`cmd/bbrunner/superset_test.go`): all five
+handlers registered, the InProcess dispatcher accepts them, bad key fails fast, and the in-cluster→k8sjob /
+out-of-cluster→inprocess routing. `task lint`/`task test -race`/all 11 coverage gates green.
+**Unblocks:** cross-repo mux retirement (P-X.3, now actionable in `CROSS_REPO_TODO.md`) — pending live acceptance (P0.1).
 
 ### P2.2 Make the tf in-process dispatch path the default; delete `tf.NewManager` + the token protocol
 The new tf `dispatch` path (`tf.NewHandler`/`tf.NewDispatchRunner`) is wired and unit-tested but **opt-in only**
@@ -132,11 +145,15 @@ behavior-neutral churn on frozen config. The only real defect was the **doc/real
 implied every persona used the two-file merge. §5 is corrected to describe the actual mixed model (gitlab uses
 base+override; the rest are single-file). No code change.
 
-### P3.2 Unify the metrics seam across the four ported personas
-Only the controller mgmt listener and the tf in-process path use `dispatch.NewMetricsCollectorWithRegistry`;
-azdevops/gitlab/manual/github (polling + `bbrunner` subcommands) still call the singleton `NewMetricsCollector()`
-against `prometheus.DefaultRegisterer`/`DefaultGatherer` (e.g. `cmd/gitlab/polling.go:37-40`). Works fine;
-purely a consistency/testability cleanup.
+### P3.2 Unify the metrics seam across the four ported personas — DONE
+azdevops/gitlab/manual/github (both `cmd/<persona>/polling.go` and `cmd/bbrunner/<persona>.go`) now construct the
+dispatch `MetricsCollector` via `dispatch.NewMetricsCollectorWithRegistry(mgmt.NewRegistry())` and serve that
+dedicated, process-local registry from `/metrics` — the same seam the controller/tf paths use — instead of the
+process-global `dispatch.NewMetricsCollector()` singleton + `prometheus.DefaultRegisterer`/`DefaultGatherer`.
+Behavior-preserving: the same two series (`runner_*` via `mgmt.NewRunMetrics`, `run_controller_*` via the dispatch
+collector) plus the standard Go/process collectors land on the served registry, byte-identical in names/labels/help;
+only the registry plumbing changed. This also made P2.1 cleaner (the superset composes one registry, no singleton).
+`task lint`/`task test -race`/all 11 coverage gates green.
 
 ### P3.3 `ABORTED`-on-shutdown for in-flight tf runs
 The plan wants a grace-period-then-cancel reporting terminal `ABORTED`; the handler intentionally matches
@@ -176,7 +193,10 @@ the matching change here (the phase-4 §8 rollback story treats the two as one r
   marker to key on the `slog` `persona=tf-block-runner` attribute (the old `[TF RUNNER]` prefix is gone).
 - **P-X.2 (per persona, when each JVM image is retired):** the manual/gitlab/azdevops/github start snippets +
   readiness markers, likewise.
-- **P-X.3:** retire the `multiplexing-block-runner` once **P2.1** lands.
+- **P-X.3:** retire the `multiplexing-block-runner`. **Now unblocked in-repo** — P2.1 landed the out-of-cluster
+  all-types superset, so the `run-controller` image can replace the mux. The meshfed-release edit (swap the mux
+  compose service for the `run-controller` image run with `RUNNER_DISPATCHER=inprocess`) is detailed in
+  [`CROSS_REPO_TODO.md`](CROSS_REPO_TODO.md); land it in lock-step with a live acceptance pass (P0.1).
 - **P-X.4 — release notes** for the three customer-visible phase-2b behavior changes: DESTROY now deletes the
   real matched tofu workspace (B2); every sensitive input type is now decrypted, not just STRING/CODE/FILE (B5);
   single-run exits non-zero for pre-apply failures (B11).
@@ -203,6 +223,7 @@ From the run log's "Review this first"; these are decisions the autonomous run m
 1. **P1.1** (depguard) — cheap, unblocks honest layering; do immediately.
 2. **P0.1 / P0.2** (live acceptance + L14 coordinator check) — gate the merge.
 3. **P2.2** (flip tf to in-process, delete Manager) — needs P0.1's N-concurrent smoke.
-4. **P2.1** (controller superset) then **P-X.3** (retire the mux) — the downstream goal.
+4. ~~**P2.1** (controller superset)~~ **DONE** → **P-X.3** (retire the mux, cross-repo) is now the only remaining
+   step of the downstream goal, gated on P0.1 live acceptance.
 5. **P2.3 + P2.4** as one dedicated pass (tf de-global + shared `report`).
 6. **P3.\*** as opportunistic cleanup.

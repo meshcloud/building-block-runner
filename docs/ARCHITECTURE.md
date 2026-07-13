@@ -80,11 +80,14 @@ packages may import `prometheus/*`; only `internal/meshapi`, `internal/crypto`, 
 and `internal/meshapitest` may import outside the module's own packages plus `gopkg.in/yaml.v2` (`internal-client`
 depguard group) — every other package is stdlib-plus-siblings only.
 
-> **Known gap ([`FOLLOW_UP.md`](../FOLLOW_UP.md)):** the per-package `depguard` file-globs in `.golangci.yml` are
-> written as `internal/X/**/*.go` without the leading `**/` that depguard needs to match the absolute file paths it
-> sees, so they currently match **zero files** — dependency direction is presently enforced by review and by the
-> `internal/build` logging-stack AST test, *not* by the linter. Correcting the globs to `**/internal/X/**/*.go`
-> re-activates this D11 enforcement (and may surface previously-masked violations).
+> **D11 is linter-enforced (P1.1 closed).** The per-package `depguard` file-globs in `.golangci.yml` are anchored as
+> `**/internal/X/*.go` (and `**/cmd/X/*.go`), so they match the absolute file paths depguard sees at lint time and
+> the layering rules are live — a domain package importing `prometheus/*` outside the allowed set, or an adapter,
+> now fails `task lint`. Two glob details matter and must be kept: the leading `**/` anchors the absolute path, and
+> there is **no** middle `/**/ ` segment (these packages are flat — every `.go` file sits directly under
+> `internal/X/`, and gobwas-glob's `/**/*.go` will not match a file with zero intermediate directories, which is why
+> the earlier `internal/X/**/*.go` form silently matched **zero files**). The `internal/build` logging-stack AST
+> test remains a complementary check.
 
 **Coverage-excluded, real-I/O adapter files** (one file, one justification, in
 [`tools/coverage/exclusions.txt`](../tools/coverage/exclusions.txt)): `internal/tf/git.go` (real git/SSH clone —

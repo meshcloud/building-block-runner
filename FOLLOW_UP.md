@@ -59,17 +59,19 @@ coordinator-side check).
 
 ## P1 — high
 
-### P1.1 Re-activate the `depguard` layering rules (D11 is currently unenforced)
-The per-package file-globs in `.golangci.yml` are written `internal/X/**/*.go` **without the leading `**/`**
-depguard needs to match the absolute paths it sees, so every group matches **zero files**
-(`.golangci.yml:64-335`; confirmed against the sibling `terraform-provider-meshstack/.golangci.yml`, which uses
-the `**/` form). Dependency direction (D11) is therefore enforced only by review and by the
-`internal/build/loggingstack_test.go` AST test — **not by the linter**, despite `docs/ARCHITECTURE.md` §2
-having claimed otherwise (now annotated).
+### P1.1 Re-activate the `depguard` layering rules (D11) — DONE
+The per-package file-globs in `.golangci.yml` were written `internal/X/**/*.go` **without the leading `**/`**
+depguard needs to match the absolute paths it sees, so every group matched **zero files** and D11 was enforced
+only by review and by the `internal/build/loggingstack_test.go` AST test — not by the linter.
 
-**Action:** change each pattern to `**/internal/X/**/*.go`, run `task lint`, and fix any previously-masked
-violations that surface. **Why P1:** several phases' layering assumptions rest on this being enforced; the fix
-is mechanical. **Risk:** may reveal real violations that were silently passing — that is the point.
+**Fix (done):** every glob is now anchored as `**/internal/X/*.go` / `**/cmd/X/*.go`. Note this is **not** simply
+the `**/internal/X/**/*.go` form the sibling repo uses: these packages are flat (every `.go` file sits directly
+under `internal/X/`, per §2), and gobwas-glob's middle `/**/*.go` will not match a file with zero intermediate
+directories — so the middle `**/` had to be dropped too (verified empirically against a known-violating import).
+The only masked violation that surfaced was the `dispatch-test` group missing `github.com/stretchr/testify` in its
+allow-list (an oversight every other `*-test` group already had); added with a rationale comment. The production
+layering was already clean (no `prometheus/*`/adapter breaches). `task lint` = 0 issues, `task test` (-race) green,
+all 11 coverage gates hold. `docs/ARCHITECTURE.md` §2 updated to reflect that D11 is now linter-enforced.
 
 ---
 

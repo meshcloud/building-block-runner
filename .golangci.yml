@@ -62,11 +62,11 @@ linters:
         # meshapi, report -> meshapi) now that everything lives in one module.
         internal-client:
           files:
-            - "internal/meshapi/**/*.go"
-            - "internal/crypto/**/*.go"
-            - "internal/config/**/*.go"
-            - "internal/report/**/*.go"
-            - "internal/meshapitest/**/*.go"
+            - "**/internal/meshapi/*.go"
+            - "**/internal/crypto/*.go"
+            - "**/internal/config/*.go"
+            - "**/internal/report/*.go"
+            - "**/internal/meshapitest/*.go"
             - "!$test"
           list-mode: strict
           allow:
@@ -75,11 +75,11 @@ linters:
             - gopkg.in/yaml.v2
         internal-client-test:
           files:
-            - "internal/meshapi/**/*_test.go"
-            - "internal/crypto/**/*_test.go"
-            - "internal/config/**/*_test.go"
-            - "internal/report/**/*_test.go"
-            - "internal/meshapitest/**/*_test.go"
+            - "**/internal/meshapi/*_test.go"
+            - "**/internal/crypto/*_test.go"
+            - "**/internal/config/*_test.go"
+            - "**/internal/report/*_test.go"
+            - "**/internal/meshapitest/*_test.go"
           list-mode: strict
           allow:
             - $gostd
@@ -93,7 +93,7 @@ linters:
         # interface it declares on its own consumer side (P3), never this package.
         mgmt:
           files:
-            - "internal/mgmt/**/*.go"
+            - "**/internal/mgmt/*.go"
             - "!$test"
           list-mode: strict
           allow:
@@ -102,7 +102,7 @@ linters:
             - github.com/prometheus/client_golang
         mgmt-test:
           files:
-            - "internal/mgmt/**/*_test.go"
+            - "**/internal/mgmt/*_test.go"
           list-mode: strict
           allow:
             - $gostd
@@ -117,7 +117,7 @@ linters:
         # (moved from the former internal/controller/metrics.go) lives in this package.
         dispatch:
           files:
-            - "internal/dispatch/**/*.go"
+            - "**/internal/dispatch/*.go"
             - "!$test"
           list-mode: strict
           allow:
@@ -126,12 +126,16 @@ linters:
             - github.com/prometheus/client_golang
         dispatch-test:
           files:
-            - "internal/dispatch/**/*_test.go"
+            - "**/internal/dispatch/*_test.go"
           list-mode: strict
           allow:
             - $gostd
             - github.com/meshcloud/building-block-runner
             - github.com/prometheus/client_golang
+            # testify is the repo-wide test-assertion library (every other *-test group
+            # allows it); its omission here was an oversight masked by the previously-inert
+            # globs (P1.1) -- a test-only dependency, not a production layering exception.
+            - github.com/stretchr/testify
 
         # k8sjob (internal/k8sjob, PLAN_DETAIL_05 §5): the KubernetesJobDispatcher (Job/
         # Secret/ServiceAccount manifests, WIF, OIDC discovery) dissolved out of the former
@@ -140,7 +144,7 @@ linters:
         # through the small consumer-side JobMetrics interface it declares itself.
         k8sjob:
           files:
-            - "internal/k8sjob/**/*.go"
+            - "**/internal/k8sjob/*.go"
             - "!$test"
           list-mode: strict
           allow:
@@ -151,7 +155,7 @@ linters:
             - k8s.io/client-go
         k8sjob-test:
           files:
-            - "internal/k8sjob/**/*_test.go"
+            - "**/internal/k8sjob/*_test.go"
           list-mode: strict
           allow:
             - $gostd
@@ -166,7 +170,7 @@ linters:
         # runner-config.yml struct, PLAN_DETAIL_05 §5's "persona yaml struct").
         bbrunner:
           files:
-            - "cmd/bbrunner/**/*.go"
+            - "**/cmd/bbrunner/*.go"
             - "!$test"
           list-mode: strict
           allow:
@@ -176,7 +180,7 @@ linters:
             - gopkg.in/yaml.v2
         bbrunner-test:
           files:
-            - "cmd/bbrunner/**/*_test.go"
+            - "**/cmd/bbrunner/*_test.go"
           list-mode: strict
           allow:
             - $gostd
@@ -190,8 +194,8 @@ linters:
         # (disjoint-tree property, §3.6) — enforced by the strict allow-list omitting k8s.io.
         tf:
           files:
-            - "internal/tf/**/*.go"
-            - "cmd/tf/**/*.go"
+            - "**/internal/tf/*.go"
+            - "**/cmd/tf/*.go"
             - "!$test"
           list-mode: strict
           allow:
@@ -208,8 +212,8 @@ linters:
             - gopkg.in/yaml.v2
         tf-test:
           files:
-            - "internal/tf/**/*_test.go"
-            - "cmd/tf/**/*_test.go"
+            - "**/internal/tf/*_test.go"
+            - "**/cmd/tf/*_test.go"
           list-mode: strict
           allow:
             - $gostd
@@ -234,8 +238,8 @@ linters:
         # metrics). The 06B–D personas add their own analogous groups.
         manual:
           files:
-            - "internal/manual/**/*.go"
-            - "cmd/manual/**/*.go"
+            - "**/internal/manual/*.go"
+            - "**/cmd/manual/*.go"
             - "!$test"
           list-mode: strict
           allow:
@@ -244,8 +248,8 @@ linters:
             - github.com/prometheus/client_golang
         manual-test:
           files:
-            - "internal/manual/**/*_test.go"
-            - "cmd/manual/**/*_test.go"
+            - "**/internal/manual/*_test.go"
+            - "**/cmd/manual/*_test.go"
           list-mode: strict
           allow:
             - $gostd
@@ -262,8 +266,8 @@ linters:
         # metrics), mirroring the manual group.
         gitlab:
           files:
-            - "internal/gitlab/**/*.go"
-            - "cmd/gitlab/**/*.go"
+            - "**/internal/gitlab/*.go"
+            - "**/cmd/gitlab/*.go"
             - "!$test"
           list-mode: strict
           allow:
@@ -272,8 +276,8 @@ linters:
             - github.com/prometheus/client_golang
         gitlab-test:
           files:
-            - "internal/gitlab/**/*_test.go"
-            - "cmd/gitlab/**/*_test.go"
+            - "**/internal/gitlab/*_test.go"
+            - "**/cmd/gitlab/*_test.go"
           list-mode: strict
           allow:
             - $gostd
@@ -289,8 +293,8 @@ linters:
         # metrics), matching the manual/tf precedent.
         azdevops:
           files:
-            - "internal/azdevops/**/*.go"
-            - "cmd/azdevops/**/*.go"
+            - "**/internal/azdevops/*.go"
+            - "**/cmd/azdevops/*.go"
             - "!$test"
           list-mode: strict
           allow:
@@ -299,8 +303,8 @@ linters:
             - github.com/prometheus/client_golang
         azdevops-test:
           files:
-            - "internal/azdevops/**/*_test.go"
-            - "cmd/azdevops/**/*_test.go"
+            - "**/internal/azdevops/*_test.go"
+            - "**/cmd/azdevops/*_test.go"
           list-mode: strict
           allow:
             - $gostd
@@ -315,8 +319,8 @@ linters:
         # NO external JWT lib (§4.2/§16.13). prometheus is allowed for the RunPolling wiring.
         github:
           files:
-            - "internal/github/**/*.go"
-            - "cmd/github/**/*.go"
+            - "**/internal/github/*.go"
+            - "**/cmd/github/*.go"
             - "!$test"
           list-mode: strict
           allow:
@@ -325,8 +329,8 @@ linters:
             - github.com/prometheus/client_golang
         github-test:
           files:
-            - "internal/github/**/*_test.go"
-            - "cmd/github/**/*_test.go"
+            - "**/internal/github/*_test.go"
+            - "**/cmd/github/*_test.go"
           list-mode: strict
           allow:
             - $gostd

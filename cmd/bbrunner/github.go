@@ -9,8 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-
 	"github.com/meshcloud/building-block-runner/internal/build"
 	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/internal/dispatch"
@@ -46,9 +44,14 @@ func runGithubPolling() int {
 		return 1
 	}
 
-	_ = mgmt.NewRunMetrics(prometheus.DefaultRegisterer, cfg.Uuid)
-	metrics := dispatch.NewMetricsCollector()
-	if err := mgmt.NewServer(log, mgmtPort.Addr(), prometheus.DefaultGatherer).Start(); err != nil {
+	// One dedicated, process-local registry carries both the generic runner_* series and the
+	// loop's run_controller_* series and is what /metrics serves (P3.2 -- the injectable seam
+	// the controller/tf paths already use, off prometheus.DefaultRegisterer/DefaultGatherer).
+	// Metric names, labels and help strings are unchanged.
+	reg := mgmt.NewRegistry()
+	_ = mgmt.NewRunMetrics(reg, cfg.Uuid)
+	metrics := dispatch.NewMetricsCollectorWithRegistry(reg)
+	if err := mgmt.NewServer(log, mgmtPort.Addr(), reg).Start(); err != nil {
 		log.Error("failed to start management listener", "err", err)
 		return 1
 	}

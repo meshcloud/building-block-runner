@@ -8,8 +8,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-
 	"github.com/meshcloud/building-block-runner/internal/azdevops"
 	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/internal/dispatch"
@@ -42,11 +40,14 @@ func runPolling(log *slog.Logger, cfg azdevops.Config, id meshapi.Identity) int 
 		return 1
 	}
 
-	// The generic runner_* series (D12); the dispatch loop's own metrics register on the
-	// default registry via NewMetricsCollector, so serving DefaultGatherer exposes both.
-	_ = mgmt.NewRunMetrics(prometheus.DefaultRegisterer, cfg.Uuid)
-	metrics := dispatch.NewMetricsCollector()
-	if err := mgmt.NewServer(log, mgmtPort.Addr(), prometheus.DefaultGatherer).Start(); err != nil {
+	// The generic runner_* series + the loop's run_controller_* series share one dedicated,
+	// process-local registry (mgmt.NewRegistry), which is what /metrics serves (P3.2 -- the
+	// injectable seam the controller/tf paths already use, off prometheus.DefaultRegisterer/
+	// DefaultGatherer). Metric names, labels and help strings are unchanged.
+	reg := mgmt.NewRegistry()
+	_ = mgmt.NewRunMetrics(reg, cfg.Uuid)
+	metrics := dispatch.NewMetricsCollectorWithRegistry(reg)
+	if err := mgmt.NewServer(log, mgmtPort.Addr(), reg).Start(); err != nil {
 		log.Error("failed to start management listener", "err", err)
 		return 1
 	}

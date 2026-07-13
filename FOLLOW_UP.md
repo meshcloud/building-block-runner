@@ -91,8 +91,8 @@ auth, key) as the single shared connection instead of loading five separate per-
 single-config `run-controller` image has exactly one of each, and five files would collide on the shared `RUNNER_*`
 env vars and point reporters at the retired mux ports (the FOLLOW_UP's original "load each persona's config" framing
 did not survive that constraint; the single-ALL-identity model matches what the mux actually did — claim upstream as
-one runner, fan out by type). tf uses the shipped tf defaults (`/tmp/runner/{tfbin,wd}`, 60-min timeout) via the
-`tf.AppConfig` global until P2.3 threads full tf config. Unit-tested (`cmd/bbrunner/superset_test.go`): all five
+one runner, fan out by type). tf uses the shipped tf install/working dirs + 60-min timeout (`/tmp/runner/{tfbin,wd}`),
+with the runner uuid + API connection threaded through `tf.HandlerConfig` (P2.3, now done). Unit-tested (`cmd/bbrunner/superset_test.go`): all five
 handlers registered, the InProcess dispatcher accepts them, bad key fails fast, and the in-cluster→k8sjob /
 out-of-cluster→inprocess routing. `task lint`/`task test -race`/all 11 coverage gates green.
 **Unblocks:** cross-repo mux retirement (P-X.3, now actionable in `CROSS_REPO_TODO.md`) — pending live acceptance (P0.1).
@@ -108,20 +108,59 @@ prove cadence equivalence. Then flip the default and delete the Manager + token 
 **Effort:** medium; **Blocked by:** P0.1 (live acceptance). **Payoff:** the phase-5 headline (concurrent tf
 runs) becomes live instead of dormant.
 
-### P2.3 `tf.AppConfig` de-globalization
-`internal/tf` still reads a mutable package-level global `var AppConfig TfRunnerConfig`
-(`internal/tf/config.go:16`; ~60 non-test + ~130 test references, ~220 tokens repo-wide). New handler/dispatch
-code already threads config explicitly (`HandlerConfig`/`HandlerDeps`) so the debt is **not deepening**, but
-the global remains. Threading it out is mechanical yet touches the frozen wire pins (`runapi.go`, `dtos.go`
-source-id, node-id) and the large characterization suite — a dedicated green-at-every-commit pass.
-**Effort:** medium-large. **Risk:** touches frozen pins — keep the characterization suite as the guard.
+### P2.3 `tf.AppConfig` de-globalization — DONE
+The mutable package-level global `var AppConfig TfRunnerConfig` is **removed**. `ReadConfig` now returns
+`(TfRunnerConfig, error)` instead of mutating a global, and the config is threaded explicitly down every
+`internal/tf` call path as a dependency (following the existing `HandlerConfig`/`HandlerDeps` precedent):
+- New unexported `execConfig` value + `TfRunnerConfig.exec()` carries the exec-path fields (runner uuid, api
+  backend url, ssh host-key policy, tf/init/ws timeouts). `Worker`/`SingleRunWorker`/`Handler` hold it;
+  `TfCmdParams` carries the tfcmd-read subset; `GitSource`/`SshAuth` gain `skipHostKeyValidation` (set via
+  `GitSource.setSkipHostKeyValidation` before each clone).
+- `RunStatus.toExternal(source)` takes the wire `Source` id from the RunApi's `rid`; `NewRunApi(apiBackend,
+  runnerUuid, dec)`, `NewManager`, `NewSingleRunWorker(WithApi)`, `NewHandler` (extended `HandlerConfig`),
+  `NewDispatchRunner` all take config explicitly. `cmd/tf`, `cmd/bbrunner/tf` and the superset thread it.
+- **Zero observable wire change**: all frozen pins (status-PATCH `Source`, register source id, PATCH
+  `sourceId`, `<uuid>-worker-1` node-id, timeout user-message) resolve to the same runner-uuid value as before.
+  The characterization suite was touched only for mechanical config *injection* (constructor args / `Worker.cfg`
+  / `TfCmdParams` fields), never to change an expected wire value.
+- **Superset**: the tf handler's runner uuid + API connection now flow through `tf.HandlerConfig` instead of
+  mutating the global — the P2.1 note's "until P2.3 threads full tf config" caveat is closed.
 
-### P2.4 Move the tf runner onto the shared `report` package
+Landed in two green commits (thread config, then remove the global). `task test -race`, `task lint` (0),
+all 11 coverage gates (tf 90.3) green at each commit.
+
+### P2.4 Move the tf runner onto the shared `report` package — DEFERRED (not behavior-neutral)
 `internal/report` is consumed by the four ported personas but **not** by `internal/tf`, which still uses its own
-`RunStatus`/`ExecutionStatus`/`Progress` (confirmed: no `internal/report` import under `internal/tf`). This is
-PLAN_DETAIL_03 §6 step 9 — its own "riskiest step": it rewrites tf's status model and every PATCH-body
-assertion. The intended cross-runner de-duplication is thus only partly realized. **Do this together with
-P2.3** (same frozen-pin surface). **Effort:** large. **Risk:** high (frozen tf wire).
+`RunStatus`/`ExecutionStatus`/`Progress`/`toExternal`/`Worker.observerRoutine` (confirmed: no `internal/report`
+import under `internal/tf`). **Attempted-then-deferred** as a dedicated pass after P2.3 landed, because it
+**cannot be done behavior-preservingly with the frozen tf PATCH-body assertions unchanged**:
+
+- The plan's report adoption is the reporting *facility* (`report.Observer` + `report.Reporter` +
+  `report.ToStatusUpdate`), not just the value types. `report.Observer.Run` sends **diffed** steps per 10s tick
+  (`observer.go` `diffSteps`: only steps new/changed since the last send), and the same diff on the final update.
+  tf's `Worker.observerRoutine` (worker.go / singlerunworker.go) sends the **full `progress.Snapshot()`** — every
+  step — on every tick and on the final update.
+- The phase-1 characterization suite pins that **full-snapshot** transcript: many tests decode a PATCH body and
+  assert a specific set of steps is present (e.g. `findStep(final, StepInput)` on the final update in
+  `worker_scenario_test.go` / `execute_failpaths_scenario_test.go`, and the per-step status matrices). Switching
+  tf to `report.Observer`'s diff-sends changes the step set carried by each PATCH body — an observable change on
+  the frozen status-PATCH surface — which would force editing those expected PATCH-body assertions.
+- PLAN_DETAIL_03 §5.4 confirms this is intended and non-neutral: it calls the tf full-snapshot→diff switch a
+  "deliberate, **flagged** wire change" and says "tf's phase-1 transcript pins are updated for the diff shape."
+  That is exactly the edit the P2.4 frozen-pin rule forbids doing here.
+- A *types-only* migration (adopt `report.RunStatus`/`ExecutionStatus`/`Progress`/`StepStatus` but keep tf's own
+  full-snapshot `toExternal`/observer) would be wire-neutral, but (a) it does not realize the plan's actual
+  de-duplication goal — tf would still duplicate `ToStatusUpdate`/`Observer` — and (b) it is a large mechanical
+  rewrite across ~15 source files + the characterization suite (`.str()`→`.String()`,
+  `map[string]*TfOutput`→`map[string]report.Output`, `currentStepStatus`→`CurrentStepStatus`,
+  `SUCCEEDED`→`report.SUCCEEDED`, plus `report.ExecutionStatus` adding `ABORTED`/`IsTerminal` semantics tf does
+  not currently have) with real behavioral-drift risk for a partial payoff.
+
+**Decision:** DEFER. Doing the real migration requires editing frozen PATCH-body assertions to fit the diff
+model — which would mask exactly the wire regression this rule guards. Reopen together with **P2.2** (flip tf to
+the in-process `dispatch.Loop`/`report.Observer` path as the default and delete `tf.NewManager`), which is where
+the deliberate full-snapshot→diff transcript change belongs and is gated on the P0.1 live-acceptance N-concurrent
+smoke. **Effort:** large. **Risk:** high (frozen tf wire).
 
 ---
 
@@ -225,5 +264,6 @@ From the run log's "Review this first"; these are decisions the autonomous run m
 3. **P2.2** (flip tf to in-process, delete Manager) — needs P0.1's N-concurrent smoke.
 4. ~~**P2.1** (controller superset)~~ **DONE** → **P-X.3** (retire the mux, cross-repo) is now the only remaining
    step of the downstream goal, gated on P0.1 live acceptance.
-5. **P2.3 + P2.4** as one dedicated pass (tf de-global + shared `report`).
+5. ~~**P2.3**~~ **DONE** (tf de-global). **P2.4** (tf onto shared `report`) **DEFERRED** — folds into **P2.2**,
+   where the deliberate full-snapshot→diff transcript change belongs (gated on P0.1 live acceptance).
 6. **P3.\*** as opportunistic cleanup.

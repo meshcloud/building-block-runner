@@ -120,7 +120,9 @@ func toInternalVariableMap(m []meshapi.BuildingBlockInputSpecDTO) map[string]*Va
 }
 
 // with this behavior the update won't update steps if the current status' step is nil.
-func (status RunStatus) toExternal() meshapi.RunStatusUpdateDTO {
+// source is the runner uuid stamped as the frozen wire Source field (FOLLOW_UP P2.3: threaded
+// from the RunApi's rid in place of the former AppConfig.RunnerUuid global read).
+func (status RunStatus) toExternal(source string) meshapi.RunStatusUpdateDTO {
 
 	// status
 	runStatus := status.Status.str()
@@ -159,7 +161,7 @@ func (status RunStatus) toExternal() meshapi.RunStatusUpdateDTO {
 
 	return meshapi.RunStatusUpdateDTO{
 		BlockRunId: status.RunId,
-		Source:     AppConfig.RunnerUuid,
+		Source:     source,
 		Type:       meshapi.RunTypeTerraform,
 		Status:     &runStatus,
 		CreatedOn:  time.Now(),

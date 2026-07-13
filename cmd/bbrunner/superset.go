@@ -23,9 +23,9 @@ import (
 )
 
 // supersetTf* are the tf handler's execution-config defaults in superset mode, mirroring the
-// shipped containers/tf-block-runner/runner-config.yml. Threading the full per-persona tf
-// config into the controller bootstrap is deferred with the tf.AppConfig de-globalization
-// follow-up (FOLLOW_UP P2.3); until then the superset uses these shipped defaults.
+// shipped containers/tf-block-runner/runner-config.yml (install/working dirs + timeout). The
+// runner identity + API connection are threaded from the controller's single config through
+// tf.HandlerConfig (FOLLOW_UP P2.3, now closed).
 const (
 	supersetTfInstallDir  = "/tmp/runner/tfbin"
 	supersetTfWorkingDir  = "/tmp/runner/wd"
@@ -93,19 +93,16 @@ func runControllerSuperset(logger *slog.Logger, cfg *controllerConfig) int {
 		break
 	}
 
-	// The tf handler's per-run RunApi reads the tf package globals for its base URL + node id
-	// (tf.AppConfig is not yet threaded -- FOLLOW_UP P2.3), so point them at the controller's
-	// single connection: tf runs then claim/report against the same meshStack the superset does.
-	tf.AppConfig.RunnerUuid = cfg.Uuid
-	tf.AppConfig.RunApiBackend = tf.RunApiConfig{
+	// The tf handler's per-run RunApi is built from the tf config threaded through HandlerConfig
+	// (FOLLOW_UP P2.3, now closed), so point it at the controller's single connection: tf runs
+	// then claim/report against the same meshStack the superset does.
+	tfApiBackend := tf.RunApiConfig{
 		Url:          cfg.Api.Url,
 		User:         cfg.Api.Username,
 		Password:     cfg.Api.Password,
 		ClientId:     cfg.Api.ClientId,
 		ClientSecret: cfg.Api.ClientSecret,
 	}
-	tf.AppConfig.TfInstallDir = supersetTfInstallDir
-	tf.AppConfig.TfParentWorkingDir = supersetTfWorkingDir
 	if err := os.MkdirAll(supersetTfWorkingDir, 0o777); err != nil {
 		logger.Error("failed to create tf working directory", "dir", supersetTfWorkingDir, "error", err)
 		return 1
@@ -116,7 +113,7 @@ func runControllerSuperset(logger *slog.Logger, cfg *controllerConfig) int {
 		return 1
 	}
 
-	handlers, err := buildSupersetHandlers(cfg.Api.Url, cfg.Uuid, cfg.Crypto.PrivateKey, tfBin, logger)
+	handlers, err := buildSupersetHandlers(cfg.Api.Url, cfg.Uuid, cfg.Crypto.PrivateKey, tfApiBackend, tfBin, logger)
 	if err != nil {
 		logger.Error("failed to build superset handlers", "error", err)
 		return 1
@@ -175,7 +172,7 @@ func runControllerSuperset(logger *slog.Logger, cfg *controllerConfig) int {
 //
 // tfBin is injected (nil is tolerated for construction -- tf needs it only at Execute) so this
 // stays hermetically unit-testable without the real tofu install-dir I/O.
-func buildSupersetHandlers(apiURL, runnerUuid, privateKeyPEM string, tfBin *tf.TfBinaries, log *slog.Logger) (map[meshapi.RunnerImplementationType]dispatch.RunHandler, error) {
+func buildSupersetHandlers(apiURL, runnerUuid, privateKeyPEM string, tfApiBackend tf.RunApiConfig, tfBin *tf.TfBinaries, log *slog.Logger) (map[meshapi.RunnerImplementationType]dispatch.RunHandler, error) {
 	ver := build.Version
 
 	// Cert-based decryptors from the controller's private key (the superset polls and decrypts
@@ -216,6 +213,8 @@ func buildSupersetHandlers(apiURL, runnerUuid, privateKeyPEM string, tfBin *tf.T
 	tfHandler := tf.NewHandler(tf.HandlerConfig{
 		WorkingDir:           supersetTfWorkingDir,
 		TfCommandTimeoutMins: supersetTfTimeoutMins,
+		RunnerUuid:           runnerUuid,
+		ApiBackend:           tfApiBackend,
 	}, tf.HandlerDeps{
 		TfBinaries: tfBin,
 		Decryptor:  tfDec,

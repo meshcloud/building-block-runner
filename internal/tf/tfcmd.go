@@ -48,6 +48,16 @@ type TfCmdParams struct {
 	// dec decrypts sensitive inputs. Injected per run (D4): certDecryptor in polling mode,
 	// NoopDecryptor in single-run mode. Nil is treated as passthrough.
 	dec Decryptor
+	// The following fields carry the runner configuration the tf commands read, threaded
+	// explicitly in place of the former AppConfig global (FOLLOW_UP P2.3). They are populated
+	// per run from the worker/single-run/handler execConfig.
+	skipHostKeyValidation bool
+	tfCommandTimeoutMins  int
+	initTimeoutMins       int
+	wsTimeoutMins         int
+	// apiBackendUrl is the meshfed API base URL, used as the state-backend URL fallback when a
+	// run carries no meshstackBaseUrl.
+	apiBackendUrl string
 }
 
 // GenericTfCmd implements generic functionality all TF commands re-use.
@@ -114,7 +124,7 @@ func (tfcmd *GenericTfCmd) failWithUserMsg(err error, overrideUserMsg *string) {
 		_, _ = tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(msgText)
 
 		if errors.Is(tfcmd.ctx.Err(), context.DeadlineExceeded) {
-			msgText = fmt.Sprintf("execution step stopped, because it exceeded the configured timeout of %d minutes", AppConfig.TfCommandTimeoutMins)
+			msgText = fmt.Sprintf("execution step stopped, because it exceeded the configured timeout of %d minutes", tfcmd.params.tfCommandTimeoutMins)
 			_, _ = tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(msgText)
 		} else if errors.Is(tfcmd.ctx.Err(), context.Canceled) {
 			msgText = fmt.Sprintf("execution step cancelled: %s", context.Cause(tfcmd.ctx).Error())
@@ -147,7 +157,7 @@ func (tfcmd *GenericTfCmd) createFreshCommandWd() error {
 
 func (tfcmd *GenericTfCmd) init(tf TfFacade) error {
 	tfcmd.Println("Calling tf init")
-	initCtx, cancel := context.WithTimeout(tfcmd.ctx, time.Duration(AppConfig.InitTimeoutMins)*time.Minute)
+	initCtx, cancel := context.WithTimeout(tfcmd.ctx, time.Duration(tfcmd.params.initTimeoutMins)*time.Minute)
 	defer cancel()
 
 	if tfcmd.runContextInfo.useMeshBackendFallback {
@@ -201,7 +211,7 @@ func (tfcmd *GenericTfCmd) useWorkspaceIfNeeded(tf TfFacade) error {
 	}
 
 	// if expected workspace does not exits, create it
-	wsCtx, cancel := context.WithTimeout(tfcmd.ctx, time.Duration(AppConfig.WsTimeoutMins)*time.Minute)
+	wsCtx, cancel := context.WithTimeout(tfcmd.ctx, time.Duration(tfcmd.params.wsTimeoutMins)*time.Minute)
 	defer cancel()
 
 	tfcmd.Printfln("Workspace does not exist. Creating it with suggested name: %s.", tfcmd.params.suggestedWorkspace)
@@ -211,7 +221,7 @@ func (tfcmd *GenericTfCmd) useWorkspaceIfNeeded(tf TfFacade) error {
 func (tfcmd *GenericTfCmd) selectWorkspace(tf TfFacade) (string, error) {
 	tfcmd.Printfln("Selecting workspace: %s", tfcmd.params.suggestedWorkspace)
 
-	wsCtx, cancelList := context.WithTimeout(tfcmd.ctx, time.Duration(AppConfig.WsTimeoutMins)*time.Minute)
+	wsCtx, cancelList := context.WithTimeout(tfcmd.ctx, time.Duration(tfcmd.params.wsTimeoutMins)*time.Minute)
 	defer cancelList()
 
 	available, current, err := tf.WorkspaceList(wsCtx)
@@ -246,7 +256,7 @@ func (tfcmd *GenericTfCmd) deleteWorkspaceIfNeeded(tf TfFacade) {
 		return
 	}
 
-	wsCtx, cancel := context.WithTimeout(tfcmd.ctx, time.Duration(AppConfig.WsTimeoutMins)*time.Minute)
+	wsCtx, cancel := context.WithTimeout(tfcmd.ctx, time.Duration(tfcmd.params.wsTimeoutMins)*time.Minute)
 	defer cancel()
 
 	// This is primarily using the somewhat complex workspace naming logic to detect the workspace
@@ -298,7 +308,7 @@ func (tfcmd *GenericTfCmd) createMeshStackHttpBackendFile() error {
 
 	baseUrl := tfcmd.runContextInfo.meshstackBaseUrl
 	if baseUrl == "" {
-		baseUrl = AppConfig.RunApiBackend.Url
+		baseUrl = tfcmd.params.apiBackendUrl
 	}
 	url := fmt.Sprintf(EP_State, baseUrl, tfcmd.runContextInfo.workspaceIdentifier, tfcmd.runContextInfo.bbId)
 
@@ -460,7 +470,7 @@ func (tfcmd *GenericTfCmd) buildTfEnv() (map[string]string, error) {
 	// Set GIT_SSH_COMMAND if SSH authentication is configured
 	if tfcmd.params.source != nil && tfcmd.params.source.auth.name() == AUTH_TYPE_SSH {
 		gitSshCommandEnv := fmt.Sprintf("ssh -i '%s'", path.Join(tfcmd.runContextInfo.workingDirectory, TMP_FILE_SSH_CERT))
-		if AppConfig.SkipHostKeyValidation {
+		if tfcmd.params.skipHostKeyValidation {
 			gitSshCommandEnv += " -o StrictHostKeyChecking=no"
 		}
 		tfcmd.Println(fmt.Sprintf("Setting GIT_SSH_COMMAND=%s", gitSshCommandEnv))

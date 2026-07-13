@@ -22,10 +22,6 @@ func Test_GitSourceTestSuite(t *testing.T) {
 }
 
 func (suite *GitSourceTestSuite) SetupSuite() {
-	AppConfig = TfRunnerConfig{
-		SkipHostKeyValidation: false,
-	}
-
 	tmpWd, err := os.MkdirTemp(os.TempDir(), "gitSourceTest-wd-")
 	if err != nil {
 		panic(err)

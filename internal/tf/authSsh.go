@@ -36,6 +36,9 @@ type SshAuth struct {
 	// dec decrypts the SSH private key. Nil means the cert is already decrypted (single-run
 	// passthrough — the former meshcrypto.Crypto == nil case).
 	dec Decryptor
+	// skipHostKeyValidation is threaded from the runner config (FOLLOW_UP P2.3) in place of the
+	// former AppConfig global; set by GitSource.setSkipHostKeyValidation.
+	skipHostKeyValidation bool
 }
 
 type KnownHost struct {
@@ -112,7 +115,7 @@ func (sshAuth *SshAuth) toTransport(url string, log *logwrap) (transport.AuthMet
 		return nil, err
 	}
 
-	key.HostKeyCallbackHelper = sshAuth.knownHostsKeyCallback(sshAuth.prepDir, AppConfig.SkipHostKeyValidation, log)
+	key.HostKeyCallbackHelper = sshAuth.knownHostsKeyCallback(sshAuth.prepDir, sshAuth.skipHostKeyValidation, log)
 
 	// Configure SSH client to request the specific key type from known_hosts
 	// This tells the server which host key algorithm to use during handshake

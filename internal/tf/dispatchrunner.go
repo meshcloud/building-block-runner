@@ -31,23 +31,28 @@ const tfClaimNodePostfix = "worker-1"
 // meter and metrics are constructed by the caller (main owns the prometheus registry) and
 // injected: meter is the runner_* series (also the loop's StandaloneMetrics for the two additive
 // counters), metrics the run_controller_* collector the generic Loop instruments itself with.
-func NewDispatchRunner(logger *slog.Logger, tfBin *TfBinaries, dec Decryptor, meter *mgmt.RunMetrics, metrics *dispatch.MetricsCollector) (*dispatch.Loop, *dispatch.InProcess, error) {
-	auth := AppConfig.RunApiBackend.NewAuthProvider()
+func NewDispatchRunner(cfg TfRunnerConfig, logger *slog.Logger, tfBin *TfBinaries, dec Decryptor, meter *mgmt.RunMetrics, metrics *dispatch.MetricsCollector) (*dispatch.Loop, *dispatch.InProcess, error) {
+	auth := cfg.RunApiBackend.NewAuthProvider()
 
 	// Opt-in self-registration (§9): absent registration section => never self-registers.
-	if err := Register(logger, AppConfig, auth); err != nil {
+	if err := Register(logger, cfg, auth); err != nil {
 		return nil, nil, fmt.Errorf("tf runner registration failed: %w", err)
 	}
 
 	identity := meshapi.Identity{Name: "tf-block-runner", Version: build.Version}
 	claimClient := dispatch.NewRunClaimClient(
-		AppConfig.RunApiBackend.Url, AppConfig.RunnerUuid, "", auth, identity, metrics,
+		cfg.RunApiBackend.Url, cfg.RunnerUuid, "", auth, identity, metrics,
 		dispatch.WithRequester(func(uuid string) string { return uuid + "-" + tfClaimNodePostfix }),
 	)
 
 	handler := NewHandler(HandlerConfig{
-		WorkingDir:           AppConfig.TfParentWorkingDir,
-		TfCommandTimeoutMins: AppConfig.TfCommandTimeoutMins,
+		WorkingDir:            cfg.TfParentWorkingDir,
+		TfCommandTimeoutMins:  cfg.TfCommandTimeoutMins,
+		InitTimeoutMins:       cfg.InitTimeoutMins,
+		WsTimeoutMins:         cfg.WsTimeoutMins,
+		RunnerUuid:            cfg.RunnerUuid,
+		ApiBackend:            cfg.RunApiBackend,
+		SkipHostKeyValidation: cfg.SkipHostKeyValidation,
 	}, HandlerDeps{
 		TfBinaries: tfBin,
 		Decryptor:  dec,
@@ -63,8 +68,8 @@ func NewDispatchRunner(logger *slog.Logger, tfBin *TfBinaries, dec Decryptor, me
 	}
 
 	// Ensure the working dir exists (the Manager did this in Start).
-	if err := os.MkdirAll(AppConfig.TfParentWorkingDir, 0o777); err != nil {
-		logger.Error("failed to create working directory", "dir", AppConfig.TfParentWorkingDir, "error", err)
+	if err := os.MkdirAll(cfg.TfParentWorkingDir, 0o777); err != nil {
+		logger.Error("failed to create working directory", "dir", cfg.TfParentWorkingDir, "error", err)
 	}
 
 	loop := dispatch.NewLoop(dispatch.LoopConfig{
@@ -72,9 +77,9 @@ func NewDispatchRunner(logger *slog.Logger, tfBin *TfBinaries, dec Decryptor, me
 		// FAILED_WORKER_DELAY (60s after a fetch error) -- see NewClaimClassifier.
 		PollInterval:  NORUN_WORKER_DELAY,
 		ClaimBackoff:  FAILED_WORKER_DELAY,
-		MaxConcurrent: AppConfig.MaxConcurrentRuns,
+		MaxConcurrent: cfg.MaxConcurrentRuns,
 	}, dispatch.LoopDeps{
-		RunnerUuid: AppConfig.RunnerUuid,
+		RunnerUuid: cfg.RunnerUuid,
 		Claimer:    claimClient,
 		Dispatcher: inproc,
 		StatusApi:  claimClient,

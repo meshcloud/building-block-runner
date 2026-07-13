@@ -33,8 +33,8 @@ func Test_ApiSuite(t *testing.T) {
 // setup test server and a real RunApi client.
 func (suite *ApiTestSuite) SetupSuite() {
 
-	// setup statically referenced app config
-	AppConfig = TfRunnerConfig{
+	// runner config threaded into the RunApi client under test (FOLLOW_UP P2.3)
+	cfg := TfRunnerConfig{
 		RunnerUuid: "runApi_test",
 		RunApiBackend: RunApiConfig{
 			Url:      "http://test-url",
@@ -95,10 +95,10 @@ func (suite *ApiTestSuite) SetupSuite() {
 	}
 	hc := suite.meshfed.Client()
 	suite.api = &RunApiClient{
-		rid:        AppConfig.RunnerUuid,
+		rid:        cfg.RunnerUuid,
 		baseURL:    suite.meshfed.URL,
 		auth:       sAuth,
-		client:     meshapi.NewClientWithHTTP(suite.meshfed.URL, AppConfig.RunnerUuid, sAuth, hc),
+		client:     meshapi.NewClientWithHTTP(suite.meshfed.URL, cfg.RunnerUuid, sAuth, hc),
 		httpClient: hc,
 	}
 }
@@ -537,14 +537,13 @@ func GetRunResponseForTest() []byte {
 // /create endpoint with forRunnerUuid=<RunnerUuid>, regardless of whether RunnerUuid is a
 // real UUID, an arbitrary string, or empty.
 func (suite *ApiTestSuite) Test_Register_UsesV1MediaType_ForNonUuidRunnerUuid() {
-	// Setup: RunnerUuid is an arbitrary non-UUID string
-	originalConfig := AppConfig
-	defer func() { AppConfig = originalConfig }()
+	// Setup: RunnerUuid is an arbitrary non-UUID string, threaded via the client's rid (P2.3)
+	client, ok := suite.api.(*RunApiClient)
+	suite.Require().True(ok)
+	originalRid := client.rid
+	defer func() { client.rid = originalRid }()
 
-	nonUuidRunnerUuid := "CUSTOM_PREDICATE"
-	AppConfig = TfRunnerConfig{
-		RunnerUuid: nonUuidRunnerUuid,
-	}
+	client.rid = "CUSTOM_PREDICATE"
 
 	// Execute: Make a register call
 	err := suite.api.Register(
@@ -582,13 +581,13 @@ func (suite *ApiTestSuite) Test_Register_UsesV1MediaType_ForNonUuidRunnerUuid() 
 }
 
 func (suite *ApiTestSuite) Test_Register_UsesV1MediaType_ForUuidRunnerUuid() {
-	// Setup: RunnerUuid is a real UUID
-	originalConfig := AppConfig
-	defer func() { AppConfig = originalConfig }()
+	// Setup: RunnerUuid is a real UUID, threaded via the client's rid (P2.3)
+	client, ok := suite.api.(*RunApiClient)
+	suite.Require().True(ok)
+	originalRid := client.rid
+	defer func() { client.rid = originalRid }()
 
-	AppConfig = TfRunnerConfig{
-		RunnerUuid: "f1a2b3c4-d5e6-47a8-9b0c-1d2e3f4a5b6c",
-	}
+	client.rid = "f1a2b3c4-d5e6-47a8-9b0c-1d2e3f4a5b6c"
 
 	// Execute: Make a register call
 	err := suite.api.Register(
@@ -626,14 +625,13 @@ func (suite *ApiTestSuite) Test_Register_UsesV1MediaType_ForUuidRunnerUuid() {
 }
 
 func (suite *ApiTestSuite) Test_Register_UsesV1MediaType_ForEmptyRunnerUuid() {
-	// Setup: RunnerUuid is explicitly an empty string
-	originalConfig := AppConfig
-	defer func() { AppConfig = originalConfig }()
+	// Setup: RunnerUuid is explicitly an empty string, threaded via the client's rid (P2.3)
+	client, ok := suite.api.(*RunApiClient)
+	suite.Require().True(ok)
+	originalRid := client.rid
+	defer func() { client.rid = originalRid }()
 
-	emptyRunnerUuid := ""
-	AppConfig = TfRunnerConfig{
-		RunnerUuid: emptyRunnerUuid,
-	}
+	client.rid = ""
 
 	// Execute: Make a register call
 	err := suite.api.Register(
@@ -671,13 +669,9 @@ func (suite *ApiTestSuite) Test_Register_UsesV1MediaType_ForEmptyRunnerUuid() {
 }
 
 func (suite *ApiTestSuite) Test_FetchRunDetails_UsesCreateEndpoint_ForNonUuidRunnerUuid() {
-	// Setup: RunnerUuid is an arbitrary non-UUID string
-	originalConfig := AppConfig
-	defer func() { AppConfig = originalConfig }()
-
-	nonUuidRunnerUuid := "CUSTOM_PREDICATE"
-	AppConfig = TfRunnerConfig{
-		RunnerUuid: nonUuidRunnerUuid,
+	// Setup: RunnerUuid is an arbitrary non-UUID string, threaded via NewRunApi (P2.3)
+	cfg := TfRunnerConfig{
+		RunnerUuid: "CUSTOM_PREDICATE",
 		RunApiBackend: RunApiConfig{
 			User:     "test-user",
 			Password: "test-pass",
@@ -686,7 +680,7 @@ func (suite *ApiTestSuite) Test_FetchRunDetails_UsesCreateEndpoint_ForNonUuidRun
 	}
 
 	// Create new API client with updated config
-	api := NewRunApi(nil)
+	api := NewRunApi(cfg.RunApiBackend, cfg.RunnerUuid, nil)
 
 	// Temporarily replace the server handler to capture URL details
 	cleanup, capturedURL, capturedQuery := suite.setupRequestCapture()
@@ -718,10 +712,7 @@ func (suite *ApiTestSuite) Test_FetchRunDetails_UsesCreateEndpoint_ForNonUuidRun
 func (suite *ApiTestSuite) Test_FetchRunDetails_UsesCreateEndpoint_ForUuidRunnerUuid() {
 	// Setup: RunnerUuid is a real UUID — still the /create endpoint, same as the
 	// non-UUID case above (there is no separate "default" endpoint).
-	originalConfig := AppConfig
-	defer func() { AppConfig = originalConfig }()
-
-	AppConfig = TfRunnerConfig{
+	cfg := TfRunnerConfig{
 		RunnerUuid: "b2c3d4e5-f6a7-48b9-9c0d-1e2f3a4b5c6d",
 		RunApiBackend: RunApiConfig{
 			User:     "test-user",
@@ -731,7 +722,7 @@ func (suite *ApiTestSuite) Test_FetchRunDetails_UsesCreateEndpoint_ForUuidRunner
 	}
 
 	// Create new API client with updated config
-	api := NewRunApi(nil)
+	api := NewRunApi(cfg.RunApiBackend, cfg.RunnerUuid, nil)
 
 	// Temporarily replace the server handler to capture URL details
 	cleanup, capturedURL, capturedQuery := suite.setupRequestCapture()

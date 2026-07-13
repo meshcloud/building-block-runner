@@ -20,24 +20,31 @@ type SingleRunWorker struct {
 	log                  *slog.Logger
 	statusUpdateInterval time.Duration
 	dec                  Decryptor
+	// cfg carries the runner config the execution path reads, threaded explicitly in place of
+	// the former AppConfig global (FOLLOW_UP P2.3).
+	cfg execConfig
 }
 
-// NewSingleRunWorker creates a new single-run worker.
-func NewSingleRunWorker(logger *slog.Logger, workerDir string, timeoutMins int, tfbin *TfBinaries, dec Decryptor) *SingleRunWorker {
+// NewSingleRunWorker creates a new single-run worker. cfg is the runner config threaded
+// explicitly (FOLLOW_UP P2.3); its RunApiBackend/RunnerUuid build the run API client and its
+// execution values (timeouts, ssh host-key policy, backend URL) feed each run.
+func NewSingleRunWorker(logger *slog.Logger, cfg TfRunnerConfig, workerDir string, timeoutMins int, tfbin *TfBinaries, dec Decryptor) *SingleRunWorker {
 	return &SingleRunWorker{
 		workerDir:            workerDir,
 		timeout:              time.Minute * time.Duration(timeoutMins),
-		runApi:               NewRunApi(dec),
+		runApi:               NewRunApi(cfg.RunApiBackend, cfg.RunnerUuid, dec),
 		tfBinaries:           tfbin,
 		log:                  logger,
 		statusUpdateInterval: time.Second * 10,
 		dec:                  dec,
+		cfg:                  cfg.exec(),
 	}
 }
 
 // NewSingleRunWorkerWithApi creates a new single-run worker with a provided API client
 // This is used in Kubernetes mode where the API client needs the runToken from the run spec.
-func NewSingleRunWorkerWithApi(logger *slog.Logger, workerDir string, timeoutMins int, tfbin *TfBinaries, api RunApi, dec Decryptor) *SingleRunWorker {
+// cfg is the runner config threaded explicitly (FOLLOW_UP P2.3) for the execution path.
+func NewSingleRunWorkerWithApi(logger *slog.Logger, cfg TfRunnerConfig, workerDir string, timeoutMins int, tfbin *TfBinaries, api RunApi, dec Decryptor) *SingleRunWorker {
 	return &SingleRunWorker{
 		workerDir:            workerDir,
 		timeout:              time.Minute * time.Duration(timeoutMins),
@@ -46,6 +53,7 @@ func NewSingleRunWorkerWithApi(logger *slog.Logger, workerDir string, timeoutMin
 		log:                  logger,
 		statusUpdateInterval: time.Second * 10,
 		dec:                  dec,
+		cfg:                  cfg.exec(),
 	}
 }
 
@@ -121,18 +129,27 @@ func (w *SingleRunWorker) workRoutine(ctx context.Context, run *Run, runContextI
 	defer wg.Done()
 	defer func() { doneSignallingChan <- true }()
 
+	if run.Source != nil {
+		run.Source.setSkipHostKeyValidation(w.cfg.SkipHostKeyValidation)
+	}
+
 	params := &TfCmdParams{
-		dir:                w.workerDir,
-		buildingBlockId:    run.BuildingBlockId,
-		tfVersion:          run.TerraformVersion,
-		useWorkspaces:      true,
-		suggestedWorkspace: run.toWorkspaceStr(),
-		vars:               run.Vars,
-		source:             run.Source,
-		preRunScript:       run.PreRunScript,
-		runMode:            run.Behavior.str(),
-		planArtifactUrl:    run.PlanArtifactUrl,
-		dec:                w.dec,
+		dir:                   w.workerDir,
+		buildingBlockId:       run.BuildingBlockId,
+		tfVersion:             run.TerraformVersion,
+		useWorkspaces:         true,
+		suggestedWorkspace:    run.toWorkspaceStr(),
+		vars:                  run.Vars,
+		source:                run.Source,
+		preRunScript:          run.PreRunScript,
+		runMode:               run.Behavior.str(),
+		planArtifactUrl:       run.PlanArtifactUrl,
+		dec:                   w.dec,
+		skipHostKeyValidation: w.cfg.SkipHostKeyValidation,
+		tfCommandTimeoutMins:  w.cfg.TfCommandTimeoutMins,
+		initTimeoutMins:       w.cfg.InitTimeoutMins,
+		wsTimeoutMins:         w.cfg.WsTimeoutMins,
+		apiBackendUrl:         w.cfg.ApiBackendUrl,
 	}
 
 	var tfCommand TfCmd
@@ -157,7 +174,7 @@ func (w *SingleRunWorker) workRoutine(ctx context.Context, run *Run, runContextI
 		runContextInfo.progress.setStatus(FAILED)
 		*registerErr = err
 	} else {
-		runContextInfo.logwrap.PrintlnToLocalLogs(fmt.Sprintf("Registered '%s' as a source for runId: %s", AppConfig.RunnerUuid, runContextInfo.runId))
+		runContextInfo.logwrap.PrintlnToLocalLogs(fmt.Sprintf("Registered '%s' as a source for runId: %s", w.cfg.RunnerUuid, runContextInfo.runId))
 		tfCommand.execute()
 	}
 }

@@ -24,6 +24,10 @@ type Worker struct {
 	log                  *slog.Logger
 	statusUpdateInterval time.Duration
 	dec                  Decryptor
+	// cfg carries the runner config the execution path reads (timeouts, ssh host-key policy,
+	// state-backend fallback URL, runner uuid), threaded explicitly in place of the former
+	// AppConfig global (FOLLOW_UP P2.3).
+	cfg execConfig
 	// meter receives the D12 generic standalone-runner metrics (§4.3). A nil meter (the
 	// zero value of every pre-existing Worker{} literal, incl. every scenario test) is
 	// treated as NoopMeter -- see (*Worker).meterOrNoop -- so this field is strictly
@@ -168,18 +172,27 @@ func (w *Worker) workRoutine(ctx context.Context, run *Run, runContextInfo *RunC
 	defer wg.Done()
 	defer func() { doneSignallingChan <- true }()
 
+	if run.Source != nil {
+		run.Source.setSkipHostKeyValidation(w.cfg.SkipHostKeyValidation)
+	}
+
 	params := &TfCmdParams{
-		dir:                w.workerDir,
-		buildingBlockId:    run.BuildingBlockId,
-		tfVersion:          run.TerraformVersion,
-		useWorkspaces:      true,
-		suggestedWorkspace: run.toWorkspaceStr(),
-		vars:               run.Vars,
-		source:             run.Source,
-		preRunScript:       run.PreRunScript,
-		runMode:            run.Behavior.str(),
-		planArtifactUrl:    run.PlanArtifactUrl,
-		dec:                w.dec,
+		dir:                   w.workerDir,
+		buildingBlockId:       run.BuildingBlockId,
+		tfVersion:             run.TerraformVersion,
+		useWorkspaces:         true,
+		suggestedWorkspace:    run.toWorkspaceStr(),
+		vars:                  run.Vars,
+		source:                run.Source,
+		preRunScript:          run.PreRunScript,
+		runMode:               run.Behavior.str(),
+		planArtifactUrl:       run.PlanArtifactUrl,
+		dec:                   w.dec,
+		skipHostKeyValidation: w.cfg.SkipHostKeyValidation,
+		tfCommandTimeoutMins:  w.cfg.TfCommandTimeoutMins,
+		initTimeoutMins:       w.cfg.InitTimeoutMins,
+		wsTimeoutMins:         w.cfg.WsTimeoutMins,
+		apiBackendUrl:         w.cfg.ApiBackendUrl,
 	}
 
 	var tfCommand TfCmd
@@ -206,7 +219,7 @@ func (w *Worker) workRoutine(ctx context.Context, run *Run, runContextInfo *RunC
 		// the run stuck until the coordinator eventually times it out.
 		runContextInfo.progress.setStatus(FAILED)
 	} else {
-		runContextInfo.logwrap.PrintlnToLocalLogs(fmt.Sprintf("Registered '%s' as a source for runId: %s", AppConfig.RunnerUuid, runContextInfo.runId))
+		runContextInfo.logwrap.PrintlnToLocalLogs(fmt.Sprintf("Registered '%s' as a source for runId: %s", w.cfg.RunnerUuid, runContextInfo.runId))
 		tfCommand.execute()
 	}
 }

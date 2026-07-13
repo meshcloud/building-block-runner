@@ -61,20 +61,22 @@ type RunApi interface {
 	DownloadPredecessorArtifact(url string, w io.Writer) error
 }
 
-func NewRunApi(dec Decryptor) RunApi {
+// NewRunApi builds a RunApi from the runner's API backend config and uuid, threaded explicitly
+// (FOLLOW_UP P2.3) in place of the former AppConfig global reads.
+func NewRunApi(apiBackend RunApiConfig, runnerUuid string, dec Decryptor) RunApi {
 	auth := &runApiAuth{
 		runToken: nil,
-		baseAuth: AppConfig.RunApiBackend.NewAuthProvider(),
+		baseAuth: apiBackend.NewAuthProvider(),
 	}
 
 	identity := meshapi.Identity{Name: "tf-block-runner", Version: build.Version}
 	httpClient := &http.Client{}
 	return &RunApiClient{
-		rid:        AppConfig.RunnerUuid,
-		baseURL:    AppConfig.RunApiBackend.Url,
+		rid:        runnerUuid,
+		baseURL:    apiBackend.Url,
 		auth:       auth,
 		identity:   identity,
-		client:     meshapi.NewClient(AppConfig.RunApiBackend.Url, AppConfig.RunnerUuid, auth, meshapi.WithIdentity(identity)),
+		client:     meshapi.NewClient(apiBackend.Url, runnerUuid, auth, meshapi.WithIdentity(identity)),
 		httpClient: httpClient,
 		dec:        dec,
 	}
@@ -101,7 +103,7 @@ func (api *RunApiClient) FetchRunDetails(nodePostfix string) (*Run, error) {
 	// identical to api.client's, so the per-fetch override is invisible on the wire).
 	client := meshapi.NewClientWithHTTP(api.baseURL, requester, api.auth, api.httpClient, meshapi.WithIdentity(api.identity))
 
-	dto, _, err := client.FetchRun(AppConfig.RunnerUuid)
+	dto, _, err := client.FetchRun(api.rid)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +126,7 @@ func (api *RunApiClient) Register(runStatus *RunStatus) error {
 
 	registration := meshapi.RegistrationDTO{
 		Source: meshapi.SourceDTO{
-			Id: AppConfig.RunnerUuid,
+			Id: api.rid,
 		},
 		Steps: steps,
 	}
@@ -139,9 +141,9 @@ func (api *RunApiClient) Register(runStatus *RunStatus) error {
 }
 
 func (api *RunApiClient) UpdateState(status *RunStatus) (bool, error) {
-	dto := status.toExternal()
+	dto := status.toExternal(api.rid)
 
-	data, err := api.client.PatchStatus(status.RunId, AppConfig.RunnerUuid, dto)
+	data, err := api.client.PatchStatus(status.RunId, api.rid, dto)
 	if err != nil {
 		return false, err
 	}

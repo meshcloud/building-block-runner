@@ -31,6 +31,8 @@ type Handler struct {
 	meter                Meter
 	log                  *slog.Logger
 	newRunApi            RunApiFactory
+	// cfg is the execution-path config threaded into each per-run Worker (FOLLOW_UP P2.3).
+	cfg execConfig
 }
 
 // RunApiFactory builds a run-scoped RunApi for one claimed run, authenticated with that run's
@@ -38,22 +40,23 @@ type Handler struct {
 // real meshapi-backed NewRunApi; tests wire one over a fake RoundTripper.
 type RunApiFactory func(dec Decryptor, runToken string) RunApi
 
-// defaultRunApiFactory builds the production run-scoped RunApi: a fresh RunApi (its own
-// runToken slot, never shared across concurrent runs) with the run's runToken set so all
-// run-scoped reporting authenticates as the run, not the runner's claim credentials.
-func defaultRunApiFactory(dec Decryptor, runToken string) RunApi {
-	api := NewRunApi(dec)
-	api.SetRunToken(runToken)
-	return api
-}
-
 // HandlerConfig carries the tf run-execution config a handler needs, threaded explicitly (P3)
-// rather than read from the AppConfig global.
+// rather than read from the AppConfig global (FOLLOW_UP P2.3).
 type HandlerConfig struct {
 	// WorkingDir is the parent dir under which each run gets its own os.MkdirTemp workdir.
 	WorkingDir string
 	// TfCommandTimeoutMins bounds one run's total tofu execution.
 	TfCommandTimeoutMins int
+	// InitTimeoutMins / WsTimeoutMins bound tofu init and workspace operations respectively.
+	InitTimeoutMins int
+	WsTimeoutMins   int
+	// RunnerUuid is the runner identity: the frozen wire Source id and the run API's rid.
+	RunnerUuid string
+	// ApiBackend is the meshfed API connection the run-scoped RunApi authenticates against and
+	// whose Url is the tf state-backend fallback URL.
+	ApiBackend RunApiConfig
+	// SkipHostKeyValidation is the insecure-host-key policy threaded into each run's git source.
+	SkipHostKeyValidation bool
 }
 
 // HandlerDeps are the handler's injected collaborators (D11: main wires them).
@@ -87,7 +90,17 @@ func NewHandler(cfg HandlerConfig, deps HandlerDeps) Handler {
 	}
 	newRunApi := deps.NewRunApi
 	if newRunApi == nil {
-		newRunApi = defaultRunApiFactory
+		// The production run-scoped RunApi factory: a fresh RunApi (its own runToken slot, never
+		// shared across concurrent runs) built from the threaded API backend + runner uuid, with
+		// the run's runToken set so all run-scoped reporting authenticates as the run, not the
+		// runner's claim credentials.
+		apiBackend := cfg.ApiBackend
+		runnerUuid := cfg.RunnerUuid
+		newRunApi = func(dec Decryptor, runToken string) RunApi {
+			api := NewRunApi(apiBackend, runnerUuid, dec)
+			api.SetRunToken(runToken)
+			return api
+		}
 	}
 	return Handler{
 		workerDir:            cfg.WorkingDir,
@@ -98,6 +111,14 @@ func NewHandler(cfg HandlerConfig, deps HandlerDeps) Handler {
 		meter:                meter,
 		log:                  log,
 		newRunApi:            newRunApi,
+		cfg: execConfig{
+			RunnerUuid:            cfg.RunnerUuid,
+			ApiBackendUrl:         cfg.ApiBackend.Url,
+			SkipHostKeyValidation: cfg.SkipHostKeyValidation,
+			TfCommandTimeoutMins:  cfg.TfCommandTimeoutMins,
+			InitTimeoutMins:       cfg.InitTimeoutMins,
+			WsTimeoutMins:         cfg.WsTimeoutMins,
+		},
 	}
 }
 
@@ -144,6 +165,7 @@ func (h Handler) Execute(_ context.Context, cr dispatch.ClaimedRun) error {
 		statusUpdateInterval: h.statusUpdateInterval,
 		dec:                  h.dec,
 		meter:                h.meter,
+		cfg:                  h.cfg,
 	}
 	worker.tfExecution(run)
 	return nil

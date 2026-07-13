@@ -72,7 +72,7 @@ func runTfPolling() int {
 	if os.Getenv("RUNNER_DISPATCHER") == "inprocess" {
 		logger.Info("using in-process dispatcher (dispatch.Loop)")
 		metrics := dispatch.NewMetricsCollectorWithRegistry(reg)
-		loop, inproc, err := tf.NewDispatchRunner(logger, tfBinaryProvider, dec, meter, metrics)
+		loop, inproc, err := tf.NewDispatchRunner(tf.AppConfig, logger, tfBinaryProvider, dec, meter, metrics)
 		if err != nil {
 			logger.Error("failed to start in-process dispatcher", "error", err)
 			return 1
@@ -95,7 +95,7 @@ func runTfPolling() int {
 	var wg sync.WaitGroup
 	wg.Add(1)
 
-	runManager := tf.NewManager(tfBinaryProvider, dec, meter, logger)
+	runManager := tf.NewManager(tf.AppConfig, tfBinaryProvider, dec, meter, logger)
 	runManager.Start(&wg)
 
 	signalChan := make(chan os.Signal, 1)

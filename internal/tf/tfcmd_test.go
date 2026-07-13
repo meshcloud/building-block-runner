@@ -635,17 +635,8 @@ func Test_buildTfEnv_WithoutMeshBackendFallback_DoesNotSetTfHttpBasicAuthEnv(t *
 }
 
 func Test_createMeshStackHttpBackendFile_MissingRunToken_ReturnsError(t *testing.T) {
-	originalConfig := AppConfig
-	AppConfig = TfRunnerConfig{
-		RunApiBackend: RunApiConfig{
-			Url:      "http://localhost:8080",
-			User:     "some-user",
-			Password: "top-secret",
-		},
-	}
-	t.Cleanup(func() { AppConfig = originalConfig })
-
 	uut := makeTestGenericTfCmd(t)
+	uut.params.apiBackendUrl = "http://localhost:8080"
 	uut.runContextInfo.bbId = "test-bb-id"
 	uut.runContextInfo.workspaceIdentifier = "test-workspace"
 	// runToken deliberately left empty — simulates missing token from server
@@ -671,16 +662,9 @@ func Test_createMeshStackHttpBackendFile_MissingRunToken_ReturnsError(t *testing
 // buildTfEnv), so nothing secret is baked into a saved plan.
 // It also verifies that meshstackBaseUrl from the run links is used as the backend base URL.
 func Test_createMeshStackHttpBackendFile_WithRunToken(t *testing.T) {
-	originalConfig := AppConfig
-	// No credentials configured – simulates Kubernetes mode where none are injected.
-	AppConfig = TfRunnerConfig{
-		RunApiBackend: RunApiConfig{
-			Url: "http://fallback-url-should-not-be-used:8080",
-		},
-	}
-	t.Cleanup(func() { AppConfig = originalConfig })
-
 	uut := makeTestGenericTfCmd(t)
+	// No credentials configured – simulates Kubernetes mode where none are injected.
+	uut.params.apiBackendUrl = "http://fallback-url-should-not-be-used:8080"
 	uut.runContextInfo.bbId = "test-bb-id"
 	uut.runContextInfo.workspaceIdentifier = "test-workspace"
 	uut.runContextInfo.runToken = "ephemeral-run-token"

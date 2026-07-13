@@ -15,6 +15,31 @@ import (
 
 var AppConfig TfRunnerConfig
 
+// execConfig carries the tf runner configuration that the run-execution path reads
+// (worker/single-run/handler -> tfcmd/gitsource/authSsh), threaded explicitly in place of the
+// former mutable package-level AppConfig global (FOLLOW_UP P2.3). It is a read-only value taken
+// once at wiring time, so it is safe to copy and share across concurrent in-process runs.
+type execConfig struct {
+	RunnerUuid            string
+	ApiBackendUrl         string
+	SkipHostKeyValidation bool
+	TfCommandTimeoutMins  int
+	InitTimeoutMins       int
+	WsTimeoutMins         int
+}
+
+// exec derives the execution-path config subset from a full TfRunnerConfig.
+func (c TfRunnerConfig) exec() execConfig {
+	return execConfig{
+		RunnerUuid:            c.RunnerUuid,
+		ApiBackendUrl:         c.RunApiBackend.Url,
+		SkipHostKeyValidation: c.SkipHostKeyValidation,
+		TfCommandTimeoutMins:  c.TfCommandTimeoutMins,
+		InitTimeoutMins:       c.InitTimeoutMins,
+		WsTimeoutMins:         c.WsTimeoutMins,
+	}
+}
+
 // DefaultMaxConcurrentRuns is the tf persona's in-process concurrency default when running on
 // the dispatch.Loop path (PLAN_DETAIL_05 §5/§12): up to 3 concurrent runs, an intentional
 // throughput improvement over the former single serial worker. Setting maxConcurrentRuns=1

@@ -15,7 +15,7 @@ func TestUpdateState_ErrorHandling(t *testing.T) {
 	}))
 	defer server.Close()
 
-	AppConfig = TfRunnerConfig{
+	cfg := TfRunnerConfig{
 		RunnerUuid: "d052263b-7d56-48e0-9886-513809296514",
 		RunApiBackend: RunApiConfig{
 			Url: server.URL,
@@ -24,9 +24,9 @@ func TestUpdateState_ErrorHandling(t *testing.T) {
 
 	auth := &runApiAuth{baseAuth: meshapi.BasicAuth{Username: "test-user", Password: "test-pass"}}
 	api := &RunApiClient{
-		rid:        AppConfig.RunnerUuid,
+		rid:        cfg.RunnerUuid,
 		auth:       auth,
-		client:     meshapi.NewClient(server.URL, AppConfig.RunnerUuid, auth),
+		client:     meshapi.NewClient(server.URL, cfg.RunnerUuid, auth),
 		httpClient: &http.Client{},
 	}
 
@@ -53,7 +53,7 @@ func TestRegister_ErrorHandling(t *testing.T) {
 	}))
 	defer server.Close()
 
-	AppConfig = TfRunnerConfig{
+	cfg := TfRunnerConfig{
 		RunnerUuid: "d052263b-7d56-48e0-9886-513809296514",
 		RunApiBackend: RunApiConfig{
 			Url: server.URL,
@@ -62,9 +62,9 @@ func TestRegister_ErrorHandling(t *testing.T) {
 
 	auth := &runApiAuth{baseAuth: meshapi.BasicAuth{Username: "test-user", Password: "test-pass"}}
 	api := &RunApiClient{
-		rid:        AppConfig.RunnerUuid,
+		rid:        cfg.RunnerUuid,
 		auth:       auth,
-		client:     meshapi.NewClient(server.URL, AppConfig.RunnerUuid, auth),
+		client:     meshapi.NewClient(server.URL, cfg.RunnerUuid, auth),
 		httpClient: &http.Client{},
 	}
 
@@ -87,7 +87,7 @@ func TestRegister_409Conflict_ReturnsNil(t *testing.T) {
 	}))
 	defer server.Close()
 
-	AppConfig = TfRunnerConfig{
+	cfg := TfRunnerConfig{
 		RunnerUuid: "d052263b-7d56-48e0-9886-513809296514",
 		RunApiBackend: RunApiConfig{
 			Url: server.URL,
@@ -96,9 +96,9 @@ func TestRegister_409Conflict_ReturnsNil(t *testing.T) {
 
 	auth := &runApiAuth{baseAuth: meshapi.BasicAuth{Username: "test-user", Password: "test-pass"}}
 	api := &RunApiClient{
-		rid:        AppConfig.RunnerUuid,
+		rid:        cfg.RunnerUuid,
 		auth:       auth,
-		client:     meshapi.NewClient(server.URL, AppConfig.RunnerUuid, auth),
+		client:     meshapi.NewClient(server.URL, cfg.RunnerUuid, auth),
 		httpClient: &http.Client{},
 	}
 

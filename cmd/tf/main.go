@@ -104,7 +104,7 @@ func main() {
 	if useInProcessDispatcher() {
 		logger.Info("using in-process dispatcher (dispatch.Loop)")
 		metrics := dispatch.NewMetricsCollectorWithRegistry(reg)
-		loop, inproc, err := tf.NewDispatchRunner(logger, tfBinaryProvider, dec, meter, metrics)
+		loop, inproc, err := tf.NewDispatchRunner(tf.AppConfig, logger, tfBinaryProvider, dec, meter, metrics)
 		if err != nil {
 			logger.Error("failed to start in-process dispatcher", "error", err)
 			os.Exit(1)
@@ -128,7 +128,7 @@ func main() {
 	wg.Add(1)
 
 	// start run manager with workers
-	runManager := tf.NewManager(tfBinaryProvider, dec, meter, logger)
+	runManager := tf.NewManager(tf.AppConfig, tfBinaryProvider, dec, meter, logger)
 	runManager.Start(&wg)
 
 	// listen for os signals to be able to shutdown gracefully
@@ -194,13 +194,14 @@ func executeSingleRun(logger *slog.Logger, tfBinaryProvider *tf.TfBinaries, dec 
 
 	// Create API client and set the runToken from the run spec
 	// In Kubernetes mode, the runToken is used for authentication instead of basic auth
-	api := tf.NewRunApi(dec)
+	api := tf.NewRunApi(tf.AppConfig.RunApiBackend, tf.AppConfig.RunnerUuid, dec)
 	logger.Info("Using runToken from run spec for authentication")
 	api.SetRunToken(runDetails.Spec.RunToken)
 
 	// Execute the run using a single worker with the configured API client
 	worker := tf.NewSingleRunWorkerWithApi(
 		logger,
+		tf.AppConfig,
 		tf.AppConfig.TfParentWorkingDir,
 		tf.AppConfig.TfCommandTimeoutMins,
 		tfBinaryProvider,

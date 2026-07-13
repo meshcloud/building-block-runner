@@ -86,19 +86,11 @@ func (f *workspaceFacade) WorkspaceDelete(ctx context.Context, workspace string,
 
 // makeBugInventoryTfCmd builds a *GenericTfCmd with just enough state to drive
 // selectWorkspace/useWorkspaceIfNeeded/deleteWorkspaceIfNeeded/plainInit directly (no Worker, no
-// execute()). AppConfig.WsTimeoutMins/InitTimeoutMins are global config read by those methods;
-// saved and restored so this test cannot leak state into others (same pattern as the CP1
-// encrypted-input helpers' meshcrypto.Crypto save/restore).
+// execute()). The ws/init timeouts those methods read are now threaded through TfCmdParams
+// (FOLLOW_UP P2.3, formerly AppConfig.WsTimeoutMins/InitTimeoutMins); set positive so the derived
+// context.WithTimeout is not already-expired.
 func makeBugInventoryTfCmd(t *testing.T, buildingBlockId, suggestedWorkspace string) *GenericTfCmd {
 	t.Helper()
-
-	previousWs, previousInit := AppConfig.WsTimeoutMins, AppConfig.InitTimeoutMins
-	AppConfig.WsTimeoutMins = 1
-	AppConfig.InitTimeoutMins = 1
-	t.Cleanup(func() {
-		AppConfig.WsTimeoutMins = previousWs
-		AppConfig.InitTimeoutMins = previousInit
-	})
 
 	lw, err := NewLogWrap(slog.New(slog.NewTextHandler(io.Discard, nil)), "/dev/null")
 	require.NoError(t, err)
@@ -109,6 +101,8 @@ func makeBugInventoryTfCmd(t *testing.T, buildingBlockId, suggestedWorkspace str
 			buildingBlockId:    buildingBlockId,
 			suggestedWorkspace: suggestedWorkspace,
 			useWorkspaces:      true,
+			wsTimeoutMins:      1,
+			initTimeoutMins:    1,
 		},
 		runContextInfo: &RunContextInfo{
 			logwrap: lw,
@@ -350,10 +344,6 @@ func makeBugInventoryRun(repo *localGitRepo, behavior Behavior) *Run {
 func runToInitFailure(t *testing.T, behavior Behavior) string {
 	t.Helper()
 
-	previousInit := AppConfig.InitTimeoutMins
-	AppConfig.InitTimeoutMins = 1
-	t.Cleanup(func() { AppConfig.InitTimeoutMins = previousInit })
-
 	repo := makeLocalGitRepo(t, map[string]string{"main.tf": "# no variable blocks\n"})
 	run := makeBugInventoryRun(repo, behavior)
 
@@ -376,6 +366,7 @@ func runToInitFailure(t *testing.T, behavior Behavior) string {
 		vars:               run.Vars,
 		source:             run.Source,
 		runMode:            run.Behavior.str(),
+		initTimeoutMins:    1,
 	}
 
 	mock := &MockedTfFacade{}

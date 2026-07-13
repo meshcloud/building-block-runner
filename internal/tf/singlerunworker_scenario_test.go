@@ -48,6 +48,9 @@ type SingleRunWorkerTestSuite struct {
 	// Job's working-dir mount may not exist yet — so "" (which Worker's tests rely on falling back
 	// to os.TempDir() via os.MkdirTemp) would fail here (os.MkdirAll("", ...) errors).
 	workerDir string
+	// cfg is the runner config threaded into the SingleRunWorker under test (FOLLOW_UP P2.3),
+	// replacing the former package-level AppConfig global.
+	cfg TfRunnerConfig
 }
 
 func Test_SingleRunWorkerSuite(t *testing.T) {
@@ -66,10 +69,8 @@ func (suite *SingleRunWorkerTestSuite) SetupSuite() {
 	}
 	suite.workerDir = tmpWd
 
-	// Shared package-level config (WorkerTestSuite sets the same global in its own SetupSuite);
-	// safe because testify suites registered via top-level Test_* functions run sequentially in
-	// one test binary, never concurrently.
-	AppConfig = TfRunnerConfig{
+	// runner config threaded into the SingleRunWorker under test (FOLLOW_UP P2.3)
+	suite.cfg = TfRunnerConfig{
 		RunnerUuid:            "scenario-runner",
 		SkipHostKeyValidation: false,
 		InitTimeoutMins:       10,
@@ -146,6 +147,7 @@ func (suite *SingleRunWorkerTestSuite) newWorker(runToken string) *SingleRunWork
 		tfBinaries:           suite.tfBin,
 		log:                  slog.New(slog.NewTextHandler(io.Discard, nil)),
 		statusUpdateInterval: time.Second * 10,
+		cfg:                  suite.cfg.exec(),
 	}
 }
 
@@ -520,12 +522,9 @@ func (suite *SingleRunWorkerTestSuite) Test_ExecuteRun_AppliesSavedPlanArtifact(
 // Test_NewSingleRunWorker_SetsDefaults pins NewSingleRunWorker's fixed statusUpdateInterval (10s,
 // D9 pin 3) and its timeout-from-minutes conversion.
 func Test_NewSingleRunWorker_SetsDefaults(t *testing.T) {
-	previous := AppConfig
-	AppConfig = TfRunnerConfig{RunnerUuid: "ctor-pin-runner"}
-	t.Cleanup(func() { AppConfig = previous })
-
+	cfg := TfRunnerConfig{RunnerUuid: "ctor-pin-runner"}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	w := NewSingleRunWorker(logger, t.TempDir(), 7, nil, nil)
+	w := NewSingleRunWorker(logger, cfg, t.TempDir(), 7, nil, nil)
 
 	if w.statusUpdateInterval != 10*time.Second {
 		t.Errorf("statusUpdateInterval = %v, want 10s", w.statusUpdateInterval)
@@ -544,7 +543,7 @@ func Test_NewSingleRunWorker_SetsDefaults(t *testing.T) {
 func Test_NewSingleRunWorkerWithApi_SetsDefaults(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	api := &RunApiClient{}
-	w := NewSingleRunWorkerWithApi(logger, t.TempDir(), 3, nil, api, nil)
+	w := NewSingleRunWorkerWithApi(logger, TfRunnerConfig{}, t.TempDir(), 3, nil, api, nil)
 
 	if w.statusUpdateInterval != 10*time.Second {
 		t.Errorf("statusUpdateInterval = %v, want 10s", w.statusUpdateInterval)

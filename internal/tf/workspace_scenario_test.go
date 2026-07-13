@@ -25,16 +25,12 @@ import (
 )
 
 // newWorkspaceTestCmd builds a *GenericTfCmd wired with the given buildingBlockId/suggestedWorkspace
-// and a MockedTfFacade whose workspace hooks are the caller's to configure. AppConfig's workspace
-// timeout must be positive: useWorkspaceIfNeeded/selectWorkspace/deleteWorkspaceIfNeeded each derive
-// a context.WithTimeout(ctx, AppConfig.WsTimeoutMins*time.Minute), and a zero timeout would hand
-// them an already-expired context.
+// and a MockedTfFacade whose workspace hooks are the caller's to configure. The workspace timeout
+// must be positive: useWorkspaceIfNeeded/selectWorkspace/deleteWorkspaceIfNeeded each derive a
+// context.WithTimeout(ctx, params.wsTimeoutMins*time.Minute), and a zero timeout would hand them an
+// already-expired context (FOLLOW_UP P2.3: threaded via params, formerly AppConfig.WsTimeoutMins).
 func newWorkspaceTestCmd(t *testing.T, buildingBlockId, suggestedWorkspace string, useWorkspaces bool) (*GenericTfCmd, *MockedTfFacade) {
 	t.Helper()
-
-	previousWs := AppConfig.WsTimeoutMins
-	AppConfig.WsTimeoutMins = 1
-	t.Cleanup(func() { AppConfig.WsTimeoutMins = previousWs })
 
 	mock := &MockedTfFacade{}
 	mock.initMockFuncs()
@@ -48,6 +44,7 @@ func newWorkspaceTestCmd(t *testing.T, buildingBlockId, suggestedWorkspace strin
 			buildingBlockId:    buildingBlockId,
 			suggestedWorkspace: suggestedWorkspace,
 			useWorkspaces:      useWorkspaces,
+			wsTimeoutMins:      1,
 		},
 		runContextInfo: &RunContextInfo{
 			logwrap: lw,

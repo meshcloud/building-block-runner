@@ -32,6 +32,9 @@ type HandlerTestSuite struct {
 	meter    *fakeMeter
 	repo     *localGitRepo
 	repoPath string
+	// cfg is the runner config threaded into the Handler under test (FOLLOW_UP P2.3), replacing
+	// the former package-level AppConfig global.
+	cfg TfRunnerConfig
 
 	// mutable per-test routing for the run-scoped RunApi's fake transport.
 	register func(*http.Request) *http.Response
@@ -49,7 +52,7 @@ func (s *HandlerTestSuite) SetupSuite() {
 	tmpWd, err := os.MkdirTemp(os.TempDir(), "handlerScenario-wd-")
 	s.Require().NoError(err)
 
-	AppConfig = TfRunnerConfig{
+	s.cfg = TfRunnerConfig{
 		RunnerUuid:           "scenario-runner",
 		InitTimeoutMins:      10,
 		WsTimeoutMins:        10,
@@ -70,7 +73,7 @@ func (s *HandlerTestSuite) SetupSuite() {
 
 func (s *HandlerTestSuite) TearDownSuite() {
 	_ = os.RemoveAll(s.tfBin.dir)
-	_ = os.RemoveAll(AppConfig.TfParentWorkingDir)
+	_ = os.RemoveAll(s.cfg.TfParentWorkingDir)
 }
 
 func (s *HandlerTestSuite) SetupTest() {
@@ -99,8 +102,11 @@ func (s *HandlerTestSuite) route(req *http.Request) *http.Response {
 func (s *HandlerTestSuite) newHandler(wantToken string) Handler {
 	dec := testDecryptor(s.T())
 	return NewHandler(HandlerConfig{
-		WorkingDir:           AppConfig.TfParentWorkingDir,
+		WorkingDir:           s.cfg.TfParentWorkingDir,
 		TfCommandTimeoutMins: 30,
+		InitTimeoutMins:      s.cfg.InitTimeoutMins,
+		WsTimeoutMins:        s.cfg.WsTimeoutMins,
+		RunnerUuid:           s.cfg.RunnerUuid,
 	}, HandlerDeps{
 		TfBinaries: s.tfBin,
 		Decryptor:  dec,

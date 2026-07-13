@@ -23,6 +23,9 @@ type GitSource struct {
 	auth      auth
 	log       *logwrap
 	gitFacade GitFacade
+	// skipHostKeyValidation is threaded from the runner config (FOLLOW_UP P2.3) in place of the
+	// former AppConfig global; set via setSkipHostKeyValidation before the source is cloned.
+	skipHostKeyValidation bool
 }
 
 func (g *GitSource) setLog(log *logwrap) {
@@ -30,9 +33,18 @@ func (g *GitSource) setLog(log *logwrap) {
 	g.gitFacade.setLog(log)
 }
 
+// setSkipHostKeyValidation threads the runner's insecure-host-key policy into the source and,
+// when SSH-authenticated, into its SshAuth so the host-key callback honors it.
+func (g *GitSource) setSkipHostKeyValidation(skip bool) {
+	g.skipHostKeyValidation = skip
+	if sa, ok := g.auth.(*SshAuth); ok {
+		sa.skipHostKeyValidation = skip
+	}
+}
+
 func (g *GitSource) CopyToTargetDir(dir string) error {
 	securityStr := ""
-	if AppConfig.SkipHostKeyValidation {
+	if g.skipHostKeyValidation {
 		securityStr = "(insecure)"
 	}
 

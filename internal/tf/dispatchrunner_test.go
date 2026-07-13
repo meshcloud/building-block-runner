@@ -24,7 +24,7 @@ func meterAndMetrics(uuid string) (*mgmt.RunMetrics, *dispatch.MetricsCollector)
 }
 
 func TestNewDispatchRunner_AssemblesLoopAndDispatcher(t *testing.T) {
-	AppConfig = TfRunnerConfig{
+	cfg := TfRunnerConfig{
 		RunnerUuid:           "runner-uuid",
 		TfParentWorkingDir:   t.TempDir(),
 		TfCommandTimeoutMins: 10,
@@ -32,9 +32,9 @@ func TestNewDispatchRunner_AssemblesLoopAndDispatcher(t *testing.T) {
 		RunApiBackend:        RunApiConfig{Url: "http://localhost", User: "u", Password: "p"},
 		// no Registration => never self-registers
 	}
-	meter, metrics := meterAndMetrics(AppConfig.RunnerUuid)
+	meter, metrics := meterAndMetrics(cfg.RunnerUuid)
 
-	loop, inproc, err := NewDispatchRunner(testLogger(), nil, NoopDecryptor{}, meter, metrics)
+	loop, inproc, err := NewDispatchRunner(cfg, testLogger(), nil, NoopDecryptor{}, meter, metrics)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -47,15 +47,15 @@ func TestNewDispatchRunner_AssemblesLoopAndDispatcher(t *testing.T) {
 }
 
 func TestNewDispatchRunner_RegistrationFailure_ReturnsError(t *testing.T) {
-	AppConfig = TfRunnerConfig{
+	cfg := TfRunnerConfig{
 		RunnerUuid:         "runner-uuid",
 		TfParentWorkingDir: t.TempDir(),
 		RunApiBackend:      RunApiConfig{Url: "http://localhost", User: "u", Password: "p"},
 		Registration:       &TfRegistrationConfig{Capability: "NOT_A_REAL_TYPE"},
 	}
-	meter, metrics := meterAndMetrics(AppConfig.RunnerUuid)
+	meter, metrics := meterAndMetrics(cfg.RunnerUuid)
 
-	if _, _, err := NewDispatchRunner(testLogger(), nil, NoopDecryptor{}, meter, metrics); err == nil {
+	if _, _, err := NewDispatchRunner(cfg, testLogger(), nil, NoopDecryptor{}, meter, metrics); err == nil {
 		t.Fatal("expected an error for an invalid registration capability")
 	}
 }

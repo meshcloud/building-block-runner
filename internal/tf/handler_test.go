@@ -71,13 +71,21 @@ func Test_NewHandler_FillsDefaults(t *testing.T) {
 }
 
 func Test_DefaultRunApiFactory_SetsRunToken(t *testing.T) {
-	AppConfig = TfRunnerConfig{RunnerUuid: "u", RunApiBackend: RunApiConfig{Url: "http://localhost"}}
-	api := defaultRunApiFactory(NoopDecryptor{}, "run-token-abc")
+	// With no NewRunApi injected, NewHandler builds the production run-scoped factory from the
+	// threaded RunnerUuid/ApiBackend (FOLLOW_UP P2.3, replacing the former AppConfig global).
+	h := NewHandler(HandlerConfig{
+		RunnerUuid: "u",
+		ApiBackend: RunApiConfig{Url: "http://localhost"},
+	}, HandlerDeps{})
+	api := h.newRunApi(NoopDecryptor{}, "run-token-abc")
 	client, ok := api.(*RunApiClient)
 	if !ok {
 		t.Fatalf("expected *RunApiClient, got %T", api)
 	}
 	if client.auth.runToken == nil || *client.auth.runToken != "run-token-abc" {
 		t.Errorf("expected runToken %q wired into the client, got %v", "run-token-abc", client.auth.runToken)
+	}
+	if client.rid != "u" {
+		t.Errorf("expected rid %q threaded into the client, got %q", "u", client.rid)
 	}
 }

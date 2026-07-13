@@ -36,6 +36,9 @@ type WorkerTestSuite struct {
 	// subdirectory inside it, mirroring the real repo's "modules/github/repository/buildingblock".
 	repo     *localGitRepo
 	repoPath string
+	// cfg is the runner config threaded into the Worker under test (FOLLOW_UP P2.3), replacing
+	// the former package-level AppConfig global.
+	cfg TfRunnerConfig
 }
 
 type MockRunApiCalls struct {
@@ -86,8 +89,8 @@ func (suite *WorkerTestSuite) SetupSuite() {
 		panic(err)
 	}
 
-	// setup statically referenced app config
-	AppConfig = TfRunnerConfig{
+	// runner config threaded into the Worker under test (FOLLOW_UP P2.3)
+	suite.cfg = TfRunnerConfig{
 		RunnerUuid:            "scenario-runner",
 		SkipHostKeyValidation: false,
 		InitTimeoutMins:       10,
@@ -112,7 +115,7 @@ func (suite *WorkerTestSuite) SetupSuite() {
 // clean up temp directory after test suite ran.
 func (suite *WorkerTestSuite) TearDownSuite() {
 	_ = os.RemoveAll(suite.tfBin.dir)
-	_ = os.RemoveAll(AppConfig.TfParentWorkingDir)
+	_ = os.RemoveAll(suite.cfg.TfParentWorkingDir)
 }
 
 // for each test setup new channels.
@@ -145,6 +148,7 @@ func (suite *WorkerTestSuite) SetupTest() {
 		statusUpdateInterval: time.Second * 10,
 		dec:                  dec,
 		meter:                suite.meter,
+		cfg:                  suite.cfg.exec(),
 	}
 }
 

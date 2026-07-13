@@ -42,11 +42,11 @@ func recvToken(t *testing.T, ch chan workerToken) workerToken {
 	}
 }
 
-// Test_NewManager_SetsDefaults pins the constructor: timeout derives from AppConfig.TfCommandTimeoutMins,
+// Test_NewManager_SetsDefaults pins the constructor: timeout derives from cfg.TfCommandTimeoutMins,
 // channels are buffered, and shutdown starts false.
 func Test_NewManager_SetsDefaults(t *testing.T) {
-	AppConfig.TfCommandTimeoutMins = 7
-	rm, ok := NewManager(nil, nil, NoopMeter{}, slog.New(slog.NewTextHandler(io.Discard, nil))).(*DefaultRunManager)
+	cfg := TfRunnerConfig{TfCommandTimeoutMins: 7}
+	rm, ok := NewManager(cfg, nil, nil, NoopMeter{}, slog.New(slog.NewTextHandler(io.Discard, nil))).(*DefaultRunManager)
 	require.True(t, ok, "NewManager must return *DefaultRunManager")
 
 	assert.Equal(t, 7*time.Minute, rm.defaultTimeout)

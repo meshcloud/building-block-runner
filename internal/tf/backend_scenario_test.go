@@ -42,9 +42,7 @@ type backendFallbackFixture struct {
 func runBackendFallbackScenario(t *testing.T, repoFiles map[string]string, useMeshBackendFallback bool, runToken, meshstackBaseUrl string) *backendFallbackFixture {
 	t.Helper()
 
-	previous := AppConfig
-	t.Cleanup(func() { AppConfig = previous })
-	AppConfig = TfRunnerConfig{
+	cfg := TfRunnerConfig{
 		RunnerUuid:           "backend-fallback-scenario",
 		InitTimeoutMins:      1,
 		WsTimeoutMins:        1,
@@ -75,14 +73,19 @@ func runBackendFallbackScenario(t *testing.T, repoFiles map[string]string, useMe
 	ctx := context.Background()
 
 	params := &TfCmdParams{
-		dir:                wd,
-		buildingBlockId:    run.BuildingBlockId,
-		tfVersion:          run.TerraformVersion,
-		useWorkspaces:      true,
-		suggestedWorkspace: run.toWorkspaceStr(),
-		vars:               run.Vars,
-		source:             run.Source,
-		runMode:            run.Behavior.str(),
+		dir:                   wd,
+		buildingBlockId:       run.BuildingBlockId,
+		tfVersion:             run.TerraformVersion,
+		useWorkspaces:         true,
+		suggestedWorkspace:    run.toWorkspaceStr(),
+		vars:                  run.Vars,
+		source:                run.Source,
+		runMode:               run.Behavior.str(),
+		skipHostKeyValidation: cfg.SkipHostKeyValidation,
+		tfCommandTimeoutMins:  cfg.TfCommandTimeoutMins,
+		initTimeoutMins:       cfg.InitTimeoutMins,
+		wsTimeoutMins:         cfg.WsTimeoutMins,
+		apiBackendUrl:         cfg.RunApiBackend.Url,
 	}
 
 	mock := &MockedTfFacade{}
@@ -161,26 +164,19 @@ func Test_BackendFallback_UseCaseMatrix(t *testing.T) {
 		assert.Equal(t, runToken, f.capturedEnv["TF_HTTP_PASSWORD"])
 	})
 
-	t.Run("meshstackBaseUrl empty falls back to AppConfig.RunApiBackend.Url", func(t *testing.T) {
-		previous := AppConfig
-		t.Cleanup(func() { AppConfig = previous })
-		AppConfig = TfRunnerConfig{
-			RunnerUuid:           "backend-fallback-scenario",
-			InitTimeoutMins:      1,
-			WsTimeoutMins:        1,
-			TfCommandTimeoutMins: 1,
-			RunApiBackend:        RunApiConfig{Url: "https://fallback-from-appconfig.example.com"},
-		}
-
+	t.Run("meshstackBaseUrl empty falls back to the threaded api backend url", func(t *testing.T) {
 		lw, err := NewLogWrap(slog.New(slog.NewTextHandler(io.Discard, nil)), "/dev/null")
 		require.NoError(t, err)
 		cmd := &GenericTfCmd{
 			ctx: context.Background(),
+			params: &TfCmdParams{
+				apiBackendUrl: "https://fallback-from-config.example.com",
+			},
 			runContextInfo: &RunContextInfo{
 				bbId:                "bb-empty-baseurl",
 				workspaceIdentifier: "ws-empty-baseurl",
 				runToken:            runToken,
-				meshstackBaseUrl:    "", // deliberately empty: must fall back to AppConfig
+				meshstackBaseUrl:    "", // deliberately empty: must fall back to params.apiBackendUrl
 				workingDirectory:    t.TempDir(),
 				logwrap:             lw,
 			},
@@ -190,7 +186,7 @@ func Test_BackendFallback_UseCaseMatrix(t *testing.T) {
 
 		content, found := findBackendFile(t, cmd.runContextInfo.workingDirectory)
 		require.True(t, found)
-		assert.Contains(t, content, "https://fallback-from-appconfig.example.com/api/terraform/state/workspace/ws-empty-baseurl/buildingBlock/bb-empty-baseurl")
+		assert.Contains(t, content, "https://fallback-from-config.example.com/api/terraform/state/workspace/ws-empty-baseurl/buildingBlock/bb-empty-baseurl")
 	})
 
 	t.Run("env whitelist: an ambient credential-shaped var never reaches the tf subprocess env", func(t *testing.T) {
@@ -207,10 +203,6 @@ func Test_BackendFallback_UseCaseMatrix(t *testing.T) {
 	})
 
 	t.Run("init retry: a transient first init failure is retried once and the run still succeeds", func(t *testing.T) {
-		previous := AppConfig
-		t.Cleanup(func() { AppConfig = previous })
-		AppConfig = TfRunnerConfig{RunnerUuid: "init-retry-scenario", InitTimeoutMins: 1, WsTimeoutMins: 1, TfCommandTimeoutMins: 1}
-
 		mock := &MockedTfFacade{}
 		mock.initMockFuncs()
 		calls := 0
@@ -227,7 +219,8 @@ func Test_BackendFallback_UseCaseMatrix(t *testing.T) {
 		cmd := &GenericTfCmd{
 			ctx: context.Background(),
 			params: &TfCmdParams{
-				useWorkspaces: false, // isolate the retry behavior from workspace selection
+				useWorkspaces:   false, // isolate the retry behavior from workspace selection
+				initTimeoutMins: 1,
 			},
 			runContextInfo: &RunContextInfo{
 				logwrap: lw,

@@ -33,6 +33,9 @@ type DefaultRunManager struct {
 	logger         *slog.Logger
 	dec            Decryptor
 	meter          Meter
+	// cfg is the runner config threaded explicitly (FOLLOW_UP P2.3) in place of the former
+	// AppConfig global; used to build the worker's run API and execution config.
+	cfg TfRunnerConfig
 }
 
 type RunManager interface {
@@ -40,26 +43,28 @@ type RunManager interface {
 	Stop()
 }
 
-// NewManager wires the polling run manager. meter receives the D12 generic
+// NewManager wires the polling run manager. cfg is the runner config threaded explicitly
+// (FOLLOW_UP P2.3) in place of the former AppConfig global. meter receives the D12 generic
 // standalone-runner metrics (§4.3); pass NoopMeter{} where no *mgmt.RunMetrics is
 // available (e.g. a caller that has not wired D12 yet). logger is the persona logger,
 // injected (P3) so worker/run-scoped children carry the persona attribute (§8.1).
-func NewManager(tfbin *TfBinaries, dec Decryptor, meter Meter, logger *slog.Logger) RunManager {
+func NewManager(cfg TfRunnerConfig, tfbin *TfBinaries, dec Decryptor, meter Meter, logger *slog.Logger) RunManager {
 	return &DefaultRunManager{
-		defaultTimeout: time.Minute * time.Duration(AppConfig.TfCommandTimeoutMins),
+		defaultTimeout: time.Minute * time.Duration(cfg.TfCommandTimeoutMins),
 		workerIn:       make(chan workerToken, 1),
 		managerIn:      make(chan workerToken, 1),
 		tfbinaries:     tfbin,
 		logger:         logger.With("component", "runManager"),
 		dec:            dec,
 		meter:          meter,
+		cfg:            cfg,
 	}
 }
 
 func (rm *DefaultRunManager) Start(wg *sync.WaitGroup) {
 	rm.logger.Info("Started")
-	if err := os.MkdirAll(AppConfig.TfParentWorkingDir, 0777); err != nil {
-		rm.logger.Error("failed to create working directory", "dir", AppConfig.TfParentWorkingDir, "error", err)
+	if err := os.MkdirAll(rm.cfg.TfParentWorkingDir, 0777); err != nil {
+		rm.logger.Error("failed to create working directory", "dir", rm.cfg.TfParentWorkingDir, "error", err)
 	}
 	go func() {
 		defer wg.Done()
@@ -76,16 +81,17 @@ func (rm *DefaultRunManager) run(timeout time.Duration) {
 	for i := 0; i < 1; i++ {
 		worker := &Worker{
 			workerNumber:         i + 1,
-			workerDir:            AppConfig.TfParentWorkingDir,
+			workerDir:            rm.cfg.TfParentWorkingDir,
 			timeout:              timeout,
 			workerIn:             rm.workerIn,
 			workerOut:            rm.managerIn,
-			runApi:               NewRunApi(rm.dec),
+			runApi:               NewRunApi(rm.cfg.RunApiBackend, rm.cfg.RunnerUuid, rm.dec),
 			tfBinaries:           rm.tfbinaries,
 			log:                  rm.logger.With("worker", i+1),
 			statusUpdateInterval: time.Second * 10,
 			dec:                  rm.dec,
 			meter:                rm.meter,
+			cfg:                  rm.cfg.exec(),
 		}
 		go worker.work()
 	}

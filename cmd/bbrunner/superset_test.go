@@ -19,6 +19,7 @@ import (
 
 	"github.com/meshcloud/building-block-runner/internal/dispatch"
 	meshapi "github.com/meshcloud/building-block-runner/internal/meshapi"
+	"github.com/meshcloud/building-block-runner/internal/tf"
 )
 
 func discardLogger() *slog.Logger {
@@ -40,7 +41,7 @@ func testPrivateKeyPEM(t *testing.T) string {
 // the InProcess dispatcher -- i.e. RUNNER_DISPATCHER=inprocess on the controller no longer
 // fails fast, every claimed type now has an in-process handler (P2.1).
 func TestBuildSupersetHandlers_RegistersEveryType(t *testing.T) {
-	handlers, err := buildSupersetHandlers("http://localhost:8080", "controller-uuid", testPrivateKeyPEM(t), nil, discardLogger())
+	handlers, err := buildSupersetHandlers("http://localhost:8080", "controller-uuid", testPrivateKeyPEM(t), tf.RunApiConfig{Url: "http://localhost:8080"}, nil, discardLogger())
 	require.NoError(t, err)
 
 	want := []meshapi.RunnerImplementationType{
@@ -65,7 +66,7 @@ func TestBuildSupersetHandlers_RegistersEveryType(t *testing.T) {
 // TestBuildSupersetHandlers_RejectsBadKey guards that a broken controller private key surfaces
 // as a build error (fail-fast, P5) rather than a silently key-less superset.
 func TestBuildSupersetHandlers_RejectsBadKey(t *testing.T) {
-	_, err := buildSupersetHandlers("http://localhost:8080", "controller-uuid", "not a pem", nil, discardLogger())
+	_, err := buildSupersetHandlers("http://localhost:8080", "controller-uuid", "not a pem", tf.RunApiConfig{Url: "http://localhost:8080"}, nil, discardLogger())
 	require.Error(t, err)
 }
 

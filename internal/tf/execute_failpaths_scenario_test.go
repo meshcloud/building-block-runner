@@ -63,9 +63,6 @@ func (suite *WorkerTestSuite) Test_Apply_MalformedTerraformConfig_StillSucceeds(
 // GIT_SSH_COMMAND into the terraform subprocess env, honoring SkipHostKeyValidation
 // (tfcmd.go:460-467).
 func Test_BuildTfEnv_SshSourceSetsGitSshCommand(t *testing.T) {
-	prev := AppConfig.SkipHostKeyValidation
-	t.Cleanup(func() { AppConfig.SkipHostKeyValidation = prev })
-
 	wd := t.TempDir()
 	lw, err := NewLogWrap(slog.New(slog.NewTextHandler(io.Discard, nil)), filepath.Join(wd, "log.txt"))
 	require.NoError(t, err)
@@ -75,14 +72,14 @@ func Test_BuildTfEnv_SshSourceSetsGitSshCommand(t *testing.T) {
 		params:         &TfCmdParams{source: &GitSource{auth: &SshAuth{}}, vars: map[string]*Variable{}},
 	}
 
-	AppConfig.SkipHostKeyValidation = false
+	tfcmd.params.skipHostKeyValidation = false
 	env, err := tfcmd.buildTfEnv()
 	require.NoError(t, err)
 	require.Contains(t, env, "GIT_SSH_COMMAND")
 	assert.Contains(t, env["GIT_SSH_COMMAND"], TMP_FILE_SSH_CERT)
 	assert.NotContains(t, env["GIT_SSH_COMMAND"], "StrictHostKeyChecking=no")
 
-	AppConfig.SkipHostKeyValidation = true
+	tfcmd.params.skipHostKeyValidation = true
 	env, err = tfcmd.buildTfEnv()
 	require.NoError(t, err)
 	assert.Contains(t, env["GIT_SSH_COMMAND"], "StrictHostKeyChecking=no", "insecure host-key mode appends the ssh option")

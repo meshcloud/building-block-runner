@@ -25,7 +25,8 @@ func runTfPolling() int {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil)).With("persona", "tf-block-runner")
 	logger.Info("Build metadata", "version", build.Version)
 
-	if err := tf.ReadConfig(logger); err != nil {
+	cfg, err := tf.ReadConfig(logger)
+	if err != nil {
 		logger.Error("cannot read config", "error", err)
 		return 1
 	}
@@ -33,9 +34,9 @@ func runTfPolling() int {
 	// Build the decryptor for sensitive inputs (D4). Polling mode always decrypts with the
 	// runner's private key; no key => no-op, preserving the former "Crypto == nil" passthrough.
 	var dec tf.Decryptor = tf.NoopDecryptor{}
-	if tf.AppConfig.PrivateKey != "" {
+	if cfg.PrivateKey != "" {
 		var cryptoErr error
-		dec, cryptoErr = tf.NewCertDecryptor(tf.AppConfig.PrivateKey)
+		dec, cryptoErr = tf.NewCertDecryptor(cfg.PrivateKey)
 		if cryptoErr != nil {
 			logger.Error("failed to initialize crypto: private key could not be loaded", "error", cryptoErr)
 			return 1
@@ -43,7 +44,7 @@ func runTfPolling() int {
 		logger.Info("Crypto initialized for polling mode")
 	}
 
-	tfBinaryProvider, err := tf.NewTfBin(tf.AppConfig.TfInstallDir, os.Stdout)
+	tfBinaryProvider, err := tf.NewTfBin(cfg.TfInstallDir, os.Stdout)
 	if err != nil {
 		logger.Error("cannot initialize tf binary provider", "error", err)
 		return 1
@@ -61,7 +62,7 @@ func runTfPolling() int {
 		return 1
 	}
 	reg := mgmt.NewRegistry()
-	meter := mgmt.NewRunMetrics(reg, tf.AppConfig.RunnerUuid)
+	meter := mgmt.NewRunMetrics(reg, cfg.RunnerUuid)
 	if err := mgmt.NewServer(mgmtLog, mgmtPort.Addr(), reg).Start(); err != nil {
 		logger.Error("management server failed to start", "error", err)
 		return 1
@@ -72,7 +73,7 @@ func runTfPolling() int {
 	if os.Getenv("RUNNER_DISPATCHER") == "inprocess" {
 		logger.Info("using in-process dispatcher (dispatch.Loop)")
 		metrics := dispatch.NewMetricsCollectorWithRegistry(reg)
-		loop, inproc, err := tf.NewDispatchRunner(tf.AppConfig, logger, tfBinaryProvider, dec, meter, metrics)
+		loop, inproc, err := tf.NewDispatchRunner(cfg, logger, tfBinaryProvider, dec, meter, metrics)
 		if err != nil {
 			logger.Error("failed to start in-process dispatcher", "error", err)
 			return 1
@@ -95,7 +96,7 @@ func runTfPolling() int {
 	var wg sync.WaitGroup
 	wg.Add(1)
 
-	runManager := tf.NewManager(tf.AppConfig, tfBinaryProvider, dec, meter, logger)
+	runManager := tf.NewManager(cfg, tfBinaryProvider, dec, meter, logger)
 	runManager.Start(&wg)
 
 	signalChan := make(chan os.Signal, 1)

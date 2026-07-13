@@ -26,8 +26,8 @@ func (suite *ApiTestSuite) Test_FetchRunDetails_SetsRunnerHeadersAndNodeId() {
 	suite.Equal([]string{"unknown-runner"}, req.header["X-Meshcloud-Runner-Name"])
 	suite.Equal([]string{"dev"}, req.header["X-Meshcloud-Runner-Version"])
 
-	// requester = "<rid>-<nodePostfix>" (runapi.go:87); rid is AppConfig.RunnerUuid ("runApi_test",
-	// set by ApiTestSuite.SetupSuite).
+	// requester = "<rid>-<nodePostfix>" (runapi.go:87); rid is the runner uuid threaded into the
+	// client ("runApi_test", set by ApiTestSuite.SetupSuite).
 	suite.Equal([]string{"runApi_test-cp2-node"}, req.header["X-Block-Runner-Node-Id"])
 }
 

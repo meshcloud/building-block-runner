@@ -136,79 +136,79 @@ func TestApplyEnvVars(t *testing.T) {
 
 	t.Run("applies RUNNER_UUID from environment", func(t *testing.T) {
 		t.Setenv(envRunnerUuid, "test-uuid-123")
-		AppConfig = TfRunnerConfig{}
-		applyEnvVars(nopLogger)
-		require.Equal(t, "test-uuid-123", AppConfig.RunnerUuid)
+		cfg := TfRunnerConfig{}
+		applyEnvVars(&cfg, nopLogger)
+		require.Equal(t, "test-uuid-123", cfg.RunnerUuid)
 	})
 
 	t.Run("applies RUNNER_MAX_CONCURRENT_RUNS from environment", func(t *testing.T) {
 		t.Setenv(envMaxConcurrentRuns, "7")
-		AppConfig = TfRunnerConfig{}
-		applyEnvVars(nopLogger)
-		require.Equal(t, 7, AppConfig.MaxConcurrentRuns)
+		cfg := TfRunnerConfig{}
+		applyEnvVars(&cfg, nopLogger)
+		require.Equal(t, 7, cfg.MaxConcurrentRuns)
 	})
 
 	t.Run("ignores an invalid RUNNER_MAX_CONCURRENT_RUNS", func(t *testing.T) {
 		t.Setenv(envMaxConcurrentRuns, "not-a-number")
-		AppConfig = TfRunnerConfig{MaxConcurrentRuns: 4}
-		applyEnvVars(nopLogger)
-		require.Equal(t, 4, AppConfig.MaxConcurrentRuns)
+		cfg := TfRunnerConfig{MaxConcurrentRuns: 4}
+		applyEnvVars(&cfg, nopLogger)
+		require.Equal(t, 4, cfg.MaxConcurrentRuns)
 	})
 
 	t.Run("applies RUNNER_API_URL from environment", func(t *testing.T) {
 		t.Setenv(envApiUrl, "https://api.example.com")
-		AppConfig = TfRunnerConfig{}
-		applyEnvVars(nopLogger)
-		require.Equal(t, "https://api.example.com", AppConfig.RunApiBackend.Url)
+		cfg := TfRunnerConfig{}
+		applyEnvVars(&cfg, nopLogger)
+		require.Equal(t, "https://api.example.com", cfg.RunApiBackend.Url)
 	})
 
 	t.Run("applies RUNNER_API_USERNAME from environment", func(t *testing.T) {
 		t.Setenv(envAuthUsername, "testuser")
-		AppConfig = TfRunnerConfig{}
-		applyEnvVars(nopLogger)
-		require.Equal(t, "testuser", AppConfig.RunApiBackend.User)
+		cfg := TfRunnerConfig{}
+		applyEnvVars(&cfg, nopLogger)
+		require.Equal(t, "testuser", cfg.RunApiBackend.User)
 	})
 
 	t.Run("applies RUNNER_API_PASSWORD from environment", func(t *testing.T) {
 		t.Setenv(envAuthPassword, "testpass")
-		AppConfig = TfRunnerConfig{}
-		applyEnvVars(nopLogger)
-		require.Equal(t, "testpass", AppConfig.RunApiBackend.Password)
+		cfg := TfRunnerConfig{}
+		applyEnvVars(&cfg, nopLogger)
+		require.Equal(t, "testpass", cfg.RunApiBackend.Password)
 	})
 
 	t.Run("applies RUNNER_API_CLIENT_ID from environment", func(t *testing.T) {
 		t.Setenv(envAuthClientId, "client-123")
-		AppConfig = TfRunnerConfig{}
-		applyEnvVars(nopLogger)
-		require.Equal(t, "client-123", AppConfig.RunApiBackend.ClientId)
+		cfg := TfRunnerConfig{}
+		applyEnvVars(&cfg, nopLogger)
+		require.Equal(t, "client-123", cfg.RunApiBackend.ClientId)
 	})
 
 	t.Run("applies RUNNER_API_CLIENT_SECRET from environment", func(t *testing.T) {
 		t.Setenv(envAuthClientSecret, "secret-456")
-		AppConfig = TfRunnerConfig{}
-		applyEnvVars(nopLogger)
-		require.Equal(t, "secret-456", AppConfig.RunApiBackend.ClientSecret)
+		cfg := TfRunnerConfig{}
+		applyEnvVars(&cfg, nopLogger)
+		require.Equal(t, "secret-456", cfg.RunApiBackend.ClientSecret)
 	})
 
 	t.Run("applies RUNNER_PRIVATE_KEY_FILE from environment", func(t *testing.T) {
 		t.Setenv(envPrivateKeyFile, "/path/to/key.pem")
-		AppConfig = TfRunnerConfig{}
-		applyEnvVars(nopLogger)
-		require.Equal(t, "/path/to/key.pem", AppConfig.PrivateKeyFile)
+		cfg := TfRunnerConfig{}
+		applyEnvVars(&cfg, nopLogger)
+		require.Equal(t, "/path/to/key.pem", cfg.PrivateKeyFile)
 	})
 
 	t.Run("uses default private key file when env var empty and not configured", func(t *testing.T) {
 		t.Setenv(envPrivateKeyFile, "")
-		AppConfig = TfRunnerConfig{PrivateKeyFile: ""}
-		applyEnvVars(nopLogger)
-		require.Equal(t, defaultPrivateKeyFile, AppConfig.PrivateKeyFile)
+		cfg := TfRunnerConfig{PrivateKeyFile: ""}
+		applyEnvVars(&cfg, nopLogger)
+		require.Equal(t, defaultPrivateKeyFile, cfg.PrivateKeyFile)
 	})
 
 	t.Run("preserves private key file when env var empty but already configured", func(t *testing.T) {
 		t.Setenv(envPrivateKeyFile, "")
-		AppConfig = TfRunnerConfig{PrivateKeyFile: "/configured/key.pem"}
-		applyEnvVars(nopLogger)
-		require.Equal(t, "/configured/key.pem", AppConfig.PrivateKeyFile)
+		cfg := TfRunnerConfig{PrivateKeyFile: "/configured/key.pem"}
+		applyEnvVars(&cfg, nopLogger)
+		require.Equal(t, "/configured/key.pem", cfg.PrivateKeyFile)
 	})
 
 	t.Run("multiple env vars together", func(t *testing.T) {
@@ -216,13 +216,13 @@ func TestApplyEnvVars(t *testing.T) {
 		t.Setenv(envApiUrl, "https://api-multi.example.com")
 		t.Setenv(envAuthUsername, "user-multi")
 		t.Setenv(envAuthPassword, "pass-multi")
-		AppConfig = TfRunnerConfig{}
-		applyEnvVars(nopLogger)
+		cfg := TfRunnerConfig{}
+		applyEnvVars(&cfg, nopLogger)
 
-		require.Equal(t, "uuid-multi", AppConfig.RunnerUuid)
-		require.Equal(t, "https://api-multi.example.com", AppConfig.RunApiBackend.Url)
-		require.Equal(t, "user-multi", AppConfig.RunApiBackend.User)
-		require.Equal(t, "pass-multi", AppConfig.RunApiBackend.Password)
+		require.Equal(t, "uuid-multi", cfg.RunnerUuid)
+		require.Equal(t, "https://api-multi.example.com", cfg.RunApiBackend.Url)
+		require.Equal(t, "user-multi", cfg.RunApiBackend.User)
+		require.Equal(t, "pass-multi", cfg.RunApiBackend.Password)
 	})
 
 	t.Run("env vars override config file values", func(t *testing.T) {
@@ -235,7 +235,7 @@ func TestApplyEnvVars(t *testing.T) {
 		t.Setenv(envPrivateKeyFile, "/env/key.pem")
 
 		// Simulate config file values already set
-		AppConfig = TfRunnerConfig{
+		cfg := TfRunnerConfig{
 			RunnerUuid: "config-uuid",
 			RunApiBackend: RunApiConfig{
 				Url:          "https://config-api.example.com",
@@ -247,16 +247,16 @@ func TestApplyEnvVars(t *testing.T) {
 			PrivateKeyFile: "/config/key.pem",
 		}
 
-		applyEnvVars(nopLogger)
+		applyEnvVars(&cfg, nopLogger)
 
 		// All values should be overridden by env vars
-		require.Equal(t, "env-uuid", AppConfig.RunnerUuid)
-		require.Equal(t, "https://env-api.example.com", AppConfig.RunApiBackend.Url)
-		require.Equal(t, "env-user", AppConfig.RunApiBackend.User)
-		require.Equal(t, "env-pass", AppConfig.RunApiBackend.Password)
-		require.Equal(t, "env-client-id", AppConfig.RunApiBackend.ClientId)
-		require.Equal(t, "env-client-secret", AppConfig.RunApiBackend.ClientSecret)
-		require.Equal(t, "/env/key.pem", AppConfig.PrivateKeyFile)
+		require.Equal(t, "env-uuid", cfg.RunnerUuid)
+		require.Equal(t, "https://env-api.example.com", cfg.RunApiBackend.Url)
+		require.Equal(t, "env-user", cfg.RunApiBackend.User)
+		require.Equal(t, "env-pass", cfg.RunApiBackend.Password)
+		require.Equal(t, "env-client-id", cfg.RunApiBackend.ClientId)
+		require.Equal(t, "env-client-secret", cfg.RunApiBackend.ClientSecret)
+		require.Equal(t, "/env/key.pem", cfg.PrivateKeyFile)
 	})
 
 	t.Run("empty env var preserves config file value", func(t *testing.T) {
@@ -269,7 +269,7 @@ func TestApplyEnvVars(t *testing.T) {
 		t.Setenv(envPrivateKeyFile, "")
 
 		// Simulate config file values already set
-		AppConfig = TfRunnerConfig{
+		cfg := TfRunnerConfig{
 			RunnerUuid: "config-uuid",
 			RunApiBackend: RunApiConfig{
 				Url:          "https://config-api.example.com",
@@ -281,16 +281,16 @@ func TestApplyEnvVars(t *testing.T) {
 			PrivateKeyFile: "/config/key.pem",
 		}
 
-		applyEnvVars(nopLogger)
+		applyEnvVars(&cfg, nopLogger)
 
 		// All values should be preserved from config
-		require.Equal(t, "config-uuid", AppConfig.RunnerUuid)
-		require.Equal(t, "https://config-api.example.com", AppConfig.RunApiBackend.Url)
-		require.Equal(t, "config-user", AppConfig.RunApiBackend.User)
-		require.Equal(t, "config-pass", AppConfig.RunApiBackend.Password)
-		require.Equal(t, "config-client-id", AppConfig.RunApiBackend.ClientId)
-		require.Equal(t, "config-client-secret", AppConfig.RunApiBackend.ClientSecret)
-		require.Equal(t, "/config/key.pem", AppConfig.PrivateKeyFile)
+		require.Equal(t, "config-uuid", cfg.RunnerUuid)
+		require.Equal(t, "https://config-api.example.com", cfg.RunApiBackend.Url)
+		require.Equal(t, "config-user", cfg.RunApiBackend.User)
+		require.Equal(t, "config-pass", cfg.RunApiBackend.Password)
+		require.Equal(t, "config-client-id", cfg.RunApiBackend.ClientId)
+		require.Equal(t, "config-client-secret", cfg.RunApiBackend.ClientSecret)
+		require.Equal(t, "/config/key.pem", cfg.PrivateKeyFile)
 	})
 
 	t.Run("partial env var override (mix of empty and set vars)", func(t *testing.T) {
@@ -299,7 +299,7 @@ func TestApplyEnvVars(t *testing.T) {
 		t.Setenv(envAuthUsername, "env-user")
 		t.Setenv(envAuthPassword, "")
 
-		AppConfig = TfRunnerConfig{
+		cfg := TfRunnerConfig{
 			RunnerUuid: "config-uuid",
 			RunApiBackend: RunApiConfig{
 				Url:      "https://config-api.example.com",
@@ -308,13 +308,13 @@ func TestApplyEnvVars(t *testing.T) {
 			},
 		}
 
-		applyEnvVars(nopLogger)
+		applyEnvVars(&cfg, nopLogger)
 
 		// Only env vars that are set should override
-		require.Equal(t, "env-uuid", AppConfig.RunnerUuid)
-		require.Equal(t, "https://config-api.example.com", AppConfig.RunApiBackend.Url)
-		require.Equal(t, "env-user", AppConfig.RunApiBackend.User)
-		require.Equal(t, "config-pass", AppConfig.RunApiBackend.Password)
+		require.Equal(t, "env-uuid", cfg.RunnerUuid)
+		require.Equal(t, "https://config-api.example.com", cfg.RunApiBackend.Url)
+		require.Equal(t, "env-user", cfg.RunApiBackend.User)
+		require.Equal(t, "config-pass", cfg.RunApiBackend.Password)
 	})
 
 	t.Run("logs env var names without values", func(t *testing.T) {
@@ -326,11 +326,11 @@ func TestApplyEnvVars(t *testing.T) {
 		t.Setenv(envAuthClientSecret, "super-secret-client-secret")
 		t.Setenv(envPrivateKeyFile, "/very/secret/path.pem")
 
-		AppConfig = TfRunnerConfig{}
+		cfg := TfRunnerConfig{}
 
 		var logBuffer bytes.Buffer
 		bufferLogger := slog.New(slog.NewTextHandler(&logBuffer, nil))
-		applyEnvVars(bufferLogger)
+		applyEnvVars(&cfg, bufferLogger)
 
 		logOutput := logBuffer.String()
 		require.Contains(t, logOutput, envRunnerUuid)

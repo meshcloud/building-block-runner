@@ -21,14 +21,11 @@ import (
 	meshapi "github.com/meshcloud/building-block-runner/internal/meshapi"
 )
 
-// withSavedAppConfig snapshots the package-level AppConfig (a phase-2 D4 injection target) and the
-// single-run env vars ReadConfig/validateAuthConfig read, restoring them after the test so ReadConfig
-// tests can freely mutate the global without leaking into sibling suites.
+// withSavedAppConfig neutralizes the single-run env vars ReadConfig/validateAuthConfig read so a
+// subtest takes the polling branch unless it opts in explicitly. ReadConfig no longer mutates a
+// package global (FOLLOW_UP P2.3): each test reads the returned config value directly.
 func withSavedAppConfig(t *testing.T) {
 	t.Helper()
-	previous := AppConfig
-	t.Cleanup(func() { AppConfig = previous })
-	AppConfig = TfRunnerConfig{}
 	// Neutralize any ambient single-run signal so validateAuthConfig takes the polling branch unless a
 	// subtest opts in explicitly.
 	t.Setenv(envExecutionMode, "")
@@ -60,11 +57,12 @@ api:
 `)
 	t.Setenv(envConfigFile, path)
 
-	require.NoError(t, ReadConfig(discardLogger()))
-	assert.Equal(t, 42, AppConfig.TfCommandTimeoutMins)
-	assert.Equal(t, "file-uuid", AppConfig.RunnerUuid)
-	assert.Equal(t, "https://api.example.com", AppConfig.RunApiBackend.Url)
-	assert.Equal(t, "file-user", AppConfig.RunApiBackend.User)
+	cfg, err := ReadConfig(discardLogger())
+	require.NoError(t, err)
+	assert.Equal(t, 42, cfg.TfCommandTimeoutMins)
+	assert.Equal(t, "file-uuid", cfg.RunnerUuid)
+	assert.Equal(t, "https://api.example.com", cfg.RunApiBackend.Url)
+	assert.Equal(t, "file-user", cfg.RunApiBackend.User)
 }
 
 func Test_ReadConfig_EnvOverridesFile(t *testing.T) {
@@ -80,9 +78,10 @@ api:
 	t.Setenv(envRunnerUuid, "env-uuid")
 	t.Setenv(envApiUrl, "https://env.example.com")
 
-	require.NoError(t, ReadConfig(discardLogger()))
-	assert.Equal(t, "env-uuid", AppConfig.RunnerUuid, "RUNNER_UUID env must override the file")
-	assert.Equal(t, "https://env.example.com", AppConfig.RunApiBackend.Url)
+	cfg, err := ReadConfig(discardLogger())
+	require.NoError(t, err)
+	assert.Equal(t, "env-uuid", cfg.RunnerUuid, "RUNNER_UUID env must override the file")
+	assert.Equal(t, "https://env.example.com", cfg.RunApiBackend.Url)
 }
 
 func Test_ReadConfig_MissingFileUsesDefaultsAndEnv(t *testing.T) {
@@ -92,11 +91,12 @@ func Test_ReadConfig_MissingFileUsesDefaultsAndEnv(t *testing.T) {
 	t.Setenv(envAuthClientId, "cid")
 	t.Setenv(envAuthClientSecret, "csecret")
 
-	require.NoError(t, ReadConfig(discardLogger()), "a missing config file must fall back to defaults+env")
-	assert.Equal(t, "env-uuid", AppConfig.RunnerUuid)
-	assert.Equal(t, "cid", AppConfig.RunApiBackend.ClientId)
+	cfg, err := ReadConfig(discardLogger())
+	require.NoError(t, err, "a missing config file must fall back to defaults+env")
+	assert.Equal(t, "env-uuid", cfg.RunnerUuid)
+	assert.Equal(t, "cid", cfg.RunApiBackend.ClientId)
 	// applyEnvVars defaults PrivateKeyFile to the well-known name when neither file nor env set it.
-	assert.Equal(t, defaultPrivateKeyFile, AppConfig.PrivateKeyFile)
+	assert.Equal(t, defaultPrivateKeyFile, cfg.PrivateKeyFile)
 }
 
 func Test_ReadConfig_InvalidYamlReturnsError(t *testing.T) {
@@ -105,7 +105,8 @@ func Test_ReadConfig_InvalidYamlReturnsError(t *testing.T) {
 	path := writeConfigFile(t, "this-is-not-a-mapping")
 	t.Setenv(envConfigFile, path)
 
-	assert.Error(t, ReadConfig(discardLogger()))
+	_, err := ReadConfig(discardLogger())
+	assert.Error(t, err)
 }
 
 func Test_ReadConfig_MissingAuthInPollingModeFails(t *testing.T) {
@@ -113,7 +114,7 @@ func Test_ReadConfig_MissingAuthInPollingModeFails(t *testing.T) {
 	path := writeConfigFile(t, "runnerUuid: some-uuid\n")
 	t.Setenv(envConfigFile, path)
 
-	err := ReadConfig(discardLogger())
+	_, err := ReadConfig(discardLogger())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "authentication required in polling mode")
 }
@@ -127,7 +128,7 @@ api:
 `)
 	t.Setenv(envConfigFile, path)
 
-	err := ReadConfig(discardLogger())
+	_, err := ReadConfig(discardLogger())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "runnerUuid is required")
 }
@@ -146,8 +147,9 @@ api:
 	t.Setenv(envConfigFile, path)
 	t.Setenv(envPrivateKeyFile, keyPath)
 
-	require.NoError(t, ReadConfig(discardLogger()))
-	assert.Equal(t, "PRIVATE-KEY-CONTENTS", AppConfig.PrivateKey, "private key file contents must load into PrivateKey")
+	cfg, err := ReadConfig(discardLogger())
+	require.NoError(t, err)
+	assert.Equal(t, "PRIVATE-KEY-CONTENTS", cfg.PrivateKey, "private key file contents must load into PrivateKey")
 }
 
 func Test_ReadConfig_SingleRunModeSkipsAuthRequirement(t *testing.T) {
@@ -157,7 +159,8 @@ func Test_ReadConfig_SingleRunModeSkipsAuthRequirement(t *testing.T) {
 	t.Setenv(envExecutionMode, "single-run")
 	t.Setenv(envRunJsonFilePath, "/var/run/secrets/meshstack/run.json")
 
-	require.NoError(t, ReadConfig(discardLogger()), "single-run mode with RUN_JSON_FILE_PATH must not require auth")
+	_, err := ReadConfig(discardLogger())
+	require.NoError(t, err, "single-run mode with RUN_JSON_FILE_PATH must not require auth")
 }
 
 func Test_ReadConfig_BothAuthMethodsConfigured(t *testing.T) {
@@ -174,7 +177,8 @@ api:
 
 	// Both auth methods fully configured is a valid configuration (API key wins) — ReadConfig logs
 	// the precedence note and succeeds.
-	require.NoError(t, ReadConfig(discardLogger()))
+	_, err := ReadConfig(discardLogger())
+	require.NoError(t, err)
 }
 
 func Test_ReadConfig_DefaultConfigPathWhenEnvUnset(t *testing.T) {
@@ -185,8 +189,9 @@ func Test_ReadConfig_DefaultConfigPathWhenEnvUnset(t *testing.T) {
 	t.Setenv(envAuthPassword, "p")
 
 	// The default file does not exist in the package test dir, so ReadConfig uses defaults + env.
-	require.NoError(t, ReadConfig(discardLogger()))
-	assert.Equal(t, "env-uuid", AppConfig.RunnerUuid)
+	cfg, err := ReadConfig(discardLogger())
+	require.NoError(t, err)
+	assert.Equal(t, "env-uuid", cfg.RunnerUuid)
 }
 
 func Test_ReadConfig_InsecureHostKeysLogged(t *testing.T) {
@@ -200,8 +205,9 @@ api:
 `)
 	t.Setenv(envConfigFile, path)
 
-	require.NoError(t, ReadConfig(discardLogger()))
-	assert.True(t, AppConfig.SkipHostKeyValidation)
+	cfg, err := ReadConfig(discardLogger())
+	require.NoError(t, err)
+	assert.True(t, cfg.SkipHostKeyValidation)
 }
 
 func Test_ReadConfig_SingleRunMissingRunJsonPathFails(t *testing.T) {
@@ -211,7 +217,7 @@ func Test_ReadConfig_SingleRunMissingRunJsonPathFails(t *testing.T) {
 	t.Setenv(envExecutionMode, "single-run")
 	t.Setenv(envRunJsonFilePath, "") // required in single-run mode
 
-	err := ReadConfig(discardLogger())
+	_, err := ReadConfig(discardLogger())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "RUN_JSON_FILE_PATH")
 }

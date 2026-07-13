@@ -41,7 +41,8 @@ func main() {
 	// stamps {"tf-block-runner", build.Version} at client construction.
 	logger.Info("Build metadata", "version", build.Version)
 
-	if err := tf.ReadConfig(logger); err != nil {
+	cfg, err := tf.ReadConfig(logger)
+	if err != nil {
 		logger.Error("cannot read config", "error", err)
 		os.Exit(1)
 	}
@@ -54,9 +55,9 @@ func main() {
 	// Polling mode: build a cert-based decryptor from the runner's private key (no key => no-op,
 	// preserving the former "Crypto == nil" passthrough behavior).
 	var dec tf.Decryptor = tf.NoopDecryptor{}
-	if !singleRunMode && tf.AppConfig.PrivateKey != "" {
+	if !singleRunMode && cfg.PrivateKey != "" {
 		var cryptoErr error
-		dec, cryptoErr = tf.NewCertDecryptor(tf.AppConfig.PrivateKey)
+		dec, cryptoErr = tf.NewCertDecryptor(cfg.PrivateKey)
 		if cryptoErr != nil {
 			logger.Error("failed to initialize crypto: private key could not be loaded", "error", cryptoErr)
 			os.Exit(1)
@@ -67,7 +68,7 @@ func main() {
 	}
 
 	// define tf binary provider
-	tfBinaryProvider, err := tf.NewTfBin(tf.AppConfig.TfInstallDir, os.Stdout)
+	tfBinaryProvider, err := tf.NewTfBin(cfg.TfInstallDir, os.Stdout)
 	if err != nil {
 		panic(err)
 	}
@@ -75,7 +76,7 @@ func main() {
 	// Check if running in single-run mode
 	if singleRunMode {
 		logger.Info("Running in single-run mode")
-		os.Exit(executeSingleRun(logger, tfBinaryProvider, dec))
+		os.Exit(executeSingleRun(logger, cfg, tfBinaryProvider, dec))
 	}
 
 	// Standard polling mode
@@ -92,7 +93,7 @@ func main() {
 		os.Exit(1)
 	}
 	reg := mgmt.NewRegistry()
-	meter := mgmt.NewRunMetrics(reg, tf.AppConfig.RunnerUuid)
+	meter := mgmt.NewRunMetrics(reg, cfg.RunnerUuid)
 	if err := mgmt.NewServer(mgmtLog, mgmtPort.Addr(), reg).Start(); err != nil {
 		logger.Error("management server failed to start", "error", err)
 		os.Exit(1)
@@ -104,7 +105,7 @@ func main() {
 	if useInProcessDispatcher() {
 		logger.Info("using in-process dispatcher (dispatch.Loop)")
 		metrics := dispatch.NewMetricsCollectorWithRegistry(reg)
-		loop, inproc, err := tf.NewDispatchRunner(tf.AppConfig, logger, tfBinaryProvider, dec, meter, metrics)
+		loop, inproc, err := tf.NewDispatchRunner(cfg, logger, tfBinaryProvider, dec, meter, metrics)
 		if err != nil {
 			logger.Error("failed to start in-process dispatcher", "error", err)
 			os.Exit(1)
@@ -128,7 +129,7 @@ func main() {
 	wg.Add(1)
 
 	// start run manager with workers
-	runManager := tf.NewManager(tf.AppConfig, tfBinaryProvider, dec, meter, logger)
+	runManager := tf.NewManager(cfg, tfBinaryProvider, dec, meter, logger)
 	runManager.Start(&wg)
 
 	// listen for os signals to be able to shutdown gracefully
@@ -161,7 +162,7 @@ func isSingleRunMode() bool {
 // make k8s re-run a failed terraform run once — a second, automatic APPLY/DESTROY against
 // real infrastructure. Re-triggering stateful terraform must stay a deliberate user action, so
 // only the pre-flight failure class (which never touched terraform) exits non-zero here.
-func executeSingleRun(logger *slog.Logger, tfBinaryProvider *tf.TfBinaries, dec tf.Decryptor) int {
+func executeSingleRun(logger *slog.Logger, cfg tf.TfRunnerConfig, tfBinaryProvider *tf.TfBinaries, dec tf.Decryptor) int {
 	// Read RUN_JSON_FILE_PATH from environment - extract the file path of the K8S secret file that is mounted
 	runJsonFilePath := os.Getenv(ENV_RUN_JSON_FILE_PATH)
 	if runJsonFilePath == "" {
@@ -194,16 +195,16 @@ func executeSingleRun(logger *slog.Logger, tfBinaryProvider *tf.TfBinaries, dec 
 
 	// Create API client and set the runToken from the run spec
 	// In Kubernetes mode, the runToken is used for authentication instead of basic auth
-	api := tf.NewRunApi(tf.AppConfig.RunApiBackend, tf.AppConfig.RunnerUuid, dec)
+	api := tf.NewRunApi(cfg.RunApiBackend, cfg.RunnerUuid, dec)
 	logger.Info("Using runToken from run spec for authentication")
 	api.SetRunToken(runDetails.Spec.RunToken)
 
 	// Execute the run using a single worker with the configured API client
 	worker := tf.NewSingleRunWorkerWithApi(
 		logger,
-		tf.AppConfig,
-		tf.AppConfig.TfParentWorkingDir,
-		tf.AppConfig.TfCommandTimeoutMins,
+		cfg,
+		cfg.TfParentWorkingDir,
+		cfg.TfCommandTimeoutMins,
 		tfBinaryProvider,
 		api,
 		dec,

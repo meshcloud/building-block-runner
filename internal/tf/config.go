@@ -13,8 +13,6 @@ import (
 	meshapi "github.com/meshcloud/building-block-runner/internal/meshapi"
 )
 
-var AppConfig TfRunnerConfig
-
 // execConfig carries the tf runner configuration that the run-execution path reads
 // (worker/single-run/handler -> tfcmd/gitsource/authSsh), threaded explicitly in place of the
 // former mutable package-level AppConfig global (FOLLOW_UP P2.3). It is a read-only value taken
@@ -122,7 +120,12 @@ const (
 	envMaxConcurrentRuns = "RUNNER_MAX_CONCURRENT_RUNS"
 )
 
-func ReadConfig(logger *slog.Logger) error {
+// ReadConfig loads the tf runner configuration from the config file (if present) overlaid by the
+// RUNNER_* environment variables, validates it, and returns it. It no longer mutates a package
+// global (FOLLOW_UP P2.3): callers thread the returned value down the worker/handler paths.
+func ReadConfig(logger *slog.Logger) (TfRunnerConfig, error) {
+	var cfg TfRunnerConfig
+
 	// read configFile path from env var or use default
 	configPath := os.Getenv(envConfigFile)
 	if configPath == "" {
@@ -133,89 +136,89 @@ func ReadConfig(logger *slog.Logger) error {
 	if fileData, err := os.ReadFile(configPath); errors.Is(err, fs.ErrNotExist) {
 		logger.Info("config file does not exist, will use defaults and environment", "path", configPath)
 	} else if err != nil {
-		return err
-	} else if err := yaml.Unmarshal(fileData, &AppConfig); err != nil {
-		return err
+		return TfRunnerConfig{}, err
+	} else if err := yaml.Unmarshal(fileData, &cfg); err != nil {
+		return TfRunnerConfig{}, err
 	}
 
 	// Default the in-process concurrency (before env, so an explicit env/file value wins).
 	// Zero means "unset" -> the plan default; operators set it explicitly (incl. 1 for the
 	// historic serial cadence, or a negative value for unlimited).
-	if AppConfig.MaxConcurrentRuns == 0 {
-		AppConfig.MaxConcurrentRuns = DefaultMaxConcurrentRuns
+	if cfg.MaxConcurrentRuns == 0 {
+		cfg.MaxConcurrentRuns = DefaultMaxConcurrentRuns
 	}
 
 	// apply environment variables (highest precedence)
-	applyEnvVars(logger)
+	applyEnvVars(&cfg, logger)
 
 	// Try to load the private key from the configured file path (highest priority).
 	// Uses RUNNER_PRIVATE_KEY_FILE env var path if set, otherwise the default ./runner-private.pem.
 	// Falls back to privateKey from runner-config.yml if the file is not found.
-	applyPrivateKeyFile(AppConfig.PrivateKeyFile, &AppConfig, logger)
+	applyPrivateKeyFile(cfg.PrivateKeyFile, &cfg, logger)
 
 	// validate authentication configuration
-	if err := validateAuthConfig(AppConfig); err != nil {
-		return err
+	if err := validateAuthConfig(cfg); err != nil {
+		return TfRunnerConfig{}, err
 	}
 
 	// API key auth wins when both methods are configured (e.g. an env-supplied client id/secret on
 	// top of a basic-auth default baked into runner-config.yml). Surface that so it's not surprising.
-	if AppConfig.RunApiBackend.ClientId != "" && AppConfig.RunApiBackend.ClientSecret != "" &&
-		(AppConfig.RunApiBackend.User != "" || AppConfig.RunApiBackend.Password != "") {
+	if cfg.RunApiBackend.ClientId != "" && cfg.RunApiBackend.ClientSecret != "" &&
+		(cfg.RunApiBackend.User != "" || cfg.RunApiBackend.Password != "") {
 		logger.Info("Both API key and Basic auth are configured; using API key auth and ignoring Basic auth (user/password)")
 	}
 
 	// validate RunnerUuid is set
-	if err := validateRunnerUuid(AppConfig); err != nil {
-		return err
+	if err := validateRunnerUuid(cfg); err != nil {
+		return TfRunnerConfig{}, err
 	}
 
 	logger.Info("Starting as runner",
-		"uuid", AppConfig.RunnerUuid,
-		"tfInstallDir", AppConfig.TfInstallDir,
-		"workingDir", AppConfig.TfParentWorkingDir,
-		"tfCommandTimeoutMins", AppConfig.TfCommandTimeoutMins,
-		"wsTimeoutMins", AppConfig.WsTimeoutMins,
-		"initTimeoutMins", AppConfig.InitTimeoutMins,
-		"meshfedApiUrl", AppConfig.RunApiBackend.Url,
+		"uuid", cfg.RunnerUuid,
+		"tfInstallDir", cfg.TfInstallDir,
+		"workingDir", cfg.TfParentWorkingDir,
+		"tfCommandTimeoutMins", cfg.TfCommandTimeoutMins,
+		"wsTimeoutMins", cfg.WsTimeoutMins,
+		"initTimeoutMins", cfg.InitTimeoutMins,
+		"meshfedApiUrl", cfg.RunApiBackend.Url,
 	)
-	if AppConfig.SkipHostKeyValidation {
+	if cfg.SkipHostKeyValidation {
 		logger.Warn("Skipping host key validation is considered insecure and should not be used in production.")
 	}
-	return nil
+	return cfg, nil
 }
 
 // applyEnvVars applies environment variables with RUNNER_ prefix and sets defaults for unset values.
 // Environment variables take precedence over config file values.
-func applyEnvVars(logger *slog.Logger) {
+func applyEnvVars(cfg *TfRunnerConfig, logger *slog.Logger) {
 	if envUuid := os.Getenv(envRunnerUuid); envUuid != "" {
 		logger.Info("Using value from environment", "var", envRunnerUuid)
-		AppConfig.RunnerUuid = envUuid
+		cfg.RunnerUuid = envUuid
 	}
 
 	if apiUrl := os.Getenv(envApiUrl); apiUrl != "" {
 		logger.Info("Using value from environment", "var", envApiUrl)
-		AppConfig.RunApiBackend.Url = apiUrl
+		cfg.RunApiBackend.Url = apiUrl
 	}
 
 	if username := os.Getenv(envAuthUsername); username != "" {
 		logger.Info("Using value from environment", "var", envAuthUsername)
-		AppConfig.RunApiBackend.User = username
+		cfg.RunApiBackend.User = username
 	}
 
 	if password := os.Getenv(envAuthPassword); password != "" {
 		logger.Info("Using value from environment", "var", envAuthPassword)
-		AppConfig.RunApiBackend.Password = password
+		cfg.RunApiBackend.Password = password
 	}
 
 	if clientId := os.Getenv(envAuthClientId); clientId != "" {
 		logger.Info("Using value from environment", "var", envAuthClientId)
-		AppConfig.RunApiBackend.ClientId = clientId
+		cfg.RunApiBackend.ClientId = clientId
 	}
 
 	if clientSecret := os.Getenv(envAuthClientSecret); clientSecret != "" {
 		logger.Info("Using value from environment", "var", envAuthClientSecret)
-		AppConfig.RunApiBackend.ClientSecret = clientSecret
+		cfg.RunApiBackend.ClientSecret = clientSecret
 	}
 
 	if v := os.Getenv(envMaxConcurrentRuns); v != "" {
@@ -223,16 +226,16 @@ func applyEnvVars(logger *slog.Logger) {
 			logger.Warn("ignoring invalid RUNNER_MAX_CONCURRENT_RUNS (not an integer)", "value", v, "error", err)
 		} else {
 			logger.Info("Using value from environment", "var", envMaxConcurrentRuns)
-			AppConfig.MaxConcurrentRuns = n
+			cfg.MaxConcurrentRuns = n
 		}
 	}
 
 	if privateKeyFile := os.Getenv(envPrivateKeyFile); privateKeyFile != "" {
 		logger.Info("Using value from environment", "var", envPrivateKeyFile)
-		AppConfig.PrivateKeyFile = privateKeyFile
-	} else if AppConfig.PrivateKeyFile == "" {
+		cfg.PrivateKeyFile = privateKeyFile
+	} else if cfg.PrivateKeyFile == "" {
 		// Use default private key file path if not configured via config file or env var
-		AppConfig.PrivateKeyFile = defaultPrivateKeyFile
+		cfg.PrivateKeyFile = defaultPrivateKeyFile
 	}
 }
 

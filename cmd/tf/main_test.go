@@ -82,11 +82,11 @@ func fixedStatusServer(t *testing.T, status int) *httptest.Server {
 	return srv
 }
 
-func withTestAppConfig(t *testing.T, runApiUrl string) {
+// testConfig builds the tf runner config threaded into executeSingleRun (FOLLOW_UP P2.3), replacing
+// the former package-level tf.AppConfig global the test used to mutate.
+func testConfig(t *testing.T, runApiUrl string) tf.TfRunnerConfig {
 	t.Helper()
-	previous := tf.AppConfig
-	t.Cleanup(func() { tf.AppConfig = previous })
-	tf.AppConfig = tf.TfRunnerConfig{
+	return tf.TfRunnerConfig{
 		RunnerUuid:           "b11-test-runner",
 		TfParentWorkingDir:   t.TempDir(),
 		TfCommandTimeoutMins: 1,
@@ -98,13 +98,13 @@ func withTestAppConfig(t *testing.T, runApiUrl string) {
 
 func Test_ExecuteSingleRun_MissingRunJsonFilePathEnv_ExitsNonZero(t *testing.T) {
 	t.Setenv(ENV_RUN_JSON_FILE_PATH, "")
-	withTestAppConfig(t, "")
+	cfg := testConfig(t, "")
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	tfbin, err := tf.ForTestNewTfBin(t.TempDir(), io.Discard, nil)
 	require.NoError(t, err)
 
-	code := executeSingleRun(logger, tfbin, tf.NoopDecryptor{})
+	code := executeSingleRun(logger, cfg, tfbin, tf.NoopDecryptor{})
 
 	require.Equal(t, 1, code, "a pre-flight failure (before registration) must exit non-zero")
 }
@@ -113,20 +113,20 @@ func Test_ExecuteSingleRun_MalformedRunJson_ExitsNonZero(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "run.json")
 	require.NoError(t, os.WriteFile(path, []byte("not valid json"), 0600))
 	t.Setenv(ENV_RUN_JSON_FILE_PATH, path)
-	withTestAppConfig(t, "")
+	cfg := testConfig(t, "")
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	tfbin, err := tf.ForTestNewTfBin(t.TempDir(), io.Discard, nil)
 	require.NoError(t, err)
 
-	code := executeSingleRun(logger, tfbin, tf.NoopDecryptor{})
+	code := executeSingleRun(logger, cfg, tfbin, tf.NoopDecryptor{})
 
 	require.Equal(t, 1, code, "malformed run JSON is a pre-flight failure and must exit non-zero")
 }
 
 func Test_ExecuteSingleRun_RegistrationFails_ExitsNonZero(t *testing.T) {
 	srv := fixedStatusServer(t, http.StatusInternalServerError)
-	withTestAppConfig(t, srv.URL)
+	cfg := testConfig(t, srv.URL)
 
 	runJsonPath := writeRunJsonFixture(t, "/nonexistent/repo/does/not/matter/here")
 	t.Setenv(ENV_RUN_JSON_FILE_PATH, runJsonPath)
@@ -135,14 +135,14 @@ func Test_ExecuteSingleRun_RegistrationFails_ExitsNonZero(t *testing.T) {
 	tfbin, err := tf.ForTestNewTfBin(t.TempDir(), io.Discard, nil)
 	require.NoError(t, err)
 
-	code := executeSingleRun(logger, tfbin, tf.NoopDecryptor{})
+	code := executeSingleRun(logger, cfg, tfbin, tf.NoopDecryptor{})
 
 	require.Equal(t, 1, code, "registration is still before tofu init/apply begins and must exit non-zero on failure")
 }
 
 func Test_ExecuteSingleRun_RegistrationSucceedsThenSourceCloneFails_ExitsZero(t *testing.T) {
 	srv := fixedStatusServer(t, http.StatusOK)
-	withTestAppConfig(t, srv.URL)
+	cfg := testConfig(t, srv.URL)
 
 	// A repositoryUrl that cannot be cloned makes the run fail *after* registration succeeded —
 	// exactly the "run has begun" bucket that must keep exit 0 (the k8s Job must not be re-run
@@ -154,7 +154,7 @@ func Test_ExecuteSingleRun_RegistrationSucceedsThenSourceCloneFails_ExitsZero(t 
 	tfbin, err := tf.ForTestNewTfBin(t.TempDir(), io.Discard, nil)
 	require.NoError(t, err)
 
-	code := executeSingleRun(logger, tfbin, tf.NoopDecryptor{})
+	code := executeSingleRun(logger, cfg, tfbin, tf.NoopDecryptor{})
 
 	require.Equal(t, 0, code, "once registration succeeds, a later failure (e.g. source clone) must not flip the exit code")
 }

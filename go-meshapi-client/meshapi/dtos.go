@@ -42,6 +42,7 @@ type RunSpecDTO struct {
 	BuildingBlock BuildingBlockSpecDTO `json:"buildingBlock"`
 	Definition    DefinitionSpecDTO    `json:"buildingBlockDefinition"`
 	RunToken      string               `json:"runToken"`
+	Trigger       *RunTriggerDTO       `json:"trigger"`
 }
 
 type BuildingBlockSpecDTO struct {
@@ -81,6 +82,45 @@ type DefinitionDetailsSpecDTO struct {
 	Version             int             `json:"version"`
 	Implementation      json.RawMessage `json:"implementation"`
 }
+
+type RunTriggerDTO struct {
+	Reason TriggerReason `json:"reason"`
+	Author AuthorDTO     `json:"author"`
+}
+
+type TriggerReason string
+
+const (
+	TriggerReasonBuildingBlockCreation           TriggerReason = "BUILDING_BLOCK_CREATION"
+	TriggerReasonManualExecution                 TriggerReason = "MANUAL_EXECUTION"
+	TriggerReasonUserStatusChange                TriggerReason = "USER_STATUS_CHANGE"
+	TriggerReasonPlatformTenantIdUpdate          TriggerReason = "PLATFORM_TENANT_ID_UPDATE"
+	TriggerReasonProjectPermissionsChange        TriggerReason = "PROJECT_PERMISSIONS_CHANGE"
+	TriggerReasonWorkspacePermissionChange       TriggerReason = "WORKSPACE_PERMISSION_CHANGE"
+	TriggerReasonBuildingBlockUpgrade            TriggerReason = "BUILDING_BLOCK_UPGRADE"
+	TriggerReasonBuildingBlockInputsUpdate       TriggerReason = "BUILDING_BLOCK_INPUTS_UPDATE"
+	TriggerReasonBuildingBlockDefinitionDeletion TriggerReason = "BUILDING_BLOCK_DEFINITION_DELETION"
+	TriggerReasonBuildingBlockDeletion           TriggerReason = "BUILDING_BLOCK_DELETION"
+	TriggerReasonBuildingBlockPurge              TriggerReason = "BUILDING_BLOCK_PURGE"
+	TriggerReasonDependencyOutputChanged         TriggerReason = "DEPENDENCY_OUTPUT_CHANGED"
+	TriggerReasonParentRunSucceeded              TriggerReason = "PARENT_RUN_SUCCEEDED"
+	TriggerReasonPreflightSucceeded              TriggerReason = "PREFLIGHT_SUCCEEDED"
+)
+
+type AuthorDTO struct {
+	Identifier  string     `json:"identifier"`
+	Type        AuthorType `json:"authorType"`
+	DisplayName *string    `json:"displayName"`
+}
+
+type AuthorType string
+
+const (
+	AuthorTypeUser    AuthorType = "User"
+	AuthorTypeApiKey  AuthorType = "ApiKey"
+	AuthorTypeApiUser AuthorType = "ApiUser"
+	AuthorTypeSystem  AuthorType = "System"
+)
 
 // ImplementationType represents the implementation type from the JSON API response.
 type ImplementationType string

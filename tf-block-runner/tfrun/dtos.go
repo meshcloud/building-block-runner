@@ -163,14 +163,15 @@ func (status RunStatus) toExternal() (meshapi.RunStatusUpdateDTO, error) {
 	}
 
 	return meshapi.RunStatusUpdateDTO{
-		BlockRunId: status.RunId,
-		Source:     AppConfig.RunnerUuid,
-		Type:       meshapi.RunTypeTerraform,
-		Status:     &runStatus,
-		CreatedOn:  time.Now(),
-		Summary:    status.Summary,
-		Steps:      steps,
-		Artifact:   artifact,
+		BlockRunId:      status.RunId,
+		Source:          AppConfig.RunnerUuid,
+		Type:            meshapi.RunTypeTerraform,
+		Status:          &runStatus,
+		CreatedOn:       time.Now(),
+		Summary:         status.Summary,
+		Steps:           steps,
+		Artifact:        artifact,
+		ChangesDetected: status.ChangesDetected,
 	}, nil
 }
 

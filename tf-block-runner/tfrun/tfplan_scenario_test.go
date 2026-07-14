@@ -59,6 +59,44 @@ func (suite *WorkerTestSuite) Test_DetectSucceeded_ArtifactInStatusUpdate() {
 	decoded, err := base64.StdEncoding.DecodeString(update.Artifact)
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), planBytes, decoded)
+
+	require.NotNil(suite.T(), update.ChangesDetected, "expected changesDetected to be reported for a DETECT run")
+	assert.True(suite.T(), *update.ChangesDetected, "planFunc returned changes present")
+}
+
+// Test_DetectSucceeded_NoChangesDetected verifies that when terraform plan reports no changes
+// (Plan returns false), the DETECT status update carries changesDetected=false.
+func (suite *WorkerTestSuite) Test_DetectSucceeded_NoChangesDetected() {
+	planBytes := []byte("fake-plan-binary-data")
+	suite.tfMock.planFunc = func(ctx context.Context, opts ...tfexec.PlanOption) (bool, error) {
+		rci := ctx.Value(runInfoContextKey).(*RunContextInfo)
+		return false, os.WriteFile(rci.artifactFilePath, planBytes, 0600)
+	}
+
+	suite.calls.fetch = mockValidRunDetailsFetchCall(DETECT.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+
+	updateCalls := make([]http.Request, 0)
+	suite.calls.update = func(req *http.Request) *http.Response {
+		updateCalls = append(updateCalls, *req)
+		return &http.Response{
+			StatusCode: 200,
+			Body:       io.NopCloser(bytes.NewBuffer([]byte("{}"))),
+			Header:     make(http.Header),
+		}
+	}
+
+	suite.runWorker()
+
+	require.GreaterOrEqual(suite.T(), len(updateCalls), 1)
+	lastUpdate := updateCalls[len(updateCalls)-1]
+	data, err := io.ReadAll(lastUpdate.Body)
+	require.NoError(suite.T(), err)
+	var update meshapi.RunStatusUpdateDTO
+	require.NoError(suite.T(), json.Unmarshal(data, &update))
+
+	assert.Equal(suite.T(), SUCCEEDED.str(), *update.Status)
+	require.NotNil(suite.T(), update.ChangesDetected, "expected changesDetected to be reported for a DETECT run")
+	assert.False(suite.T(), *update.ChangesDetected, "planFunc returned no changes")
 }
 
 // Test_ApplyWithPlanArtifact_DownloadsAndAppliesSavedPlan verifies that an APPLY run carrying a
@@ -161,6 +199,7 @@ func (suite *WorkerTestSuite) Test_ApplyWithoutPlanArtifact_PlainApply() {
 	var update meshapi.RunStatusUpdateDTO
 	require.NoError(suite.T(), json.Unmarshal(data, &update))
 	assert.Equal(suite.T(), SUCCEEDED.str(), *update.Status)
+	assert.Nil(suite.T(), update.ChangesDetected, "APPLY runs must not report changesDetected")
 }
 
 // Test_ApplyWithPlanArtifact_DownloadFailureFailsRun verifies that when the planArtifact download

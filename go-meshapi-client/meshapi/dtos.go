@@ -306,6 +306,9 @@ type RunStatusUpdateDTO struct {
 	// Artifact is an optional base64-encoded binary artifact produced by this run.
 	// For DETECT runs this holds the binary Terraform plan file.
 	Artifact string `json:"artifact,omitempty"`
+	// ChangesDetected reports whether the terraform plan found infrastructure changes.
+	// Set by DETECT runs only; absent for APPLY/DESTROY runs.
+	ChangesDetected *bool `json:"changesDetected,omitempty"`
 }
 
 // ==================== Runner Implementation Types ====================

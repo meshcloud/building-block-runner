@@ -1,0 +1,170 @@
+# Run Controller Configuration
+# This configuration defines how the universal run controller manages building block runs.
+# A single controller with one UUID fetches runs for all implementation types and dispatches
+# the appropriate Kubernetes job based on the run's implementation type.
+
+# Kubernetes namespace where all jobs and resources are created
+namespace: default
+
+# API configuration for meshStack backend
+# need to add to /etc/hosts:
+# 127.0.0.1 host.minikube.internal
+api:
+  url: http://host.minikube.internal:8080
+  # Option 1: Basic auth credentials (deprecated, prefer API key auth)
+  user: bb-api
+  password: guest
+  # Option 2: API key auth. Uncomment and set the credentials for this controller, or provide them via the
+  # RUNNER_API_CLIENT_ID / RUNNER_API_CLIENT_SECRET environment variables (which take precedence).
+  # clientId: your-client-id
+  # clientSecret: your-client-secret
+
+# Unique identifier for this universal run controller.
+# This UUID is used to fetch runs of all implementation types from meshfed-api.
+uuid: 98520496-627d-43e6-82da-ce499179ff3f
+
+# The workspace that owns this run controller (required for registration).
+ownedByWorkspace: platform-team
+
+# Human-readable display name for this controller shown in the meshStack UI.
+displayName: Universal Run Controller
+
+# Cryptographic keys for encrypting/decrypting sensitive run data
+crypto:
+  publicKey: |
+    -----BEGIN CERTIFICATE-----
+    MIIEbTCCA1WgAwIBAgIUUOaldPe86B6OxgurB6AaeTp7tuwwDQYJKoZIhvcNAQEN
+    BQAwJjELMAkGA1UEBhMCREUxFzAVBgNVBAoMDm1lc2hjbG91ZCBHbWJIMCAXDTIz
+    MDQxODEzMDQxOFoYDzIxMjAxMDA2MTMwNDE4WjBuMQswCQYDVQQGEwJERTEPMA0G
+    A1UECAwGSGVzc2VuMRIwEAYDVQQHDAlGcmFua2Z1cnQxEjAQBgNVBAoMCW1lc2hj
+    bG91ZDENMAsGA1UECwwEc2FhczEXMBUGA1UEAwwOKi5tZXNoc3RhY2suaW8wggIi
+    MA0GCSqGSIb3DQEBAQUAA4ICDwAwggIKAoICAQCqussZZjYxBZYCTcYHlCADvD1b
+    LuHPr5CT6L5o0NkzlWyewh3LlFcU6LEUI6++TfJ1lLGJ+QfD9qrjhV3Y05yNGQHJ
+    u4o8YtpwShCefLK7kRld084LLlPFVuxvaOGwxVLHehZA//kgxUHrqi+bbHy0ydaJ
+    bfKIbJUfU3Qq9t/oBZhmjFuxYkBaO6uynv2MnpD+rxEe+2sHGeQ2TucYP6kVgJdJ
+    ldaxl8v0gLSXPA5E89h71fhZj6e90TJxnkviLR2f3aSqQyx7Wj0khyQ6S9x5nUll
+    AYW1IFjYCK7jFsXKdzSooSReY8F76M2x0N93S+f1lQ7pmnDR/Inn2Rm2x5QNOxxX
+    gXuoRK5w5vmW1zy8fxcCILK0hjs9DBBj+TvIMEYXejMf/8F0vy+gYCu+Np2CSwPF
+    SU4ZSvAfgCY7xPRN6jY6ac6HtALOu0gek7iN/0S1A/XgkuGKag/1y1BY2sSgSPXa
+    KgB6r69l13zBZ+nLGhhJd2bM6HhrI9TDjW3RA+VSEwdvW04IzTRfI0PfI2CtPL7q
+    WAsJBP+AIsBGiCdKZeo8E/6xounFxAnkVBgdOSvMqog8kxwYmsnKWeUEmQa5NEKh
+    w52SGSKBfwI3RUgAVtqce8BCk3vq0lZRK8h+X4cny/aWi3TlOmaLrUM7LqFKCz/b
+    CiA3d7VjFzPUgF1eqwIDAQABo0kwRzALBgNVHQ8EBAMCBaAwGQYDVR0RBBIwEIIO
+    Ki5tZXNoc3RhY2suaW8wHQYDVR0lBBYwFAYIKwYBBQUHAwEGCCsGAQUFBwMCMA0G
+    CSqGSIb3DQEBDQUAA4IBAQBTA+KsuqmM0cuUOCUZ//OJ6Y69KXVcCsJocNyU7cCW
+    F4ba+h6Cz0d8JmvbYX8PI1zuaSJxWJyncZMnu1mDjwswlYLKRtc73Tu7QD7zmVuR
+    7rlIvFIam8GhGZOATwMtSaF4PcAAmVeB07pqUeUXWwsxnIyBobD+jt3NEhX/rfKc
+    pI8s0UsWKOGNtrOaD19BOJSjwMpJ0Lpv90bvHDcS8mY/w4sZm2Dtjdm8mKUIzR2h
+    rGhbit8eOeqtZefJEy2+AusZx5OBQlxJh0t/Ig3MSmZHKauD8yTCcSGPmZadi4IH
+    WtcT9qh5KCp8zL1hfsnzdVYnw28jokpUO9JZgi9JYIcB
+    -----END CERTIFICATE-----
+  privateKey: |
+    -----BEGIN PRIVATE KEY-----
+    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
+    zZYcO1dORsTf86yOVA4TxPyAczOmng==
+    -----END PRIVATE KEY-----
+
+pollingIntervalSeconds: 10
+
+# Maximum number of unfinished runner jobs this controller keeps in flight at once.
+# The controller drains queued runs back-to-back each polling cycle, but only claims a run
+# while it is fairly sure it can place the job: claiming more runs than can be scheduled would
+# force those runs to be reported as FAILED. Set to a value that fits your namespace quota.
+# Default: 20. Use a negative value (e.g. -1) to disable the limit (unlimited).
+maxConcurrentJobs: 20
+
+# Optional: constrain all runner jobs to specific nodes using tolerations and nodeSelector.
+# Useful for targeting dedicated or spot/preemptible node pools.
+# tolerations:
+#   - key: "spot"
+#     operator: "Equal"
+#     value: "true"
+#     effect: "NoSchedule"
+# nodeSelector:
+#   spot: "true"
+
+# Job spec templates keyed by implementation type.
+# When a run is fetched, its implementation type is used to look up which image and configuration
+# to use for the Kubernetes job. Valid keys: TERRAFORM, GITHUB_WORKFLOW, GITLAB_PIPELINE,
+# AZURE_DEVOPS_PIPELINE, MANUAL
+implementations:
+  MANUAL:
+    image: ghcr.io/meshcloud/manual-block-runner:main
+    env:
+      # Activates single-run mode. The legacy SPRING_PROFILES_ACTIVE=kubernetes spelling
+      # is still honored (deprecated) -- see docs/DEPRECATIONS.md.
+      EXECUTION_MODE: single-run
+
+  GITHUB_WORKFLOW:
+    image: ghcr.io/meshcloud/github-block-runner:main
+    env:
+      # Activates single-run mode. The legacy SPRING_PROFILES_ACTIVE=kubernetes spelling
+      # is still honored (deprecated) -- see docs/DEPRECATIONS.md.
+      EXECUTION_MODE: single-run
+
+  GITLAB_PIPELINE:
+    image: ghcr.io/meshcloud/gitlab-block-runner:main
+    env:
+      # Activates single-run mode. The legacy SPRING_PROFILES_ACTIVE=kubernetes spelling
+      # is still honored (deprecated) -- see docs/DEPRECATIONS.md.
+      EXECUTION_MODE: single-run
+
+  AZURE_DEVOPS_PIPELINE:
+    image: ghcr.io/meshcloud/azure-devops-block-runner:main
+    env:
+      # Activates single-run mode. The legacy SPRING_PROFILES_ACTIVE=kubernetes spelling
+      # is still honored (deprecated) -- see docs/DEPRECATIONS.md.
+      EXECUTION_MODE: single-run
+
+  TERRAFORM:
+    image: ghcr.io/meshcloud/tf-block-runner:main
+    env:
+      EXECUTION_MODE: single-run

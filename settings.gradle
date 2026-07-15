@@ -1,8 +1,0 @@
-rootProject.name = 'building-block-runner'
-
-include 'block-runner-core'
-include 'manual-block-runner'
-include 'github-block-runner'
-include 'gitlab-block-runner'
-include 'azure-devops-block-runner'
-

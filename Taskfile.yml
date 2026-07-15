@@ -1,0 +1,75 @@
+version: '3'
+
+# Behavior-neutral replacement for the former Makefile (D14). Phase 4 collapsed the three
+# Go modules (go-meshapi-client, run-controller, tf-block-runner) into one module rooted at
+# the repo root (PLAN_DETAIL_04 §4.6): every Go command now runs at the repo root, so the
+# former per-module loop + `work-sync` (go.work is gone) collapse into single-root targets.
+# `vet` is not a separate target — govet runs as part of `task lint` (golangci-lint enables
+# it), so duplicating it under two names is avoided.
+vars:
+  RUN_CONTROLLER_CONFIG: containers/run-controller/runner-config.yml
+  TF_BLOCK_RUNNER_CONFIG: containers/tf-block-runner/runner-config.yml
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list-all
+
+  test:
+    desc: >-
+      Run all tests at the repo root in BOTH cmd/bbrunner build modes (with -race; A6 — the tf leg
+      must stay race-clean): the default no-tag build (the in-process superset, links every runner
+      type) and the `-tags k8s` build (the lean Job-dispatching run-controller image, links no type
+      handlers). Both must stay green.
+    cmds:
+      - go test -race ./...
+      - go test -race -tags k8s ./...
+
+  test:e2e:
+    desc: >-
+      Run the opt-in e2e tests too (the real tofu/terraform binary download, gated behind the
+      `e2e` build tag; PLAN_DETAIL_07 §5.4 / L3). Hits the network; not part of default `task
+      test` or any PR gate — run locally or via the e2e.yml workflow.
+    cmds:
+      - go test -tags e2e ./...
+
+  lint:
+    desc: Lint with golangci-lint (govet runs inside; pass extra args after --, e.g. `task lint -- --fix`)
+    cmds:
+      - golangci-lint run {{.CLI_ARGS}} ./...
+
+  fmt:
+    desc: Format all Go code (golangci-lint fmt supersedes go fmt; one formatter authority)
+    cmds:
+      - golangci-lint fmt ./...
+
+  tidy:
+    desc: Tidy the module
+    cmds:
+      - go mod tidy
+
+  build:
+    desc: Build every runner type binary (cmd/tf, cmd/bbrunner)
+    cmds:
+      - go build ./cmd/...
+
+  start:run-controller:
+    desc: Run the controller/superset (cmd/bbrunner, auto/default mode)
+    env:
+      RUNCONTROLLER_CONFIG_FILE: '{{.RUN_CONTROLLER_CONFIG}}'
+    cmds:
+      - go run ./cmd/bbrunner
+
+  start:tf-block-runner:
+    desc: Run the tf-block-runner fit runner type (cmd/tf)
+    env:
+      RUNNER_CONFIG_FILE: '{{.TF_BLOCK_RUNNER_CONFIG}}'
+    cmds:
+      - go run ./cmd/tf
+
+  coverage:
+    desc: Measure and report test coverage (gate thresholds defined in tools/coverage/thresholds.txt)
+    cmds:
+      - go test -coverprofile=/tmp/coverage.out ./...
+      - tools/coverage/check.sh . /tmp/coverage.out

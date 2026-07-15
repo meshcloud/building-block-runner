@@ -1,0 +1,10 @@
+# Keep the Go image builds' context small (PLAN_DETAIL_04 §4.4): with go.mod at the
+# repo root, `COPY . .` would otherwise pull in infra/, docs/ and .git — none of which
+# `go build ./cmd/...` needs. (The Kotlin/Gradle runner dirs are gone as of phase 7's JVM
+# endgame, so their former exclusions were dropped.)
+.git
+.github
+.idea
+.vscode
+infra
+docs

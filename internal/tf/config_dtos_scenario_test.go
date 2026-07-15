@@ -1,0 +1,364 @@
+package tf
+
+// ReadConfig black-box, NewAuthProvider,
+// the DTO->internal conversion (incl. RunDTOToInternal error branches, knownHostsToInternal),
+// and the small enum/status types' error branches. These pin the
+// config-precedence and DTO contracts (the k8s single-run run JSON shape) at unit level;
+// the bug pins already covered in bug_inventory_test.go are not duplicated here.
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	meshapi "github.com/meshcloud/building-block-runner/internal/meshapi"
+	"github.com/meshcloud/building-block-runner/internal/report"
+)
+
+// withSavedAppConfig neutralizes the single-run env vars ReadConfig/validateAuthConfig read so a
+// subtest takes the polling branch unless it opts in explicitly. ReadConfig no longer mutates a
+// package global: each test reads the returned config value directly.
+func withSavedAppConfig(t *testing.T) {
+	t.Helper()
+	// Neutralize any ambient single-run signal so validateAuthConfig takes the polling branch unless a
+	// subtest opts in explicitly.
+	t.Setenv(envExecutionMode, "")
+	t.Setenv(envRunJsonFilePath, "")
+}
+
+func writeConfigFile(t *testing.T, yaml string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "runner-config.yml")
+	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+		t.Fatalf("writeConfigFile: %v", err)
+	}
+	return path
+}
+
+func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
+
+func Test_ReadConfig_FileOnly(t *testing.T) {
+	withSavedAppConfig(t)
+	path := writeConfigFile(t, `
+timeoutMins: 42
+workingDir: /tmp/wd
+tfInstallDir: /tmp/tf
+runnerUuid: file-uuid
+api:
+  url: https://api.example.com
+  user: file-user
+  password: file-pass
+`)
+	t.Setenv(envConfigFile, path)
+
+	cfg, err := ReadConfig(discardLogger())
+	require.NoError(t, err)
+	assert.Equal(t, 42, cfg.TfCommandTimeoutMins)
+	assert.Equal(t, "file-uuid", cfg.RunnerUuid)
+	assert.Equal(t, "https://api.example.com", cfg.RunApiBackend.Url)
+	assert.Equal(t, "file-user", cfg.RunApiBackend.User)
+}
+
+func Test_ReadConfig_EnvOverridesFile(t *testing.T) {
+	withSavedAppConfig(t)
+	path := writeConfigFile(t, `
+runnerUuid: file-uuid
+api:
+  url: https://file.example.com
+  user: file-user
+  password: file-pass
+`)
+	t.Setenv(envConfigFile, path)
+	t.Setenv(envRunnerUuid, "env-uuid")
+	t.Setenv(envApiUrl, "https://env.example.com")
+
+	cfg, err := ReadConfig(discardLogger())
+	require.NoError(t, err)
+	assert.Equal(t, "env-uuid", cfg.RunnerUuid, "RUNNER_UUID env must override the file")
+	assert.Equal(t, "https://env.example.com", cfg.RunApiBackend.Url)
+}
+
+func Test_ReadConfig_MissingFileUsesDefaultsAndEnv(t *testing.T) {
+	withSavedAppConfig(t)
+	t.Setenv(envConfigFile, filepath.Join(t.TempDir(), "does-not-exist.yml"))
+	t.Setenv(envRunnerUuid, "env-uuid")
+	t.Setenv(envAuthClientId, "cid")
+	t.Setenv(envAuthClientSecret, "csecret")
+
+	cfg, err := ReadConfig(discardLogger())
+	require.NoError(t, err, "a missing config file must fall back to defaults+env")
+	assert.Equal(t, "env-uuid", cfg.RunnerUuid)
+	assert.Equal(t, "cid", cfg.RunApiBackend.ClientId)
+	// applyEnvVars defaults PrivateKeyFile to the well-known name when neither file nor env set it.
+	assert.Equal(t, defaultPrivateKeyFile, cfg.PrivateKeyFile)
+}
+
+func Test_ReadConfig_InvalidYamlReturnsError(t *testing.T) {
+	withSavedAppConfig(t)
+	// A bare scalar where a mapping is expected makes yaml.Unmarshal into TfRunnerConfig fail.
+	path := writeConfigFile(t, "this-is-not-a-mapping")
+	t.Setenv(envConfigFile, path)
+
+	_, err := ReadConfig(discardLogger())
+	assert.Error(t, err)
+}
+
+func Test_ReadConfig_MissingAuthInPollingModeFails(t *testing.T) {
+	withSavedAppConfig(t)
+	path := writeConfigFile(t, "runnerUuid: some-uuid\n")
+	t.Setenv(envConfigFile, path)
+
+	_, err := ReadConfig(discardLogger())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "authentication required in polling mode")
+}
+
+func Test_ReadConfig_MissingRunnerUuidFails(t *testing.T) {
+	withSavedAppConfig(t)
+	path := writeConfigFile(t, `
+api:
+  user: u
+  password: p
+`)
+	t.Setenv(envConfigFile, path)
+
+	_, err := ReadConfig(discardLogger())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "runnerUuid is required")
+}
+
+func Test_ReadConfig_LoadsPrivateKeyFile(t *testing.T) {
+	withSavedAppConfig(t)
+	keyPath := filepath.Join(t.TempDir(), "key.pem")
+	require.NoError(t, os.WriteFile(keyPath, []byte("PRIVATE-KEY-CONTENTS"), 0o600))
+
+	path := writeConfigFile(t, `
+runnerUuid: uuid
+api:
+  user: u
+  password: p
+`)
+	t.Setenv(envConfigFile, path)
+	t.Setenv(envPrivateKeyFile, keyPath)
+
+	cfg, err := ReadConfig(discardLogger())
+	require.NoError(t, err)
+	assert.Equal(t, "PRIVATE-KEY-CONTENTS", cfg.PrivateKey, "private key file contents must load into PrivateKey")
+}
+
+func Test_ReadConfig_SingleRunModeSkipsAuthRequirement(t *testing.T) {
+	withSavedAppConfig(t)
+	path := writeConfigFile(t, "runnerUuid: uuid\n")
+	t.Setenv(envConfigFile, path)
+	t.Setenv(envExecutionMode, "single-run")
+	t.Setenv(envRunJsonFilePath, "/var/run/secrets/meshstack/run.json")
+
+	_, err := ReadConfig(discardLogger())
+	require.NoError(t, err, "single-run mode with RUN_JSON_FILE_PATH must not require auth")
+}
+
+func Test_ReadConfig_BothAuthMethodsConfigured(t *testing.T) {
+	withSavedAppConfig(t)
+	path := writeConfigFile(t, `
+runnerUuid: uuid
+api:
+  user: u
+  password: p
+  clientId: cid
+  clientSecret: csecret
+`)
+	t.Setenv(envConfigFile, path)
+
+	// Both auth methods fully configured is a valid configuration (API key wins) — ReadConfig logs
+	// the precedence note and succeeds.
+	_, err := ReadConfig(discardLogger())
+	require.NoError(t, err)
+}
+
+func Test_ReadConfig_DefaultConfigPathWhenEnvUnset(t *testing.T) {
+	withSavedAppConfig(t)
+	t.Setenv(envConfigFile, "") // empty => ReadConfig falls back to the default "runner-config.yml"
+	t.Setenv(envRunnerUuid, "env-uuid")
+	t.Setenv(envAuthUsername, "u")
+	t.Setenv(envAuthPassword, "p")
+
+	// The default file does not exist in the package test dir, so ReadConfig uses defaults + env.
+	cfg, err := ReadConfig(discardLogger())
+	require.NoError(t, err)
+	assert.Equal(t, "env-uuid", cfg.RunnerUuid)
+}
+
+func Test_ReadConfig_InsecureHostKeysLogged(t *testing.T) {
+	withSavedAppConfig(t)
+	path := writeConfigFile(t, `
+runnerUuid: uuid
+insecureHostKeys: true
+api:
+  user: u
+  password: p
+`)
+	t.Setenv(envConfigFile, path)
+
+	cfg, err := ReadConfig(discardLogger())
+	require.NoError(t, err)
+	assert.True(t, cfg.SkipHostKeyValidation)
+}
+
+func Test_ReadConfig_SingleRunMissingRunJsonPathFails(t *testing.T) {
+	withSavedAppConfig(t)
+	path := writeConfigFile(t, "runnerUuid: uuid\n")
+	t.Setenv(envConfigFile, path)
+	t.Setenv(envExecutionMode, "single-run")
+	t.Setenv(envRunJsonFilePath, "") // required in single-run mode
+
+	_, err := ReadConfig(discardLogger())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "RUN_JSON_FILE_PATH")
+}
+
+func Test_ApplyPrivateKeyFile_EmptyPathAndReadError(t *testing.T) {
+	cfg := TfRunnerConfig{}
+	// Empty path is a no-op.
+	applyPrivateKeyFile("", &cfg, discardLogger())
+	assert.Empty(t, cfg.PrivateKey)
+
+	// A path pointing at a directory yields a non-ENOENT read error: logged as a warning, PrivateKey
+	// left untouched (config.go:177-179).
+	applyPrivateKeyFile(t.TempDir(), &cfg, discardLogger())
+	assert.Empty(t, cfg.PrivateKey)
+}
+
+func Test_RunScript_SucceedsWithEmptyRunJson(t *testing.T) {
+	res, err := RunScript(context.Background(), ScriptParams{
+		Name:    "pre-run",
+		Script:  "echo hello",
+		WorkDir: t.TempDir(),
+		RunMode: APPLY.str(),
+		// empty RunJsonBase64 => decodeRunJSON returns (nil, nil) (scriptcmd.go:156-158)
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Contains(t, res.SystemMessage, "hello")
+}
+
+func Test_NewAuthProvider_Precedence(t *testing.T) {
+	apiKey := RunApiConfig{Url: "u", ClientId: "cid", ClientSecret: "csecret", User: "usr", Password: "pw"}
+	assert.IsType(t, &meshapi.ApiKeyAuth{}, apiKey.NewAuthProvider(), "clientId+clientSecret takes precedence over basic auth")
+
+	basic := RunApiConfig{User: "usr", Password: "pw"}
+	assert.IsType(t, meshapi.BasicAuth{}, basic.NewAuthProvider())
+
+	none := RunApiConfig{}
+	assert.Nil(t, none.NewAuthProvider(), "no credentials => nil provider (valid in single-run mode)")
+}
+
+// --- DTO conversions -------------------------------------------------------------------------
+
+func Test_RunDTOToInternal_MapsAllFields(t *testing.T) {
+	dto := runDetailsDTO(
+		withBehavior(DETECT.str()),
+		withRepo("/repo", "modules/x"),
+		withRunToken("rt"),
+		withInputs(
+			// Values arrive plaintext: decryption happens once at the claim boundary
+			// (rundecrypt.Wrap / the controller), never in this mapper.
+			buildingBlockInput("secret", "already-plain", DATA_TYPE_STRING, sensitiveInput()),
+			buildingBlockInput("EXPORTED", "v", DATA_TYPE_STRING, envInput()),
+		),
+	)
+
+	run, err := RunDTOToInternal(dto)
+	require.NoError(t, err)
+	assert.Equal(t, DETECT, run.Behavior)
+	assert.Equal(t, "rt", run.RunToken)
+	assert.Equal(t, "block-uuid", run.BuildingBlockId)
+
+	secret := run.Vars["secret"]
+	require.NotNil(t, secret)
+	assert.Equal(t, "already-plain", secret.value)
+	assert.True(t, run.Vars["EXPORTED"].env)
+}
+
+func Test_RunDTOToInternal_BadBehaviorReturnsError(t *testing.T) {
+	dto := runDetailsDTO()
+	dto.Spec.Behavior = "NONSENSE"
+	_, err := RunDTOToInternal(dto)
+	assert.Error(t, err)
+}
+
+func Test_RunDTOToInternal_UnparsableImplementationReturnsError(t *testing.T) {
+	dto := runDetailsDTO()
+	dto.Spec.Definition.Spec.Implementation = json.RawMessage(`{"async": "not-a-bool"}`)
+	_, err := RunDTOToInternal(dto)
+	assert.Error(t, err)
+}
+
+func Test_TerraformImplAuthMethod_SshBranch(t *testing.T) {
+	key := "ssh-key-pem"
+	impl := &meshapi.TerraformImplementation{
+		SshPrivateKey: &key,
+		KnownHost:     &meshapi.KnownHostDTO{Host: "h", KeyType: "ssh-rsa", KeyValue: "AAAA"},
+	}
+	auth := terraformImplAuthMethod(impl)
+	sshAuth, ok := auth.(*SshAuth)
+	require.True(t, ok, "an implementation with an SSH private key must yield *SshAuth")
+	assert.Equal(t, "ssh-key-pem", sshAuth.certStr)
+	require.NotNil(t, sshAuth.knownHostEntry)
+	assert.Equal(t, "h", sshAuth.knownHostEntry.host)
+
+	// No key => NoAuth.
+	noAuth := terraformImplAuthMethod(&meshapi.TerraformImplementation{})
+	assert.IsType(t, &NoAuth{}, noAuth)
+}
+
+func Test_KnownHostsToInternal_Nil(t *testing.T) {
+	assert.Nil(t, knownHostsToInternal(nil))
+	kh := knownHostsToInternal(&meshapi.KnownHostDTO{Host: "h", KeyType: "kt", KeyValue: "kv"})
+	require.NotNil(t, kh)
+	assert.Equal(t, "h", kh.host)
+	assert.Equal(t, "kt", kh.key)
+	assert.Equal(t, "kv", kh.value)
+}
+
+// --- small enum / status types --------------------------------------------------------------
+
+func Test_ExecutionStatus_String(t *testing.T) {
+	assert.Equal(t, "PENDING", report.PENDING.String())
+	assert.Equal(t, "IN_PROGRESS", report.IN_PROGRESS.String())
+	assert.Equal(t, "SUCCEEDED", report.SUCCEEDED.String())
+	assert.Equal(t, "FAILED", report.FAILED.String())
+	// Behavior change: tf adopted report.ExecutionStatus, whose stringer returns "UNKNOWN"
+	// for an unmapped value rather than panicking as the deleted tf-local ExecutionStatus.str() did
+	// -- this type now crosses package boundaries, so a process-crashing stringer is the wrong
+	// failure mode (see report/executionstatus.go).
+	assert.NotPanics(t, func() {
+		assert.Equal(t, "UNKNOWN", report.ExecutionStatus(99).String())
+	})
+}
+
+func Test_RunStatus_StepPointerErrorBranches(t *testing.T) {
+	empty := &report.RunStatus{}
+	require.Error(t, empty.FirstStep(), "firstStep on a stepless run returns an error")
+	assert.Nil(t, empty.CurrentStepStatus(), "currentStepStatus out of range returns nil")
+
+	single := &report.RunStatus{Steps: []report.StepStatus{{Name: "only"}}}
+	require.NoError(t, single.FirstStep())
+	assert.Equal(t, "only", single.CurrentStepStatus().Name)
+	assert.Error(t, single.NextStep(), "nextStep past the last step returns an error")
+}
+
+func Test_ToWorkspaceStr_NilIdentifiersBecomePlaceholders(t *testing.T) {
+	run := Run{BuildingBlockId: "bb-1"}
+	assert.Equal(t, "_._._:bb-1", run.toWorkspaceStr(), "nil identifiers render as _ placeholders")
+
+	ws, proj, plat := "ws", "proj", "plat"
+	run2 := Run{WorkspaceIdentifier: &ws, ProjectIdentifier: &proj, FullPlatformIdentifier: &plat, BuildingBlockId: "bb-2"}
+	assert.Equal(t, "ws.proj.plat:bb-2", run2.toWorkspaceStr())
+}

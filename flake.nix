@@ -22,15 +22,9 @@
         core_packages = [
           pkgs.go
           pkgs.golangci-lint
-          pkgs.jdk21_headless
+          pkgs.go-task # task runner (replaces the Makefile, see Taskfile.yml / D14)
           pkgs.opentofu
           pkgs.minikube
-
-          # kotlin linter
-          # Keep this version in sync with the ktlint { version } block in build.gradle
-          # and the ktlint --format hook in .claude/settings.json.
-          # nixos-25.11 stable only ships 1.7.1; unstable currently provides 1.8.0.
-          pkgsUnstable.ktlint
         ];
       in
       {

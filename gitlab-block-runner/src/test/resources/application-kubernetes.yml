@@ -1,5 +1,0 @@
-# Override the config for Kubernetes mode without any basic auth.
-blockrunner:
-  uuid: f4f4402b-f54d-4ab9-93ae-c07e997041e9
-  api:
-    url: http://localhost:8080

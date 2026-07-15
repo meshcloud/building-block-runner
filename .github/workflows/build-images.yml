@@ -25,22 +25,37 @@ jobs:
     strategy:
       matrix:
         include:
+          # The run-controller image builds cmd/bbrunner with -tags k8s: the lean Job-dispatching
+          # controller only (the no-tag in-process superset is a dev-only `go build`, not shipped).
+          # cmd/tf is the lean tf runner-type binary.
           - app: run-controller
-            dockerfile: run-controller/Dockerfile
+            dockerfile: containers/run-controller/Dockerfile
           - app: tf-block-runner
-            dockerfile: tf-block-runner/Dockerfile
+            dockerfile: containers/tf-block-runner/Dockerfile
+          # manual/gitlab/azure-devops/github: fit Go runner-type binaries. All four are pure
+          # HTTP clients that differ only in the compiled package + baked runner-type config, so
+          # they share ONE parameterized containers/http-runner/Dockerfile driven by CMD_PKG +
+          # CONFIG_DIR build-args.
           - app: manual-block-runner
-            dockerfile: containers/jvm.Dockerfile
-            runner-module: manual-block-runner
+            dockerfile: containers/http-runner/Dockerfile
+            buildargs: |
+              CMD_PKG=./cmd/manual
+              CONFIG_DIR=manual-block-runner
           - app: github-block-runner
-            dockerfile: containers/jvm.Dockerfile
-            runner-module: github-block-runner
+            dockerfile: containers/http-runner/Dockerfile
+            buildargs: |
+              CMD_PKG=./cmd/github
+              CONFIG_DIR=github-block-runner
           - app: gitlab-block-runner
-            dockerfile: containers/jvm.Dockerfile
-            runner-module: gitlab-block-runner
+            dockerfile: containers/http-runner/Dockerfile
+            buildargs: |
+              CMD_PKG=./cmd/gitlab
+              CONFIG_DIR=gitlab-block-runner
           - app: azure-devops-block-runner
-            dockerfile: containers/jvm.Dockerfile
-            runner-module: azure-devops-block-runner
+            dockerfile: containers/http-runner/Dockerfile
+            buildargs: |
+              CMD_PKG=./cmd/azdevops
+              CONFIG_DIR=azure-devops-block-runner
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -87,4 +102,4 @@ jobs:
             ${{ env.DOCKERHUB_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:latest
           build-args: |
             VERSION=${{ steps.version.outputs.version }}
-            RUNNER_MODULE=${{ matrix.runner-module }}
+            ${{ matrix.buildargs }}

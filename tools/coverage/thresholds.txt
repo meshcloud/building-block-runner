@@ -1,0 +1,97 @@
+# One `<import-path-prefix> <min-percent>` line per enforced coverage gate.
+#
+# check.sh recomputes statement coverage across every profile line whose source file's
+# import path equals the prefix or sits under it (prefix + "/"), then fails the build if
+# that recomputed percentage is below min-percent. A prefix with zero matching statements
+# in the profile (stale path, typo, or file fully excluded) is also treated as a failure —
+# a silently vacuous gate is worse than a loud one.
+#
+# Ships empty for phase 0: the mechanism exists and CI already runs it on every module's
+# profile, but nothing gates yet (PLAN_HIGH_LEVEL.md D6, Phase 0 exit criteria — "not yet
+# gating"). Phase 1 turns the gate on for the tf runner's characterization tests with:
+#   github.com/meshcloud/building-block-runner/internal/tf 90
+#
+# Phase 3+ add lines as shared/domain packages join the gate (D6).
+
+# Phase 1 (PLAN_DETAIL_01 §8, §9 CP13): gate the tf runner's characterization tests at 90%
+# statement coverage, with git.go/tfbinaries.go excluded (see exclusions.txt).
+github.com/meshcloud/building-block-runner/internal/tf 90
+
+# Phase 3 (PLAN_DETAIL_03 §5.3/§9): the shared config package (D7) -- hermetically
+# testable (temp files, t.Setenv), no exclusion-list entries needed.
+github.com/meshcloud/building-block-runner/internal/config 90
+
+# Phase 3 (PLAN_DETAIL_03 §5.2/§9): the consolidated meshapi client (HttpError, retry,
+# Identity, RunClient/RunnerClient split) -- hermetic fake-transport + httptest tests.
+github.com/meshcloud/building-block-runner/internal/meshapi 90
+
+# Phase 3 (PLAN_DETAIL_03 §5.4/§9): the shared reporting facility (D4) -- direct tests
+# for Progress/Observer/RunLog/ToStatusUpdate (fake Reporter, temp files, -race).
+github.com/meshcloud/building-block-runner/internal/report 90
+
+# Phase 4 (PLAN_DETAIL_04 §4.3/§7.1, step 3): the D12 observability listener + generic
+# runner_* metrics -- hermetic httptest/testutil tests, no exclusion-list entries needed.
+github.com/meshcloud/building-block-runner/internal/observability 90
+
+# Phase 5 (PLAN_DETAIL_05 §5/§13): internal/controller dissolves into the backend-agnostic
+# claim/drain loop (dispatch) and the Kubernetes-specific Dispatcher (k8sjob). dispatch is
+# hermetically testable via fakes/channels (no exclusion-list entries needed); k8sjob's
+# manifest-building code is tested via k8s.io/client-go/kubernetes/fake, with only the real
+# cluster-connection file excluded (exclusions.txt).
+github.com/meshcloud/building-block-runner/internal/dispatch 90
+github.com/meshcloud/building-block-runner/internal/k8sjob 90
+
+# Phase 6a (PLAN_DETAIL_06A_manual.md §10.3): the manual runner port (D6 Kotlin corollary).
+# Whole package hermetically testable via meshapitest (meshStack side) — no external system,
+# no decryption — so no exclusion-list entries (umbrella §5.3). The runner type polling wiring
+# lives in cmd/manual + cmd/bbrunner (package main, not gated).
+github.com/meshcloud/building-block-runner/internal/manual 90
+
+# Phase 6b (PLAN_DETAIL_06B_gitlab.md §10.3): the gitlab runner port. Whole package
+# hermetically testable via meshapitest (meshStack side) + httptest (the fake GitLab
+# trigger endpoint) -- no exclusion-list entries (umbrella §5.3). The runner type polling
+# wiring lives in cmd/gitlab + cmd/bbrunner (package main, not gated).
+github.com/meshcloud/building-block-runner/internal/gitlab 90
+
+# Phase 6c (PLAN_DETAIL_06C_azdevops.md §10.3): the azure-devops runner port (D6 Kotlin
+# corollary) -- the heaviest of the four ports (sync poll loop + stage-step fan-out). Whole
+# package hermetically testable via meshapitest (meshStack side) + a fake Azure DevOps
+# httptest transport + an injected Clock (no real sleeps) -- no exclusion-list entries. The
+# runner type polling wiring lives in cmd/azdevops + cmd/bbrunner (package main, not gated).
+github.com/meshcloud/building-block-runner/internal/azdevops 90
+
+# Phase 6d (PLAN_DETAIL_06D_github.md §10.3): the github runner port (D6 Kotlin corollary).
+# Whole package hermetically testable — fake HTTP for BOTH meshStack (meshapitest) and GitHub
+# (httptest stub) + a fake clock for the find/poll loops — so NO exclusion-list entries
+# (umbrella §5.3). The runner type polling wiring lives in cmd/github + cmd/bbrunner (package
+# main, not gated).
+github.com/meshcloud/building-block-runner/internal/github 90
+
+# Shared scalar value-stringification helper (extracted from azdevops/gitlab): the string
+# form a building-block input takes when transported to an external CI/CD API. Pure,
+# hermetically table-tested.
+github.com/meshcloud/building-block-runner/internal/valuestring 90
+
+# Shared secret-decryption seam + sensitive-input type policy: the single home for the
+# Decryptor/NoopDecryptor/CertDecryptor seam and the Decryptable/DecryptValue type guard.
+# Hermetically table-tested with a fake Decryptor + the checked-in fixture keypair.
+github.com/meshcloud/building-block-runner/internal/secret 90
+
+# Shared cross-cutting HTTP transport concerns (PLAN.md "Generic JSON HTTP client"): a
+# no-follow-redirect *http.Client builder and meshapi's former retry/backoff RoundTripper,
+# now generic and shared. Hermetically table-tested (scripted transport, httptest).
+github.com/meshcloud/building-block-runner/internal/httpclient 90
+
+# T6: the shared cmd/* bootstrap (Main/Serve/Runner + the RUN_JSON_FILE_PATH single-run
+# scaffold). Hermetically self-covered via fake looper/drainer and t.Setenv/t.TempDir.
+github.com/meshcloud/building-block-runner/internal/runmode 90
+
+# T3 (closed): cmd/* are `package main` and intentionally NOT gated. Every runner-type
+# entrypoint (cmd/tf, cmd/gitlab, …) and cmd/bbrunner are thin process wiring — main(), the
+# run*Polling bootstraps, runController*, the superset serve/drain loop — which start real
+# servers/loops/k8s dispatch and can't be reached by a hermetic `go test`. The logic that
+# used to hide in cmd/bbrunner (the run-controller config: yaml load, env overrides, api-auth
+# validation) was extracted into internal/config (ControllerConfig/LoadController, gated at 90
+# above), so what remains in cmd/bbrunner is genuinely just wiring — no gate, by design, like
+# every other cmd/* main. (No exclusions.txt entry is needed: with no cmd/* threshold there is
+# nothing for it to drop.)

@@ -1,0 +1,22 @@
+# One `<import-path>/<file.go>  # justification` line per file excluded from coverage
+# reports and threshold math.
+#
+# check.sh drops every profile statement whose source file exactly matches a listed path
+# before computing the report or any threshold — for real-I/O adapter files where an
+# opt-in integration/e2e test proves behavior but a hermetic `go test` cannot reasonably
+# reach every line (D6): real k8s API calls, real git/tofu process execution, real network
+# downloads. The list lives here, in one visible place, each entry justified.
+#
+# Ships empty for phase 0 (the mechanism exists; nothing is excluded yet). Phase 1 defines
+# the concrete tf-block-runner adapter exclusions from the coverage data in
+# PLAN_DETAIL_00_guardrails.md §3/§8.
+#
+# Removing a line asserts the file is now covered well enough to stand on its own merits;
+# new gates go in tools/coverage/thresholds.txt, not here.
+
+# --- Phase 1: tf runner adapter exclusions (PLAN_DETAIL_01 §7) ---
+github.com/meshcloud/building-block-runner/internal/tf/git.go  # Real go-git/exec-git+bash adapter: SSH clones need a live server and the Azure path shells out to git; the hermetic local-repo tests (CP11) exercise clone/checkout, but the auth transports and Azure remote quirks are only reachable via opt-in real-I/O e2e.
+github.com/meshcloud/building-block-runner/internal/tf/tfbinaries.go  # Real HashiCorp/OpenTofu release downloads (network + signature verification); tfbinaries_test.go keeps exercising it outside the gate.
+
+# --- Phase 5: k8sjob real-cluster I/O exclusion (PLAN_DETAIL_05 §5/§13) ---
+github.com/meshcloud/building-block-runner/internal/k8sjob/cluster.go  # Real Kubernetes API I/O: kubeconfig loading via client-go's clientcmd (in-cluster/KUBECONFIG/$HOME precedence) and OIDC discovery HTTP against the live API server's /.well-known/openid-configuration. Everything else in k8sjob is hermetically testable via k8s.io/client-go/kubernetes/fake (kubernetes_test.go); real cluster connectivity is proven by the phase-7 opt-in kind controller e2e (plan 07 §5.4), not this gate.

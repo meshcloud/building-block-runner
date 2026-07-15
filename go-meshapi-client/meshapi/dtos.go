@@ -109,7 +109,7 @@ const (
 
 type AuthorDTO struct {
 	Identifier  string     `json:"identifier"`
-	Type        AuthorType `json:"authorType"`
+	Type        AuthorType `json:"type"`
 	DisplayName *string    `json:"displayName"`
 }
 

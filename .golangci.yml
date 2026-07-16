@@ -1,0 +1,363 @@
+# Visit https://golangci-lint.run/ for usage documentation
+# and information on other useful linters
+#
+# One config for the single consolidated module rooted at the repo root (phase 4,
+# PLAN_DETAIL_04 §4.6 — the three former modules go-meshapi-client/run-controller/
+# tf-block-runner and ./go.work are gone). `task lint` runs `golangci-lint run ./...`
+# once at the repo root; depguard rules are keyed on the new internal/* + cmd/* layout.
+#
+# Mirrors terraform-provider-meshstack/.golangci.yml (full linter set, depguard-per-area
+# pattern) trimmed to this repo's module boundaries; the vet-in-lint precedent/comment is
+# from meshfed-release/buildingblocks/multiplexing-block-runner/.golangci.yml.
+# `govet` runs here, so do not run `go vet` separately (PLAN_DETAIL_00_guardrails.md §5.1/D14).
+version: "2"
+issues:
+  max-same-issues: 0
+  # Default 50/linter cap would silently hide real findings once a module crosses it
+  # (tf-block-runner's testifylint backlog did) -- show everything, always.
+  max-issues-per-linter: 0
+
+formatters:
+  enable:
+    - gci
+    - gofmt
+  settings:
+    gci:
+      sections:
+        - standard     # Go standard library
+        - default      # All other external dependencies
+        - localmodule  # This repository's modules
+      # Phase 4 collapsed the three modules into one, so every
+      # github.com/meshcloud/building-block-runner/... import now classifies as
+      # "localmodule" (was "default" while the sibling modules were separate).
+
+linters:
+  default: none
+  enable:
+    - depguard
+    - durationcheck
+    - errcheck
+    - copyloopvar
+    - forcetypeassert
+    - godot
+    - ineffassign
+    - makezero
+    - misspell
+    - nilerr
+    - predeclared
+    - staticcheck
+    - usetesting
+    - unconvert
+    - unparam
+    - unused
+    - govet
+    - testifylint
+    - thelper
+  settings:
+    depguard:
+      rules:
+        # Shared API client + domain packages (former go-meshapi-client): stdlib-only in
+        # production, plus gopkg.in/yaml.v2 for the config deep-merge loader (D7). The
+        # module-root allow covers the intra-package internal imports (e.g. config ->
+        # meshapi, report -> meshapi) now that everything lives in one module.
+        internal-client:
+          files:
+            - "**/internal/meshapi/*.go"
+            - "**/internal/crypto/*.go"
+            - "**/internal/config/*.go"
+            - "**/internal/report/*.go"
+            - "**/internal/meshapitest/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - gopkg.in/yaml.v2
+        internal-client-test:
+          files:
+            - "**/internal/meshapi/*_test.go"
+            - "**/internal/crypto/*_test.go"
+            - "**/internal/config/*_test.go"
+            - "**/internal/report/*_test.go"
+            - "**/internal/meshapitest/*_test.go"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/stretchr/testify
+            - gopkg.in/yaml.v2
+
+        # Management listener (internal/observability, D12 §4.3): /healthz + /metrics +
+        # the generic runner_* series, plus the opt-in Prometheus push-gateway support for
+        # single-run mode (docs/ARCHITECTURE.md §6.1). Only observability + controller
+        # (+ the cmd/* wiring, covered by their own groups above/below) may import
+        # prometheus/* -- tf sees only the small Meter interface it declares on its own
+        # consumer side (P3), never this package.
+        observability:
+          files:
+            - "**/internal/observability/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+        observability-test:
+          files:
+            - "**/internal/observability/*_test.go"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+            - github.com/prometheus/client_model
+            - github.com/stretchr/testify
+
+        # dispatch (internal/dispatch, PLAN_DETAIL_05 §5): the backend-agnostic claim/drain
+        # loop + capacity guard. Backend-agnostic means no k8s.io/* here (that is k8sjob's
+        # job) -- prometheus is allowed because the frozen run_controller_* MetricsCollector
+        # (moved from the former internal/controller/metrics.go) lives in this package.
+        dispatch:
+          files:
+            - "**/internal/dispatch/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+        dispatch-test:
+          files:
+            - "**/internal/dispatch/*_test.go"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+            # testify is the repo-wide test-assertion library (every other *-test group
+            # allows it); its omission here was an oversight masked by the previously-inert
+            # globs (P1.1) -- a test-only dependency, not a production layering exception.
+            - github.com/stretchr/testify
+
+        # k8sjob (internal/k8sjob, PLAN_DETAIL_05 §5): the KubernetesJobDispatcher (Job/
+        # Secret/ServiceAccount manifests, WIF, OIDC discovery) dissolved out of the former
+        # internal/controller. Imports dispatch (parameter types: ClaimedRun, Dispatcher,
+        # UnhandledTypeError) but never prometheus directly -- it drives the frozen metrics
+        # through the small consumer-side JobMetrics interface it declares itself.
+        k8sjob:
+          files:
+            - "**/internal/k8sjob/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - k8s.io/api
+            - k8s.io/apimachinery
+            - k8s.io/client-go
+        k8sjob-test:
+          files:
+            - "**/internal/k8sjob/*_test.go"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - k8s.io/api
+            - k8s.io/apimachinery
+            - k8s.io/client-go
+
+        # cmd/bbrunner: the run-controller/superset runner type wiring (D11 -- only main wires
+        # adapters/dispatchers together). Links dispatch + k8sjob + prometheus (to pass
+        # prometheus.DefaultGatherer to the management listener).
+        bbrunner:
+          files:
+            - "**/cmd/bbrunner/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+        bbrunner-test:
+          files:
+            - "**/cmd/bbrunner/*_test.go"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+            - github.com/stretchr/testify
+
+        # tf runner type (internal/tf): executes tofu/terraform plans against a cloned git repo;
+        # the hashicorp/go-git/zclconf toolchain. Must NOT link k8s (disjoint-tree property,
+        # §3.6) — enforced by the strict allow-list omitting k8s.io. tf sees only the small
+        # Meter interface it declares on its own consumer side (P3), never prometheus/*
+        # directly -- that lives in cmd/tf's own group below, alongside its other wiring.
+        tf:
+          files:
+            - "**/internal/tf/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/go-git/go-git/v5
+            - github.com/hashicorp/go-version
+            - github.com/hashicorp/hc-install
+            - github.com/hashicorp/hcl/v2
+            - github.com/hashicorp/terraform-exec
+            - github.com/opentofu/tofudl
+            - github.com/zclconf/go-cty
+            - golang.org/x/crypto
+        tf-test:
+          files:
+            - "**/internal/tf/*_test.go"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/PaesslerAG/jsonpath
+            - github.com/go-git/go-git/v5
+            - github.com/hashicorp/go-version
+            - github.com/hashicorp/hc-install
+            - github.com/hashicorp/hcl/v2
+            - github.com/hashicorp/terraform-exec
+            - github.com/opentofu/tofudl
+            - github.com/sebdah/goldie/v2
+            - github.com/stretchr/testify
+            - github.com/zclconf/go-cty
+            - golang.org/x/crypto
+
+        # cmd/tf: the tf runner type's wiring (single-run vs. polling-mode dispatch, its own
+        # single-run Meter/pushgateway wiring). Unlike internal/tf, it may import prometheus
+        # directly (mirroring bbrunner/manual/gitlab/azdevops/github's cmd wiring below) since
+        # it sits on observability's consumer side, not tf's own engine (P3).
+        cmd-tf:
+          files:
+            - "**/cmd/tf/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+        cmd-tf-test:
+          files:
+            - "**/cmd/tf/*_test.go"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/stretchr/testify
+
+        # manual runner type (internal/manual) + its wiring cmd/manual (phase 6a, the Kotlin-port
+        # template): an HTTP-only echo runner — shared client/report/config/dispatch + its own
+        # handler, NO k8s, NO go-git, NO tofu (D8). prometheus is allowed for the runner type's
+        # RunPolling wiring (the D12 runner_* series + the dispatch loop's default-registry
+        # metrics). The 06B–D runner types add their own analogous groups.
+        manual:
+          files:
+            - "**/internal/manual/*.go"
+            - "**/cmd/manual/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+        manual-test:
+          files:
+            - "**/internal/manual/*_test.go"
+            - "**/cmd/manual/*_test.go"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+            - github.com/stretchr/testify
+
+        # gitlab runner type (internal/gitlab) + its wiring cmd/gitlab (phase 6b, reusing the
+        # 06A template): triggers a GitLab CI/CD pipeline via one external POST — shared
+        # client/report/config/dispatch + its own handler, NO k8s, NO go-git, NO tofu (D8).
+        # No new HTTP dependency: the multipart request is built with stdlib mime/multipart
+        # over the shared *http.Client seam (P2). prometheus is allowed for the runner type's
+        # polling wiring (the D12 runner_* series + the dispatch loop's default-registry
+        # metrics), mirroring the manual group.
+        gitlab:
+          files:
+            - "**/internal/gitlab/*.go"
+            - "**/cmd/gitlab/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+        gitlab-test:
+          files:
+            - "**/internal/gitlab/*_test.go"
+            - "**/cmd/gitlab/*_test.go"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+            - github.com/stretchr/testify
+
+        # azure-devops runner type (internal/azdevops) + its wiring cmd/azdevops (phase 6c): an
+        # HTTP-only sync-poll + async-handover runner -- shared client/report/config/dispatch/
+        # crypto/meshapi (incl. the shared meshapi.Decryptor/DecryptInputs seam, STOP-C4) + its
+        # own handler, NO k8s, NO go-git, NO tofu (D8). prometheus is allowed for the runner type's
+        # polling wiring (the D12 runner_* series + the dispatch loop's default-registry
+        # metrics), matching the manual/tf precedent.
+        azdevops:
+          files:
+            - "**/internal/azdevops/*.go"
+            - "**/cmd/azdevops/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+        azdevops-test:
+          files:
+            - "**/internal/azdevops/*_test.go"
+            - "**/cmd/azdevops/*_test.go"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+            - github.com/stretchr/testify
+
+        # github runner type (internal/github) + its wiring cmd/github (phase 6d, the Kotlin-port
+        # of GITHUB_WORKFLOW): App JWT (stdlib crypto, no jwt dependency) → installation token
+        # → workflow_dispatch → async handover / sync poll. HTTP-only — shared
+        # client/report/config/dispatch/crypto + its own handler; NO k8s, NO go-git, NO tofu,
+        # NO external JWT lib (§4.2/§16.13). prometheus is allowed for the RunPolling wiring.
+        github:
+          files:
+            - "**/internal/github/*.go"
+            - "**/cmd/github/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+        github-test:
+          files:
+            - "**/internal/github/*_test.go"
+            - "**/cmd/github/*_test.go"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/meshcloud/building-block-runner
+            - github.com/prometheus/client_golang
+            - github.com/stretchr/testify
+
+  # No temporary exclusion blocks remain: the phase-0 legacy debt block (errcheck/
+  # forcetypeassert/makezero on internal/(meshapi|crypto|config|report|meshapitest)) was
+  # paid off by fixing the underlying code in phase 7 (PLAN_DETAIL_07 §10 step 1 / L6), not
+  # carried forward. Only permanent linter configuration lives above.

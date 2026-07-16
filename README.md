@@ -9,15 +9,22 @@ meshStack ships with managed runners that work out of the box — no setup requi
 operate runners yourself on your own infrastructure. We believe it is important that you can inspect exactly what runs
 in your environment and deploy it on your own terms — full sovereignty over the execution layer, with no black boxes.
 
-This repository contains multiple runners, one for each supported tool:
+This repository is **one Go module** that builds one fit-for-purpose binary per **runner type**, plus the `bbrunner`
+binary that ships as the `run-controller` image and serves the `ALL` type. See
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full design record.
 
-| Runner                                                    | Language | Description                                       |
-|-----------------------------------------------------------|----------|---------------------------------------------------|
-| [`tf-block-runner`](tf-block-runner/)                     | Go       | Executes OpenTofu plans and applies               |
-| [`github-block-runner`](github-block-runner/)             | Kotlin   | Triggers GitHub Actions workflows                 |
-| [`gitlab-block-runner`](gitlab-block-runner/)             | Kotlin   | Triggers GitLab CI pipelines                      |
-| [`azure-devops-block-runner`](azure-devops-block-runner/) | Kotlin   | Triggers Azure DevOps pipelines                   |
-| [`manual-block-runner`](manual-block-runner/)             | Kotlin   | No-op runner for manually managed building blocks |
+| Runner (published image)                     | Type       | `cmd/` entrypoint | Description                                  |
+|-----------------------------------------------|------------|-------------------|----------------------------------------------|
+| [`tf-block-runner`](cmd/tf/)                  | Terraform  | `cmd/tf`          | Executes OpenTofu plans and applies          |
+| [`manual-block-runner`](cmd/manual/)          | Manual     | `cmd/manual`      | No-op runner for manually managed building blocks |
+| [`gitlab-block-runner`](cmd/gitlab/)          | GitLab     | `cmd/gitlab`      | Triggers GitLab CI pipelines                 |
+| [`azure-devops-block-runner`](cmd/azdevops/)  | Azure DevOps | `cmd/azdevops`  | Triggers Azure DevOps pipelines              |
+| [`github-block-runner`](cmd/github/)          | GitHub     | `cmd/github`      | Triggers GitHub Actions workflows            |
+|                                               |            |                   |                                              |
+| [`run-controller`](cmd/bbrunner/)             | `ALL`      | `cmd/bbrunner`    | Kubernetes controller that dispatches a claimed run of **any** type as a Job running that type's image; the same binary can also run a single type in-process (`bbrunner <type>`) |
+
+Each published image is a direct entrypoint for exactly one binary built from this module (see
+[Repository structure](#repository-structure)).
 
 ## Running a runner
 
@@ -29,6 +36,14 @@ Each runner is distributed as a container image and configured via a YAML file. 
 4. Reference the new runner in the Building Block Definition of your choice.
 
 The runner will then poll meshStack for pending runs and execute them.
+
+Configuration is resolved with precedence **compiled-in defaults < shared base YAML < per-runner YAML < environment
+variables** (env always wins). Every runner type also supports a single-run mode (`EXECUTION_MODE=single-run`, or the
+legacy `SPRING_PROFILES_ACTIVE=kubernetes` alias) that executes exactly one run from a mounted run JSON and exits.
+`run-controller` uses this mode when it dispatches a claimed run as a Kubernetes Job: it selects the image for the
+run's type and runs that image single-run — so the Job dispatch works for any type, not just Terraform. See
+[Configuration & deprecations](#configuration--deprecations) below and `docs/ARCHITECTURE.md` §5 for the full
+reference.
 
 For full configuration reference and deployment guides, see the [meshStack documentation](https://docs.meshcloud.io/guides/platform-ecosystem/how-to-run-building-block-runners/).
 We highly recommend creating a new runner via the meshStack UI as it will fully explain and generate the configuration for you.
@@ -45,81 +60,115 @@ For general information about the meshStack platform and Building Blocks, see th
 
 ## Repository structure
 
-This repository uses two separate build systems in parallel:
+- **One Go module, rooted at the repository root** (`go.mod`).
+- [`cmd/`](cmd/) — one `main` package per runner type (`cmd/tf`, `cmd/manual`, `cmd/gitlab`, `cmd/azdevops`,
+  `cmd/github`) plus `cmd/bbrunner`, which *is* the `run-controller` image. Each type's binary links only the
+  dependencies it needs (e.g. `cmd/tf` links go-git/OpenTofu, the other four link neither); `cmd/bbrunner` links all
+  of them plus the Kubernetes client. `cmd/*` is wiring only — domain logic lives in `internal/`. (Making
+  `run-controller` a leaner image via build tags is a documented future direction — see `docs/ARCHITECTURE.md` §8.)
+- [`internal/`](internal/) — shared and domain code, one concept per package: `meshapi` (meshStack API client),
+  `crypto`, `config`, `report` (status/log reporting), `mgmt` (health/metrics), `dispatch` (claim/dispatch loop +
+  in-process dispatcher), `k8sjob` (Kubernetes Job dispatcher), and one package per runner type (`tf`, `manual`,
+  `gitlab`, `azdevops`, `github`). See `docs/ARCHITECTURE.md` §2 for the package map and its dependency-direction
+  rules.
+- **Container build** — one multi-target root [`Dockerfile`](Dockerfile) + [`docker-bake.hcl`](docker-bake.hcl) build
+  every published image (`task images`). Baked config lives under `cmd/`: the shared fit config at
+  [`cmd/runner-config.yml`](cmd/runner-config.yml), the controller config at
+  [`cmd/bbrunner/runner-config.yml`](cmd/bbrunner/runner-config.yml), and tf's `known_hosts` at
+  [`cmd/tf/known_hosts`](cmd/tf/known_hosts). CA setup is in-binary (`internal/catrust`), so there is no shell
+  entrypoint wrapper.
+- [`deploy/`](deploy/) — deployment artifacts for the published images; today the controller's example Kubernetes
+  manifests under [`deploy/run-controller/`](deploy/run-controller/), later Helm chart(s).
+- [`tools/coverage/`](tools/coverage/) — the per-package statement-coverage gate (`thresholds.txt` +
+  `exclusions.txt`) enforced by `task coverage`.
+- [`docs/`](docs/) — [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) (the maintained architecture record) and
+  [`DEPRECATIONS.md`](docs/DEPRECATIONS.md) (the config/env alias inventory and removal timeline).
 
-- **Go modules** (`run-controller`, `tf-block-runner`, `go-meshapi-client`) are managed via a [Go workspace](go.work). Run `go work sync` from the root if module references change.
-- **JVM modules** (`block-runner-core`, `github-block-runner`, `gitlab-block-runner`, `azure-devops-block-runner`, `manual-block-runner`) are managed via [Gradle](build.gradle).
-
-Alongside the runners, the repository contains shared modules:
-
-- [`run-controller`](run-controller/) — Kubernetes controller that executes Building Block Runs via Kubernetes Jobs, supporting all runner implementations with parallel execution
-- [`block-runner-core`](block-runner-core/) — shared Kotlin library used by all JVM-based runners
-- [`go-meshapi-client`](go-meshapi-client/) — shared Go client for the meshcloud API
-
-Common tasks are available via `make`:
+Common tasks are available via [`task`](https://taskfile.dev):
 
 ```
-make help
+task --list
 ```
 
-## Health endpoint
+## Management endpoint (health & metrics)
 
-Every runner exposes a `/healthz` endpoint that returns `200 OK` with body `OK`. This is intended for liveness probes in container orchestrators.
+Every runner process exposes a single management listener serving `GET /healthz`
+(`200 OK`, body `OK` — intended for liveness probes) and `GET /metrics` (Prometheus
+exposition, `runner_*` series — or `run_controller_*` for the controller). Each runner type
+listens on a dedicated default port so several can run side by side locally:
 
-Each runner listens on a dedicated default port to avoid conflicts when running multiple runners locally alongside meshStack (which defaults to port 8080):
+| Runner type                 | Default `MANAGEMENT_PORT` | Metrics series               |
+|------------------------------|----------------------------|-------------------------------|
+| `tf-block-runner`            | 8100                       | `runner_*`                    |
+| `azure-devops-block-runner`  | 8101                       | `runner_*`                    |
+| `github-block-runner`        | 8102                       | `runner_*`                    |
+| `gitlab-block-runner`        | 8103                       | `runner_*`                    |
+| `manual-block-runner`        | 8104                       | `runner_*`                    |
+| `run-controller`             | 2112                       | `run_controller_*`            |
 
-| Runner                  | Default port |
-|-------------------------|--------------|
-| `tf-block-runner`       | 8100         |
-| `azure-devops-runner`   | 8101         |
-| `github-block-runner`   | 8102         |
-| `gitlab-block-runner`   | 8103         |
-| `manual-block-runner`   | 8104         |
-
-Override the port with the `PORT` environment variable:
+Override the port with the `MANAGEMENT_PORT` environment variable:
 
 ```bash
-PORT=9000 go run .           # tf-block-runner
-PORT=9000 ./gradlew bootRun  # JVM runners
+MANAGEMENT_PORT=9000 go run ./cmd/tf
 ```
 
-If you are running a runner through a Docker image, it will default to PORT=8080 as well. You can still decide to override the `PORT` environment variable in your environment.
+The legacy `PORT` variable is still honored as a deprecation-logged alias on every runner type but `run-controller`
+(`MANAGEMENT_PORT` takes precedence); every published image but `run-controller` still bakes `PORT=8080` as its
+container default, so an operator's runtime `PORT` override keeps working unchanged. Single-run mode (one Kubernetes
+Job, one run, then exit) serves no listener — a Job has no liveness/scrape lifecycle. See `docs/ARCHITECTURE.md` §6
+for the observability implications for Job-dispatched runs.
 
 ## Development
 
 ### Prerequisites
 
-- Go 1.22+
-- JDK 21+
+- Go 1.26 (or `nix develop`, see [`flake.nix`](flake.nix))
 
-### Build and test (Go)
-
-```bash
-make test          # run all Go tests
-make fmt           # format Go code
-make vet           # run go vet
-make tidy          # tidy go modules
-make work-sync     # sync go.work entries
-```
-
-### Build and test (JVM)
+### Build and test
 
 ```bash
-./gradlew build
-./gradlew test
+task test          # run all tests (-race)
+task lint          # lint with golangci-lint (runs go vet internally; no separate vet task)
+task fmt           # format Go code (golangci-lint fmt is the one formatter authority)
+task tidy          # tidy the go module
+task build         # build every runner binary (go build ./cmd/...)
+task coverage      # measure coverage and enforce the per-package gate (tools/coverage/)
 ```
 
 ### Run locally
 
 ```bash
-make start-run-controller    # start run-controller
-make start-tf-block-runner   # start tf-block-runner
+task start:run-controller    # go run ./cmd/bbrunner   (controller, dispatches Jobs to a Kubernetes cluster)
+task start:tf-block-runner   # go run ./cmd/tf
 ```
 
-See the individual module READMEs for module-specific instructions:
+Any other type can be run directly, either as its own fit binary or in-process through `bbrunner`:
 
-- [run-controller/README.md](run-controller/README.md)
-- [tf-block-runner/README.md](tf-block-runner/README.md)
+```bash
+go run ./cmd/manual                # standalone manual-block-runner
+go run ./cmd/bbrunner manual       # bbrunner running the manual type in-process
+```
+
+`run-controller` (`cmd/bbrunner` with no subcommand) expects a Kubernetes API to dispatch Jobs to; for
+local development against minikube, start minikube and point its `runner-config.yml`'s `api.url` at your meshfed
+instance (e.g. `http://host.minikube.internal:8080`).
+
+## Configuration & deprecations
+
+Config keys and environment variables are a customer-facing surface: nothing is renamed without keeping the old
+spelling as a working, deprecation-logged alias. The current alias set (all still fully supported):
+
+| Deprecated                                                          | Prefer instead                     |
+|----------------------------------------------------------------------|-------------------------------------|
+| `PORT`                                                                | `MANAGEMENT_PORT`                   |
+| `RUNCONTROLLER_CONFIG_FILE`                                          | `RUNNER_CONFIG_FILE`                |
+| `SPRING_PROFILES_ACTIVE` containing `kubernetes`                     | `EXECUTION_MODE=single-run`         |
+| the `blockrunner:` YAML block (`uuid`, `api`, `auth`, `debugMode`, `privateKey`/`privateKeyFile`, incl. kebab-case `api-key.client-id`) | flat, top-level YAML keys |
+| `logging.*` / `server.*` / `spring.*` YAML blocks                    | ignored (with a startup warning)    |
+
+Every alias is kept for at least the current major version's lifetime (and at minimum 12 months from general
+availability of this refactor), whichever is longer — see `docs/ARCHITECTURE.md` §5 for the full timeline and the
+rationale for each entry. Removals, if any, are always announced in release notes ahead of time.
 
 ## Release
 
@@ -157,4 +206,3 @@ and ensures your contribution aligns with the roadmap. For larger changes, pleas
 ## Security
 
 If you discover a security vulnerability, please **do not open a public issue**. See [SECURITY.md](SECURITY.md) for responsible disclosure instructions.
-

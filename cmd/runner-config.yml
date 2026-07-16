@@ -1,0 +1,27 @@
+# Single shared dev-local fit runner-config.yml, baked at /app/runner-config.yml into all five
+# fit images (manual/github/gitlab/azure-devops HTTP + tf). It carries only the well-known
+# local-dev runner identity (uuid) plus the COMMON api credentials. Everything else is a
+# compiled-in default in each type's loadconfig.go (or internal/tf/config.go):
+#   - api.url          — per-type mux port (manual 8301, github 8302, gitlab 8303, azdevops 8304);
+#                        tf gets RUNNER_API_URL stamped into the Job env on the shipped path.
+#   - version          — the ldflags build version (see docs/DEPRECATIONS.md §6).
+#   - debugMode        — manual only, Go zero-value false.
+#   - tf timeouts/dirs — compiled-in tf.Default* (internal/tf/config.go).
+# No crypto/key material is baked into any fit image (operator-supplied via
+# RUNNER_PRIVATE_KEY_FILE / privateKey for standalone polling).
+#
+# The load path resolves "runner-config.yml" CWD-relative with a RUNNER_CONFIG_FILE override
+# (loader.Path in each loadconfig.go). The run-controller's own config is a SEPARATE file
+# (cmd/bbrunner/runner-config.yml) — it bakes crypto + the implementations map and is NOT this
+# shared fit file.
+
+# RUNNER_UUID — the well-known local-dev runner uuid (meshfed magic-runner pair).
+uuid: 98520496-627d-43e6-82da-ce499179ff3f
+
+api:
+  # RUNNER_API_USERNAME / RUNNER_API_PASSWORD (Basic auth); blank clientId/clientSecret below
+  # disables API-key auth and falls back to Basic.
+  username: bb-api
+  password: guest
+  clientId: ""
+  clientSecret: ""

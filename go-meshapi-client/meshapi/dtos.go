@@ -25,6 +25,9 @@ type LinksDTO struct {
 	// saved terraform plan. Because it is a value (not pointer) struct, an absent JSON field
 	// unmarshals to a zero LinkDTO: an empty Href is the runner's signal to perform a plain apply.
 	PlanArtifact LinkDTO `json:"planArtifact,omitempty"`
+	// PlanArtifactUpload is where the runner uploads the plan artifact it produced (a DETECT run's
+	// terraform plan).
+	PlanArtifactUpload LinkDTO `json:"planArtifactUpload,omitempty"`
 }
 
 type LinkDTO struct {
@@ -306,9 +309,6 @@ type RunStatusUpdateDTO struct {
 	CreatedOn  time.Time             `json:"createdOn"`
 	Summary    *string               `json:"summary"`
 	Steps      []StepStatusUpdateDTO `json:"steps"`
-	// Artifact is an optional base64-encoded binary artifact produced by this run.
-	// For DETECT runs this holds the binary Terraform plan file.
-	Artifact string `json:"artifact,omitempty"`
 	// ChangesDetected reports whether the terraform plan found infrastructure changes.
 	// Set by DETECT runs only; absent for APPLY/DESTROY runs.
 	ChangesDetected *bool `json:"changesDetected,omitempty"`

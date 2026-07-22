@@ -32,6 +32,9 @@ type Run struct {
 	// PlanArtifactUrl is set (from the runner-facing _links.planArtifact.href) only when this
 	// APPLY run must apply a predecessor DETECT run's saved terraform plan. Empty => plain apply.
 	PlanArtifactUrl string
+	// PlanArtifactUploadUrl (from _links.planArtifactUpload.href) is where a DETECT run uploads the
+	// plan it produced.
+	PlanArtifactUploadUrl string
 }
 
 type Variable struct {

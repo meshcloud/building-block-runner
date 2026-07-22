@@ -32,7 +32,7 @@ type WorkerTestSuite struct {
 }
 
 type MockRunApiCalls struct {
-	fetch, register, update, download func(*http.Request) *http.Response
+	fetch, register, update, download, upload func(*http.Request) *http.Response
 }
 
 func noopCall(req *http.Request) *http.Response {
@@ -46,6 +46,10 @@ func (suite *WorkerTestSuite) scenarioClientBehavior(req *http.Request) *http.Re
 	// this is the predecessor plan-artifact download call
 	case req.Method == http.MethodGet && strings.Contains(req.URL.Path, "/plan-artifact"):
 		return suite.calls.download(req)
+
+	// this is the plan-artifact upload call
+	case req.Method == http.MethodPut && strings.Contains(req.URL.Path, "/plan-artifact"):
+		return suite.calls.upload(req)
 
 	// this is the "status update" call
 	case req.Method == http.MethodPatch && strings.Contains(req.URL.Path, "/status/source"):
@@ -110,6 +114,7 @@ func (suite *WorkerTestSuite) SetupTest() {
 		register: noopCall,
 		update:   noopCall,
 		download: noopCall,
+		upload:   noopCall,
 	}
 
 	suite.tfMock.initMockFuncs() // reset to default mock behavior
@@ -576,6 +581,12 @@ func mockValidRunDetailsFetchCall(behavior, repo, path string) func(_ *http.Requ
 			Async:            false,
 		}
 		implJSON, _ := json.Marshal(implDTO)
+		// A DETECT run uploads the plan it produces to the dedicated endpoint, so the backend always
+		// hands out a planArtifactUpload link for it.
+		var links meshapi.LinksDTO
+		if behavior == DETECT.str() {
+			links.PlanArtifactUpload = meshapi.LinkDTO{Href: "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/plan-artifact"}
+		}
 		body, _ := json.Marshal(
 			&meshapi.RunDetailsDTO{
 				ApiVersion: "v1",
@@ -602,6 +613,7 @@ func mockValidRunDetailsFetchCall(behavior, repo, path string) func(_ *http.Requ
 						},
 					},
 				},
+				Links: links,
 			},
 		)
 		header := make(http.Header)
@@ -650,6 +662,55 @@ func mockApplyRunWithPlanArtifactFetchCall(repo, repoPath, planArtifactHref stri
 				},
 				Links: meshapi.LinksDTO{
 					PlanArtifact: meshapi.LinkDTO{Href: planArtifactHref},
+				},
+			},
+		)
+		header := make(http.Header)
+		header.Add("Content-Type", meshapi.BlockRunMediaTypeV1)
+
+		return &http.Response{
+			StatusCode: 200,
+			Body:       io.NopCloser(bytes.NewBuffer(body)),
+			Header:     header,
+		}
+	}
+}
+
+func mockDetectRunWithUploadLinkFetchCall(repo, repoPath, planArtifactUploadHref string) func(_ *http.Request) *http.Response {
+	return func(_ *http.Request) *http.Response {
+		implDTO := meshapi.TerraformImplementation{
+			TerraformVersion: DEFAULT_TF_VER,
+			RepositoryUrl:    repo,
+			RepositoryPath:   p(repoPath),
+			Async:            false,
+		}
+		implJSON, _ := json.Marshal(implDTO)
+		body, _ := json.Marshal(
+			&meshapi.RunDetailsDTO{
+				ApiVersion: "v1",
+				Kind:       "MeshBuildingBlockRun",
+				Metadata:   meshapi.RunMetaDTO{Uuid: "run-uuid"},
+				Spec: meshapi.RunSpecDTO{
+					RunNumber: 1,
+					Behavior:  DETECT.str(),
+					RunToken:  "test-mock-run-token-12345",
+					BuildingBlock: meshapi.BuildingBlockSpecDTO{
+						Uuid: "block-uuid",
+						Spec: meshapi.BuildingBlockDetailsSpecDTO{
+							DisplayName: "Test-BuildingBlock",
+							Inputs:      make([]meshapi.BuildingBlockInputSpecDTO, 0),
+						},
+					},
+					Definition: meshapi.DefinitionSpecDTO{
+						Uuid: "definition-uuid",
+						Spec: meshapi.DefinitionDetailsSpecDTO{
+							Version:        1,
+							Implementation: implJSON,
+						},
+					},
+				},
+				Links: meshapi.LinksDTO{
+					PlanArtifactUpload: meshapi.LinkDTO{Href: planArtifactUploadHref},
 				},
 			},
 		)

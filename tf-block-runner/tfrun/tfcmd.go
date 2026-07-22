@@ -47,6 +47,9 @@ type TfCmdParams struct {
 	runMode            string
 	// planArtifactUrl is copied from Run.PlanArtifactUrl; empty means plain apply.
 	planArtifactUrl string
+	// planArtifactUploadUrl is copied from Run.PlanArtifactUploadUrl; a DETECT run uploads the plan
+	// artifact it produced to this URL.
+	planArtifactUploadUrl string
 }
 
 // GenericTfCmd implements generic functionality all TF commands re-use

@@ -55,6 +55,7 @@ func runDTOToInternal(dto *meshapi.RunDetailsDTO) (*Run, error) {
 		UseMeshBackendFallback: impl.UseMeshHttpBackendFallback,
 		PreRunScript:           impl.PreRunScript,
 		PlanArtifactUrl:        dto.Links.PlanArtifact.Href,
+		PlanArtifactUploadUrl:  dto.Links.PlanArtifactUpload.Href,
 	}, nil
 }
 
@@ -113,6 +114,7 @@ func ToInternalWithoutDecryption(dto *meshapi.RunDetailsDTO) (*Run, error) {
 		UseMeshBackendFallback: impl.UseMeshHttpBackendFallback,
 		PreRunScript:           impl.PreRunScript,
 		PlanArtifactUrl:        dto.Links.PlanArtifact.Href,
+		PlanArtifactUploadUrl:  dto.Links.PlanArtifactUpload.Href,
 	}, nil
 }
 
@@ -156,12 +158,6 @@ func (status RunStatus) toExternal() (meshapi.RunStatusUpdateDTO, error) {
 		}
 	}
 
-	// artifact: encode binary plan as base64 if present
-	artifact := ""
-	if len(status.Artifact) > 0 {
-		artifact = base64.StdEncoding.EncodeToString(status.Artifact)
-	}
-
 	return meshapi.RunStatusUpdateDTO{
 		BlockRunId:      status.RunId,
 		Source:          AppConfig.RunnerUuid,
@@ -170,7 +166,6 @@ func (status RunStatus) toExternal() (meshapi.RunStatusUpdateDTO, error) {
 		CreatedOn:       time.Now(),
 		Summary:         status.Summary,
 		Steps:           steps,
-		Artifact:        artifact,
 		ChangesDetected: status.ChangesDetected,
 	}, nil
 }

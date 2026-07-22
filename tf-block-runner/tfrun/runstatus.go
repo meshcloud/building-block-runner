@@ -8,10 +8,6 @@ type RunStatus struct {
 	Steps            []*StepStatus
 	CurrentStepIndex int
 	Summary          *string
-	// Artifact holds an optional binary artifact produced by this run.
-	// For DETECT runs this contains the binary Terraform plan file so it can be
-	// consumed by a subsequent APPLY run.
-	Artifact []byte
 	// ChangesDetected reports whether `terraform plan` found infrastructure changes.
 	// Only DETECT runs set it; APPLY/DESTROY leave it nil so it is omitted from the update.
 	ChangesDetected *bool

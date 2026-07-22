@@ -140,16 +140,17 @@ func (w *Worker) workRoutine(ctx context.Context, run *Run, wg *sync.WaitGroup, 
 
 	runContextInfo := ctx.Value(runInfoContextKey).(*RunContextInfo)
 	params := &TfCmdParams{
-		dir:                w.workerDir,
-		buildingBlockId:    run.BuildingBlockId,
-		tfVersion:          run.TerraformVersion,
-		useWorkspaces:      true,
-		suggestedWorkspace: run.toWorkspaceStr(),
-		vars:               run.Vars,
-		source:             run.Source,
-		preRunScript:       run.PreRunScript,
-		runMode:            run.Behavior.str(),
-		planArtifactUrl:    run.PlanArtifactUrl,
+		dir:                   w.workerDir,
+		buildingBlockId:       run.BuildingBlockId,
+		tfVersion:             run.TerraformVersion,
+		useWorkspaces:         true,
+		suggestedWorkspace:    run.toWorkspaceStr(),
+		vars:                  run.Vars,
+		source:                run.Source,
+		preRunScript:          run.PreRunScript,
+		runMode:               run.Behavior.str(),
+		planArtifactUrl:       run.PlanArtifactUrl,
+		planArtifactUploadUrl: run.PlanArtifactUploadUrl,
 	}
 
 	var tfCommand TfCmd
@@ -160,7 +161,7 @@ func (w *Worker) workRoutine(ctx context.Context, run *Run, wg *sync.WaitGroup, 
 		tfCommand = ApplyCmd(ctx, params, w.tfBinaries, w.runApi)
 
 	case DETECT:
-		tfCommand = PlanCmd(ctx, params, w.tfBinaries)
+		tfCommand = PlanCmd(ctx, params, w.tfBinaries, w.runApi)
 
 	case DESTROY:
 		tfCommand = DestroyCmd(ctx, params, w.tfBinaries)

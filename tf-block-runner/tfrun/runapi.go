@@ -51,6 +51,9 @@ type RunApi interface {
 	// DownloadPredecessorArtifact streams the bytes referenced by the given absolute URL
 	// (the runner-facing _links.planArtifact.href) into w using the current run authentication.
 	DownloadPredecessorArtifact(url string, w io.Writer) error
+	// UploadPlanArtifact PUTs the raw plan bytes to the given absolute URL
+	// (the runner-facing _links.planArtifactUpload.href) using the current run authentication.
+	UploadPlanArtifact(url string, artifact []byte) error
 }
 
 func NewRunApi() RunApi {
@@ -81,6 +84,10 @@ func (api *RunApiClient) ClearRunToken() {
 
 func (api *RunApiClient) DownloadPredecessorArtifact(url string, w io.Writer) error {
 	return api.client.DownloadArtifact(url, w)
+}
+
+func (api *RunApiClient) UploadPlanArtifact(url string, artifact []byte) error {
+	return api.client.UploadArtifact(url, artifact)
 }
 
 func (api *RunApiClient) FetchRunDetails(nodePostfix string) (*Run, error) {

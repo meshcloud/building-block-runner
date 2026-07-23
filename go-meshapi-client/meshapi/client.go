@@ -161,6 +161,32 @@ func (c *Client) DownloadArtifact(artifactURL string, w io.Writer) error {
 	return nil
 }
 
+// UploadArtifact performs an authenticated PUT of the raw artifact bytes (e.g. a DETECT run's
+// terraform plan) to the given absolute upload URL, as application/octet-stream. A non-2xx response
+// is returned as an error so a failed upload fails the run visibly rather than silently losing the plan.
+func (c *Client) UploadArtifact(uploadURL string, artifact []byte) error {
+	req, err := http.NewRequest(http.MethodPut, uploadURL, bytes.NewReader(artifact))
+	if err != nil {
+		return fmt.Errorf("upload artifact %s: failed to create request: %w", uploadURL, err)
+	}
+	c.setHeaders(req)
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("Accept", "*/*")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("upload artifact %s: request failed: %w", uploadURL, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
+		return fmt.Errorf("upload artifact %s returned HTTP %d: %s", uploadURL, resp.StatusCode, string(respBody))
+	}
+
+	return nil
+}
+
 // RegisterSource registers the caller as a status source for the given run via POST.
 // If the source is already registered (HTTP 409 Conflict) the call is treated as a no-op.
 func (c *Client) RegisterSource(runID string, registration RegistrationDTO) error {

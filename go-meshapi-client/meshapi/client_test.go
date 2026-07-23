@@ -2,6 +2,7 @@ package meshapi
 
 import (
 	"bytes"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -53,4 +54,46 @@ func TestDownloadArtifact_Non2xxReturnsErrorWithBody(t *testing.T) {
 	assert.Contains(t, err.Error(), "404")
 	assert.Contains(t, err.Error(), "artifact expired", "non-2xx body should surface to the caller")
 	assert.Empty(t, buf.Bytes(), "nothing should be written on a non-2xx response")
+}
+
+func TestUploadArtifact_PutsRawBytesWithRunnerHeaders(t *testing.T) {
+	payload := []byte("a freshly produced terraform plan")
+
+	var gotMethod, gotContentType, gotNodeID, gotAuth string
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotContentType = r.Header.Get("Content-Type")
+		gotNodeID = r.Header.Get("X-Block-Runner-Node-Id")
+		gotAuth = r.Header.Get("Authorization")
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	client := NewClientWithHTTP(srv.URL, "test-node", BearerTokenAuth{Token: "run-token"}, srv.Client())
+
+	err := client.UploadArtifact(srv.URL+"/artifact", payload)
+
+	require.NoError(t, err)
+	assert.Equal(t, http.MethodPut, gotMethod)
+	assert.Equal(t, payload, gotBody, "raw bytes should be sent verbatim")
+	assert.Equal(t, "application/octet-stream", gotContentType, "should send raw bytes, not HAL+JSON")
+	assert.Equal(t, "test-node", gotNodeID, "standard runner headers should still be sent")
+	assert.Equal(t, "Bearer run-token", gotAuth, "run auth should still be applied")
+}
+
+func TestUploadArtifact_Non2xxReturnsErrorWithBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "artifact too large", http.StatusBadRequest)
+	}))
+	defer srv.Close()
+
+	client := NewClientWithHTTP(srv.URL, "test-node", BearerTokenAuth{Token: "run-token"}, srv.Client())
+
+	err := client.UploadArtifact(srv.URL+"/artifact", []byte("plan"))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "400")
+	assert.Contains(t, err.Error(), "artifact too large", "non-2xx body should surface to the caller")
 }

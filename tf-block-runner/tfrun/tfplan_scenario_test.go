@@ -3,7 +3,6 @@ package tfrun
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -15,23 +14,88 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Test_DetectSucceeded_ArtifactInStatusUpdate verifies that the DETECT behavior routes through
-// TfPlanCommand, executes terraform plan, reads the plan file, and sends it as a
-// base64-encoded artifact in the final status update.
-func (suite *WorkerTestSuite) Test_DetectSucceeded_ArtifactInStatusUpdate() {
+// Test_DetectSucceeded_UploadsArtifactViaEndpoint verifies that a DETECT run PUTs the plan bytes to
+// the planArtifactUpload endpoint (correct method, URL, run-scoped auth, and payload) and ends SUCCEEDED.
+func (suite *WorkerTestSuite) Test_DetectSucceeded_UploadsArtifactViaEndpoint() {
 	planBytes := []byte("fake-plan-binary-data")
-	planFuncCalled := false
+	uploadHref := "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/plan-artifact"
 
-	// Write the plan file when Plan() is called so that execute() can read it back.
-	// The plan file path is always <workingDirectory>/plan.tfplan; we extract workingDirectory
-	// from the context injected via runInfoContextKey.
 	suite.tfMock.planFunc = func(ctx context.Context, opts ...tfexec.PlanOption) (bool, error) {
-		planFuncCalled = true
 		rci := ctx.Value(runInfoContextKey).(*RunContextInfo)
 		return true, os.WriteFile(rci.artifactFilePath, planBytes, 0600)
 	}
 
-	suite.calls.fetch = mockValidRunDetailsFetchCall(DETECT.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	suite.calls.fetch = mockDetectRunWithUploadLinkFetchCall(
+		"https://github.com/meshcloud/meshstack-hub.git",
+		"modules/github/repository/buildingblock",
+		uploadHref,
+	)
+
+	var uploadedBytes []byte
+	uploadCalled := false
+	suite.calls.upload = func(req *http.Request) *http.Response {
+		uploadCalled = true
+		assert.Equal(suite.T(), http.MethodPut, req.Method, "plan artifact must be uploaded via PUT")
+		assert.Equal(suite.T(), uploadHref, req.URL.String(), "plan artifact must be uploaded to the planArtifactUpload link")
+		// the run-scoped bearer token from the fetched run must be used for the upload
+		assert.Equal(suite.T(), "Bearer test-mock-run-token-12345", req.Header.Get("Authorization"))
+		var err error
+		uploadedBytes, err = io.ReadAll(req.Body)
+		require.NoError(suite.T(), err)
+		return &http.Response{
+			StatusCode: 204,
+			Body:       io.NopCloser(bytes.NewBuffer(nil)),
+			Header:     make(http.Header),
+		}
+	}
+
+	updateBodies := make([][]byte, 0)
+	suite.calls.update = func(req *http.Request) *http.Response {
+		body, _ := io.ReadAll(req.Body)
+		updateBodies = append(updateBodies, body)
+		return &http.Response{
+			StatusCode: 200,
+			Body:       io.NopCloser(bytes.NewBuffer([]byte("{}"))),
+			Header:     make(http.Header),
+		}
+	}
+
+	suite.runWorker()
+
+	assert.True(suite.T(), uploadCalled, "expected the plan artifact to be uploaded via the dedicated endpoint")
+	assert.Equal(suite.T(), planBytes, uploadedBytes)
+
+	require.GreaterOrEqual(suite.T(), len(updateBodies), 1)
+	var lastUpdate meshapi.RunStatusUpdateDTO
+	require.NoError(suite.T(), json.Unmarshal(updateBodies[len(updateBodies)-1], &lastUpdate))
+	assert.Equal(suite.T(), SUCCEEDED.str(), *lastUpdate.Status)
+}
+
+// Test_DetectSucceeded_UploadFailureFailsRun verifies that when the plan-artifact upload returns a
+// non-2xx, the run FAILS rather than reporting SUCCEEDED — the follow-up APPLY relies on the stored
+// bytes, so a run must never declare success while the plan is missing from the backend.
+func (suite *WorkerTestSuite) Test_DetectSucceeded_UploadFailureFailsRun() {
+	planBytes := []byte("fake-plan-binary-data")
+	uploadHref := "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/plan-artifact"
+
+	suite.tfMock.planFunc = func(ctx context.Context, opts ...tfexec.PlanOption) (bool, error) {
+		rci := ctx.Value(runInfoContextKey).(*RunContextInfo)
+		return true, os.WriteFile(rci.artifactFilePath, planBytes, 0600)
+	}
+
+	suite.calls.fetch = mockDetectRunWithUploadLinkFetchCall(
+		"https://github.com/meshcloud/meshstack-hub.git",
+		"modules/github/repository/buildingblock",
+		uploadHref,
+	)
+
+	suite.calls.upload = func(req *http.Request) *http.Response {
+		return &http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Body:       io.NopCloser(bytes.NewBuffer([]byte("upload broke"))),
+			Header:     make(http.Header),
+		}
+	}
 
 	updateCalls := make([]http.Request, 0)
 	suite.calls.update = func(req *http.Request) *http.Response {
@@ -52,16 +116,65 @@ func (suite *WorkerTestSuite) Test_DetectSucceeded_ArtifactInStatusUpdate() {
 	var update meshapi.RunStatusUpdateDTO
 	require.NoError(suite.T(), json.Unmarshal(data, &update))
 
-	assert.True(suite.T(), planFuncCalled, "expected DETECT behavior to invoke terraform plan")
-	assert.Equal(suite.T(), SUCCEEDED.str(), *update.Status)
-	require.NotEmpty(suite.T(), update.Artifact, "expected artifact to be set in status update")
+	assert.Equal(suite.T(), FAILED.str(), *update.Status, "a failed plan upload must fail the run")
+	executeTf := findStep(suite.T(), update, StepExecuteTf)
+	assert.Equal(suite.T(), FAILED.str(), *executeTf.Status)
+	require.NotNil(suite.T(), executeTf.UserMessage)
+	assert.Contains(suite.T(), *executeTf.UserMessage, "upload plan artifact")
+}
 
-	decoded, err := base64.StdEncoding.DecodeString(update.Artifact)
+// Test_DetectFailed_WhenNoUploadUrl verifies that a DETECT run whose backend provided no
+// planArtifactUpload link FAILS instead of reporting SUCCEEDED. Since the plan is no longer part of
+// the status update, a missing upload URL would silently drop the plan and leave a follow-up APPLY
+// with nothing to replay.
+func (suite *WorkerTestSuite) Test_DetectFailed_WhenNoUploadUrl() {
+	planBytes := []byte("fake-plan-binary-data")
+	suite.tfMock.planFunc = func(ctx context.Context, opts ...tfexec.PlanOption) (bool, error) {
+		rci := ctx.Value(runInfoContextKey).(*RunContextInfo)
+		return true, os.WriteFile(rci.artifactFilePath, planBytes, 0600)
+	}
+
+	suite.calls.fetch = mockDetectRunWithoutUploadLinkFetchCall(
+		"https://github.com/meshcloud/meshstack-hub.git",
+		"modules/github/repository/buildingblock",
+	)
+
+	uploadCalled := false
+	suite.calls.upload = func(req *http.Request) *http.Response {
+		uploadCalled = true
+		return &http.Response{
+			StatusCode: 204,
+			Body:       io.NopCloser(bytes.NewBuffer(nil)),
+			Header:     make(http.Header),
+		}
+	}
+
+	updateCalls := make([]http.Request, 0)
+	suite.calls.update = func(req *http.Request) *http.Response {
+		updateCalls = append(updateCalls, *req)
+		return &http.Response{
+			StatusCode: 200,
+			Body:       io.NopCloser(bytes.NewBuffer([]byte("{}"))),
+			Header:     make(http.Header),
+		}
+	}
+
+	suite.runWorker()
+
+	assert.False(suite.T(), uploadCalled, "no upload must be attempted when the upload URL is missing")
+
+	require.GreaterOrEqual(suite.T(), len(updateCalls), 1)
+	lastUpdate := updateCalls[len(updateCalls)-1]
+	data, err := io.ReadAll(lastUpdate.Body)
 	require.NoError(suite.T(), err)
-	assert.Equal(suite.T(), planBytes, decoded)
+	var update meshapi.RunStatusUpdateDTO
+	require.NoError(suite.T(), json.Unmarshal(data, &update))
 
-	require.NotNil(suite.T(), update.ChangesDetected, "expected changesDetected to be reported for a DETECT run")
-	assert.True(suite.T(), *update.ChangesDetected, "planFunc returned changes present")
+	assert.Equal(suite.T(), FAILED.str(), *update.Status, "a missing upload URL must fail the run")
+	executeTf := findStep(suite.T(), update, StepExecuteTf)
+	assert.Equal(suite.T(), FAILED.str(), *executeTf.Status)
+	require.NotNil(suite.T(), executeTf.UserMessage)
+	assert.Contains(suite.T(), *executeTf.UserMessage, "upload URL")
 }
 
 // Test_DetectSucceeded_NoChangesDetected verifies that when terraform plan reports no changes
@@ -287,7 +400,6 @@ func (suite *WorkerTestSuite) Test_DetectFailed_WhenPlanFileNotWritten() {
 
 	assert.True(suite.T(), planFuncCalled, "expected DETECT behavior to invoke terraform plan")
 	assert.Equal(suite.T(), FAILED.str(), *update.Status)
-	assert.Empty(suite.T(), update.Artifact)
 
 	executeTf := findStep(suite.T(), update, StepExecuteTf)
 	assert.Equal(suite.T(), FAILED.str(), *executeTf.Status)

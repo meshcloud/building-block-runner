@@ -15,7 +15,7 @@ import (
 )
 
 // Test_DetectSucceeded_UploadsArtifactViaEndpoint verifies that a DETECT run PUTs the plan bytes to
-// the planArtifactUpload endpoint before the terminal status update.
+// the planArtifactUpload endpoint (correct method, URL, run-scoped auth, and payload) and ends SUCCEEDED.
 func (suite *WorkerTestSuite) Test_DetectSucceeded_UploadsArtifactViaEndpoint() {
 	planBytes := []byte("fake-plan-binary-data")
 	uploadHref := "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/plan-artifact"

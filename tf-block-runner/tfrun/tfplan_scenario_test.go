@@ -123,6 +123,60 @@ func (suite *WorkerTestSuite) Test_DetectSucceeded_UploadFailureFailsRun() {
 	assert.Contains(suite.T(), *executeTf.UserMessage, "upload plan artifact")
 }
 
+// Test_DetectFailed_WhenNoUploadUrl verifies that a DETECT run whose backend provided no
+// planArtifactUpload link FAILS instead of reporting SUCCEEDED. Since the plan is no longer part of
+// the status update, a missing upload URL would silently drop the plan and leave a follow-up APPLY
+// with nothing to replay.
+func (suite *WorkerTestSuite) Test_DetectFailed_WhenNoUploadUrl() {
+	planBytes := []byte("fake-plan-binary-data")
+	suite.tfMock.planFunc = func(ctx context.Context, opts ...tfexec.PlanOption) (bool, error) {
+		rci := ctx.Value(runInfoContextKey).(*RunContextInfo)
+		return true, os.WriteFile(rci.artifactFilePath, planBytes, 0600)
+	}
+
+	suite.calls.fetch = mockDetectRunWithoutUploadLinkFetchCall(
+		"https://github.com/meshcloud/meshstack-hub.git",
+		"modules/github/repository/buildingblock",
+	)
+
+	uploadCalled := false
+	suite.calls.upload = func(req *http.Request) *http.Response {
+		uploadCalled = true
+		return &http.Response{
+			StatusCode: 204,
+			Body:       io.NopCloser(bytes.NewBuffer(nil)),
+			Header:     make(http.Header),
+		}
+	}
+
+	updateCalls := make([]http.Request, 0)
+	suite.calls.update = func(req *http.Request) *http.Response {
+		updateCalls = append(updateCalls, *req)
+		return &http.Response{
+			StatusCode: 200,
+			Body:       io.NopCloser(bytes.NewBuffer([]byte("{}"))),
+			Header:     make(http.Header),
+		}
+	}
+
+	suite.runWorker()
+
+	assert.False(suite.T(), uploadCalled, "no upload must be attempted when the upload URL is missing")
+
+	require.GreaterOrEqual(suite.T(), len(updateCalls), 1)
+	lastUpdate := updateCalls[len(updateCalls)-1]
+	data, err := io.ReadAll(lastUpdate.Body)
+	require.NoError(suite.T(), err)
+	var update meshapi.RunStatusUpdateDTO
+	require.NoError(suite.T(), json.Unmarshal(data, &update))
+
+	assert.Equal(suite.T(), FAILED.str(), *update.Status, "a missing upload URL must fail the run")
+	executeTf := findStep(suite.T(), update, StepExecuteTf)
+	assert.Equal(suite.T(), FAILED.str(), *executeTf.Status)
+	require.NotNil(suite.T(), executeTf.UserMessage)
+	assert.Contains(suite.T(), *executeTf.UserMessage, "upload URL")
+}
+
 // Test_DetectSucceeded_NoChangesDetected verifies that when terraform plan reports no changes
 // (Plan returns false), the DETECT status update carries changesDetected=false.
 func (suite *WorkerTestSuite) Test_DetectSucceeded_NoChangesDetected() {

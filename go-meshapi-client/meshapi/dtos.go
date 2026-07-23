@@ -111,6 +111,9 @@ type AuthorDTO struct {
 	Identifier  string     `json:"identifier"`
 	Type        AuthorType `json:"type"`
 	DisplayName *string    `json:"displayName"`
+	Username    *string    `json:"username"`
+	Email       *string    `json:"email"`
+	Euid        *string    `json:"euid"`
 }
 
 type AuthorType string

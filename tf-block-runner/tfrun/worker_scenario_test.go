@@ -725,6 +725,55 @@ func mockDetectRunWithUploadLinkFetchCall(repo, repoPath, planArtifactUploadHref
 	}
 }
 
+// mockDetectRunWithoutUploadLinkFetchCall returns a DETECT run whose _links carry NO planArtifactUpload
+// href, simulating a backend that fails to hand out the upload link (e.g. version skew or a bug).
+func mockDetectRunWithoutUploadLinkFetchCall(repo, repoPath string) func(_ *http.Request) *http.Response {
+	return func(_ *http.Request) *http.Response {
+		implDTO := meshapi.TerraformImplementation{
+			TerraformVersion: DEFAULT_TF_VER,
+			RepositoryUrl:    repo,
+			RepositoryPath:   p(repoPath),
+			Async:            false,
+		}
+		implJSON, _ := json.Marshal(implDTO)
+		body, _ := json.Marshal(
+			&meshapi.RunDetailsDTO{
+				ApiVersion: "v1",
+				Kind:       "MeshBuildingBlockRun",
+				Metadata:   meshapi.RunMetaDTO{Uuid: "run-uuid"},
+				Spec: meshapi.RunSpecDTO{
+					RunNumber: 1,
+					Behavior:  DETECT.str(),
+					RunToken:  "test-mock-run-token-12345",
+					BuildingBlock: meshapi.BuildingBlockSpecDTO{
+						Uuid: "block-uuid",
+						Spec: meshapi.BuildingBlockDetailsSpecDTO{
+							DisplayName: "Test-BuildingBlock",
+							Inputs:      make([]meshapi.BuildingBlockInputSpecDTO, 0),
+						},
+					},
+					Definition: meshapi.DefinitionSpecDTO{
+						Uuid: "definition-uuid",
+						Spec: meshapi.DefinitionDetailsSpecDTO{
+							Version:        1,
+							Implementation: implJSON,
+						},
+					},
+				},
+				Links: meshapi.LinksDTO{},
+			},
+		)
+		header := make(http.Header)
+		header.Add("Content-Type", meshapi.BlockRunMediaTypeV1)
+
+		return &http.Response{
+			StatusCode: 200,
+			Body:       io.NopCloser(bytes.NewBuffer(body)),
+			Header:     header,
+		}
+	}
+}
+
 // returns pointer of given value to be able to inline value without var usage
 func p[T any](v T) *T {
 	return &v

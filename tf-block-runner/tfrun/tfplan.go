@@ -165,9 +165,11 @@ func (tfcmd *TfPlanCommand) execute() {
 	}
 	tfcmd.runContextInfo.runStatus.ChangesDetected = &changed
 
-	// The backend always hands out a planArtifactUpload link for a DETECT run. A missing URL means the
-	// plan could not be persisted, so a follow-up APPLY would have nothing to replay. Failing here is
-	// safer than silently reporting SUCCEEDED with no retrievable plan.
+	// The backend hands out a planArtifactUpload link for every dry-run capable implementation, and it does
+	// not gate that link on the caller's rights: we read the link from the checkout response, authenticated
+	// with the runner's own key, but we upload with the run's ephemeral key. So a missing URL means version
+	// skew or a bug, not a missing permission. The plan then cannot be persisted and a follow-up APPLY would
+	// have nothing to replay, so failing here is safer than reporting SUCCEEDED with no retrievable plan.
 	uploadUrl := tfcmd.params.planArtifactUploadUrl
 	if uploadUrl == "" {
 		tfcmd.fail(fmt.Errorf("no plan artifact upload URL provided for DETECT run; cannot persist plan for a follow-up APPLY"))

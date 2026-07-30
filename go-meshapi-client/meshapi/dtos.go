@@ -25,8 +25,9 @@ type LinksDTO struct {
 	// saved terraform plan. Because it is a value (not pointer) struct, an absent JSON field
 	// unmarshals to a zero LinkDTO: an empty Href is the runner's signal to perform a plain apply.
 	PlanArtifact LinkDTO `json:"planArtifact,omitempty"`
-	// PlanArtifactUpload is where the runner uploads the plan artifact it produced (a DETECT run's
-	// terraform plan).
+	// PlanArtifactUpload is where the runner uploads the artifact it produced (a DETECT run's terraform
+	// plan). Unlike PlanArtifact an empty Href is NOT a signal to skip the upload: the backend emits this
+	// link for every dry-run capable implementation, so a DETECT run without it fails.
 	PlanArtifactUpload LinkDTO `json:"planArtifactUpload,omitempty"`
 }
 

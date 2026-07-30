@@ -150,7 +150,7 @@ func (w *Worker) workRoutine(ctx context.Context, run *Run, wg *sync.WaitGroup, 
 		preRunScript:          run.PreRunScript,
 		runMode:               run.Behavior.str(),
 		planArtifactUrl:       run.PlanArtifactUrl,
-		planArtifactUploadUrl: run.PlanArtifactUploadUrl,
+		artifactUploadUrl: run.ArtifactUploadUrl,
 	}
 
 	var tfCommand TfCmd

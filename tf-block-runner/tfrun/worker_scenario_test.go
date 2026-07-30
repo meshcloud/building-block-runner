@@ -582,10 +582,10 @@ func mockValidRunDetailsFetchCall(behavior, repo, path string) func(_ *http.Requ
 		}
 		implJSON, _ := json.Marshal(implDTO)
 		// A DETECT run uploads the plan it produces to the dedicated endpoint, so the backend always
-		// hands out a planArtifactUpload link for it.
+		// hands out an artifactUpload link for it.
 		var links meshapi.LinksDTO
 		if behavior == DETECT.str() {
-			links.PlanArtifactUpload = meshapi.LinkDTO{Href: "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/plan-artifact"}
+			links.ArtifactUpload = meshapi.LinkDTO{Href: "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/plan-artifact"}
 		}
 		body, _ := json.Marshal(
 			&meshapi.RunDetailsDTO{
@@ -676,7 +676,7 @@ func mockApplyRunWithPlanArtifactFetchCall(repo, repoPath, planArtifactHref stri
 	}
 }
 
-func mockDetectRunWithUploadLinkFetchCall(repo, repoPath, planArtifactUploadHref string) func(_ *http.Request) *http.Response {
+func mockDetectRunWithUploadLinkFetchCall(repo, repoPath, artifactUploadHref string) func(_ *http.Request) *http.Response {
 	return func(_ *http.Request) *http.Response {
 		implDTO := meshapi.TerraformImplementation{
 			TerraformVersion: DEFAULT_TF_VER,
@@ -710,7 +710,7 @@ func mockDetectRunWithUploadLinkFetchCall(repo, repoPath, planArtifactUploadHref
 					},
 				},
 				Links: meshapi.LinksDTO{
-					PlanArtifactUpload: meshapi.LinkDTO{Href: planArtifactUploadHref},
+					ArtifactUpload: meshapi.LinkDTO{Href: artifactUploadHref},
 				},
 			},
 		)
@@ -725,7 +725,7 @@ func mockDetectRunWithUploadLinkFetchCall(repo, repoPath, planArtifactUploadHref
 	}
 }
 
-// mockDetectRunWithoutUploadLinkFetchCall returns a DETECT run whose _links carry NO planArtifactUpload
+// mockDetectRunWithoutUploadLinkFetchCall returns a DETECT run whose _links carry NO artifactUpload
 // href, simulating a backend that fails to hand out the upload link (e.g. version skew or a bug).
 func mockDetectRunWithoutUploadLinkFetchCall(repo, repoPath string) func(_ *http.Request) *http.Response {
 	return func(_ *http.Request) *http.Response {

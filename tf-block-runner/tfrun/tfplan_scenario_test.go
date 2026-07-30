@@ -15,7 +15,7 @@ import (
 )
 
 // Test_DetectSucceeded_UploadsArtifactViaEndpoint verifies that a DETECT run PUTs the plan bytes to
-// the planArtifactUpload endpoint (correct method, URL, run-scoped auth, and payload) and ends SUCCEEDED.
+// the artifactUpload endpoint (correct method, URL, run-scoped auth, and payload) and ends SUCCEEDED.
 func (suite *WorkerTestSuite) Test_DetectSucceeded_UploadsArtifactViaEndpoint() {
 	planBytes := []byte("fake-plan-binary-data")
 	uploadHref := "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/plan-artifact"
@@ -36,7 +36,7 @@ func (suite *WorkerTestSuite) Test_DetectSucceeded_UploadsArtifactViaEndpoint() 
 	suite.calls.upload = func(req *http.Request) *http.Response {
 		uploadCalled = true
 		assert.Equal(suite.T(), http.MethodPut, req.Method, "plan artifact must be uploaded via PUT")
-		assert.Equal(suite.T(), uploadHref, req.URL.String(), "plan artifact must be uploaded to the planArtifactUpload link")
+		assert.Equal(suite.T(), uploadHref, req.URL.String(), "plan artifact must be uploaded to the artifactUpload link")
 		// the run-scoped bearer token from the fetched run must be used for the upload
 		assert.Equal(suite.T(), "Bearer test-mock-run-token-12345", req.Header.Get("Authorization"))
 		var err error
@@ -120,11 +120,11 @@ func (suite *WorkerTestSuite) Test_DetectSucceeded_UploadFailureFailsRun() {
 	executeTf := findStep(suite.T(), update, StepExecuteTf)
 	assert.Equal(suite.T(), FAILED.str(), *executeTf.Status)
 	require.NotNil(suite.T(), executeTf.UserMessage)
-	assert.Contains(suite.T(), *executeTf.UserMessage, "upload plan artifact")
+	assert.Contains(suite.T(), *executeTf.UserMessage, "upload artifact")
 }
 
 // Test_DetectFailed_WhenNoUploadUrl verifies that a DETECT run whose backend provided no
-// planArtifactUpload link FAILS instead of reporting SUCCEEDED. Since the plan is no longer part of
+// artifactUpload link FAILS instead of reporting SUCCEEDED. Since the plan is no longer part of
 // the status update, a missing upload URL would silently drop the plan and leave a follow-up APPLY
 // with nothing to replay.
 func (suite *WorkerTestSuite) Test_DetectFailed_WhenNoUploadUrl() {

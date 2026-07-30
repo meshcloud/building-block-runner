@@ -111,7 +111,7 @@ func (w *SingleRunWorker) workRoutine(ctx context.Context, run *Run, wg *sync.Wa
 		preRunScript:          run.PreRunScript,
 		runMode:               run.Behavior.str(),
 		planArtifactUrl:       run.PlanArtifactUrl,
-		planArtifactUploadUrl: run.PlanArtifactUploadUrl,
+		artifactUploadUrl: run.ArtifactUploadUrl,
 	}
 
 	var tfCommand TfCmd

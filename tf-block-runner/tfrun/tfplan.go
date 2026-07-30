@@ -165,14 +165,14 @@ func (tfcmd *TfPlanCommand) execute() {
 	}
 	tfcmd.runContextInfo.runStatus.ChangesDetected = &changed
 
-	// The backend hands out a planArtifactUpload link for every dry-run capable implementation, and it does
+	// The backend hands out an artifactUpload link for every dry-run capable implementation, and it does
 	// not gate that link on the caller's rights: we read the link from the checkout response, authenticated
 	// with the runner's own key, but we upload with the run's ephemeral key. So a missing URL means version
 	// skew or a bug, not a missing permission. The plan then cannot be persisted and a follow-up APPLY would
 	// have nothing to replay, so failing here is safer than reporting SUCCEEDED with no retrievable plan.
-	uploadUrl := tfcmd.params.planArtifactUploadUrl
+	uploadUrl := tfcmd.params.artifactUploadUrl
 	if uploadUrl == "" {
-		tfcmd.fail(fmt.Errorf("no plan artifact upload URL provided for DETECT run; cannot persist plan for a follow-up APPLY"))
+		tfcmd.fail(fmt.Errorf("no artifact upload URL provided for DETECT run; cannot persist plan for a follow-up APPLY"))
 		return
 	}
 
@@ -183,9 +183,9 @@ func (tfcmd *TfPlanCommand) execute() {
 	}
 
 	// Upload the plan BEFORE completeRun: the terminal SUCCEEDED status update schedules the follow-up
-	// APPLY run, whose predecessor plan-artifact lookup requires the bytes to already be stored.
-	if err = tfcmd.runApi.UploadPlanArtifact(uploadUrl, planData); err != nil {
-		tfcmd.fail(fmt.Errorf("failed to upload plan artifact: %w", err))
+	// APPLY run, whose predecessor artifact lookup requires the bytes to already be stored.
+	if err = tfcmd.runApi.UploadArtifact(uploadUrl, planData); err != nil {
+		tfcmd.fail(fmt.Errorf("failed to upload artifact: %w", err))
 		return
 	}
 

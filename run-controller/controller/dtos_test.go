@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"testing"
 
 	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
@@ -95,6 +96,45 @@ func TestBuildRunnerRegistrationDTO_WIFConfiguredWhenOIDCIssuerSet(t *testing.T)
 	}
 	if dto.Spec.WorkloadIdentityFederation.Issuer != "https://oidc.example.com" {
 		t.Errorf("expected issuer %q, got %q", "https://oidc.example.com", dto.Spec.WorkloadIdentityFederation.Issuer)
+	}
+}
+
+func TestBuildRunnerRegistrationDTO_WIFSubjectTemplateUsesPlaceholders(t *testing.T) {
+	cleanup := setupAppConfigForDTOTests()
+	defer cleanup()
+
+	dto := BuildRunnerRegistrationDTO("test-namespace", "https://oidc.example.com")
+
+	expected := "system:serviceaccount:test-namespace:workspace.{{ workspaceIdentifier }}.buildingblockdefinition.{{ buildingBlockDefinitionUuid }}"
+	if dto.Spec.WorkloadIdentityFederation.SubjectTemplate != expected {
+		t.Errorf("expected subjectTemplate %q, got %q", expected, dto.Spec.WorkloadIdentityFederation.SubjectTemplate)
+	}
+}
+
+func TestBuildRunnerRegistrationDTO_WIFSerializesSubjectTemplate(t *testing.T) {
+	cleanup := setupAppConfigForDTOTests()
+	defer cleanup()
+
+	dto := BuildRunnerRegistrationDTO("test-namespace", "https://oidc.example.com")
+
+	body, err := json.Marshal(dto)
+	if err != nil {
+		t.Fatalf("failed to marshal registration DTO: %v", err)
+	}
+
+	var payload struct {
+		Spec struct {
+			Wif struct {
+				SubjectTemplate string `json:"subjectTemplate"`
+			} `json:"workloadIdentityFederation"`
+		} `json:"spec"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("failed to unmarshal registration body: %v", err)
+	}
+
+	if payload.Spec.Wif.SubjectTemplate == "" {
+		t.Error("expected subjectTemplate to be sent")
 	}
 }
 

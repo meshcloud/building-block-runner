@@ -25,14 +25,12 @@ func BuildRunnerRegistrationDTO(namespace string, oidcIssuer string) *meshapi.Me
 	}
 
 	if oidcIssuer != "" {
-		// Subject pattern for WIF validation on the API side.
-		// At runtime, actual service accounts are created with format:
-		// system:serviceaccount:<namespace>:workspace.<bbd-workspace>.buildingblockdefinition.<bbd-uuid>
-		// See kubernetes.go CreateRunnerJob() for the actual service account creation.
-		subjectPattern := fmt.Sprintf("system:serviceaccount:%s:workspace.<bbd-workspace>.buildingblockdefinition.<bbd-uuid>", namespace)
+		// meshfed renders the placeholders per building block definition. CreateRunnerJob in kubernetes.go
+		// names the service account the same way, so the rendered subject matches the token's sub claim.
+		subjectTemplate := fmt.Sprintf("system:serviceaccount:%s:workspace.{{ workspaceIdentifier }}.buildingblockdefinition.{{ buildingBlockDefinitionUuid }}", namespace)
 		dto.Spec.WorkloadIdentityFederation = &meshapi.WifDTO{
-			Issuer:  oidcIssuer,
-			Subject: subjectPattern,
+			Issuer:          oidcIssuer,
+			SubjectTemplate: subjectTemplate,
 			Gcp: &meshapi.GcpWifDTO{
 				Audience:  fmt.Sprintf("gcp-workload-identity-provider:%s", namespace),
 				TokenPath: "/var/run/secrets/workload-identity/gcp/token",

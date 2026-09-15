@@ -98,11 +98,8 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 		}
 	}
 
-	// Create service account for workload identity with format: workspace.<workspace>.buildingblockdefinition.<bbd-uuid>
-	// Using periods as separators for clear, unambiguous parsing (workspace names can contain dashes)
-	// this will eventually be reflected in the sub claim of the jwt token used for workload identity,
-	// as sub: "system:serviceaccount:<namespace>:workspace.<bbd-workspace>.buildingblockdefinition.<bbd-uuid>"
-	// IMPORTANT: this should align with subject pattern in dtos.go BuildRunnerRegistrationDTO()
+	// Periods separate the parts because workspace identifiers can contain dashes. The name becomes the sub claim
+	// of the workload identity token and must match the subject template BuildRunnerRegistrationDTO registers.
 	serviceAccountName := fmt.Sprintf("workspace.%s.buildingblockdefinition.%s", runInfo.BuildingBlockDefinitionWorkspace, runInfo.BuildingBlockDefinitionUuid)
 	err = k.createServiceAccount(namespace, serviceAccountName, runInfo.Uuid, metrics)
 	if err != nil {

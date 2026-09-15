@@ -367,11 +367,11 @@ type MeshBuildingBlockRunnerSpecDTO struct {
 
 // WifDTO represents the Workload Identity Federation configuration.
 type WifDTO struct {
-	Issuer  string       `json:"issuer"`
-	Subject string       `json:"subject"`
-	Gcp     *GcpWifDTO   `json:"gcp,omitempty"`
-	Aws     *AwsWifDTO   `json:"aws,omitempty"`
-	Azure   *AzureWifDTO `json:"azure,omitempty"`
+	Issuer          string       `json:"issuer"`
+	SubjectTemplate string       `json:"subjectTemplate,omitempty"`
+	Gcp             *GcpWifDTO   `json:"gcp,omitempty"`
+	Aws             *AwsWifDTO   `json:"aws,omitempty"`
+	Azure           *AzureWifDTO `json:"azure,omitempty"`
 }
 
 // GcpWifDTO represents GCP Workload Identity Federation configuration.

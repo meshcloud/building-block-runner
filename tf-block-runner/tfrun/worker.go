@@ -23,6 +23,7 @@ type Worker struct {
 	tfBinaries           *TfBinaries
 	log                  *log.Logger
 	statusUpdateInterval time.Duration
+	finalStatusRetry     retrySchedule
 }
 
 // defining custom type for context key is best practice
@@ -216,7 +217,7 @@ func (w *Worker) observerRoutine(ctx context.Context, cancel context.CancelFunc,
 
 			// For the final update we do not care about the 'abort-run' flag
 			w.log.Printf("Sending final status update for run %s: %s", runContextInfo.runId, finalStatus.str())
-			_, err := w.runApi.UpdateState(&reportStatus)
+			err := updateStateWithRetry(w.runApi, &reportStatus, w.finalStatusRetry, w.log)
 
 			if err != nil {
 				w.log.Printf("ERROR: Failed to send final status for run %s: %v", runContextInfo.runId, err)
@@ -251,13 +252,16 @@ func (w *Worker) observerRoutine(ctx context.Context, cancel context.CancelFunc,
 
 func (w *Worker) sendInitFail(run *Run) {
 	summary := "Something went wrong while starting the run."
-	_, err := w.runApi.UpdateState(
+	err := updateStateWithRetry(
+		w.runApi,
 		&RunStatus{
 			RunId:   run.Id,
 			Status:  FAILED,
 			Steps:   nil,
 			Summary: &summary,
 		},
+		w.finalStatusRetry,
+		w.log,
 	)
 	if err != nil {
 		w.log.Printf("Failed to update initial state: %s\n", err.Error())

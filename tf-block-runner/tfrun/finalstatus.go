@@ -1,6 +1,7 @@
 package tfrun
 
 import (
+	"context"
 	"errors"
 	"log"
 	"net/url"
@@ -10,17 +11,19 @@ import (
 )
 
 type retrySchedule struct {
-	initialDelay time.Duration
-	maxDelay     time.Duration
-	giveUpAfter  time.Duration
+	initialDelay   time.Duration
+	maxDelay       time.Duration
+	attemptTimeout time.Duration
+	giveUpAfter    time.Duration
 }
 
 // finalStatusRetry outlasts a meshfed deployment: its only pod is replaced, and meshfed answers 503 for
 // about two minutes.
 var finalStatusRetry = retrySchedule{
-	initialDelay: time.Second,
-	maxDelay:     30 * time.Second,
-	giveUpAfter:  10 * time.Minute,
+	initialDelay:   time.Second,
+	maxDelay:       30 * time.Second,
+	attemptTimeout: 30 * time.Second,
+	giveUpAfter:    10 * time.Minute,
 }
 
 // updateStateWithRetry sends a status update that no later update repeats. If it is lost, meshfed shows
@@ -29,7 +32,7 @@ func updateStateWithRetry(api RunApi, status *RunStatus, schedule retrySchedule,
 	deadline := time.Now().Add(schedule.giveUpAfter)
 	delay := schedule.initialDelay
 	for {
-		_, err := api.UpdateState(status)
+		err := updateStateWithin(api, status, min(schedule.attemptTimeout, time.Until(deadline)))
 		if err == nil || !isTransient(err) || time.Now().Add(delay).After(deadline) {
 			return err
 		}
@@ -37,6 +40,13 @@ func updateStateWithRetry(api RunApi, status *RunStatus, schedule retrySchedule,
 		time.Sleep(delay)
 		delay = min(delay*2, schedule.maxDelay)
 	}
+}
+
+func updateStateWithin(api RunApi, status *RunStatus, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	_, err := api.UpdateState(ctx, status)
+	return err
 }
 
 func isTransient(err error) bool {

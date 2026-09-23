@@ -186,7 +186,7 @@ func (w *SingleRunWorker) observerRoutine(ctx context.Context, cancel context.Ca
 		// send out updates as liveliness update
 		case <-ticker.C:
 			if !runContextInfo.reportStatus.Status.isTerminalState() {
-				abort, err := w.runApi.UpdateState(&runContextInfo.reportStatus)
+				abort, err := w.runApi.UpdateState(context.Background(), &runContextInfo.reportStatus)
 				if err != nil {
 					runContextInfo.logwrap.PrintlnToLocalLogs(fmt.Sprintf("Failed to update state: %s", err.Error()))
 				}

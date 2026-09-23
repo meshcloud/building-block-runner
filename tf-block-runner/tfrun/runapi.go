@@ -1,6 +1,7 @@
 package tfrun
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -44,7 +45,7 @@ const (
 
 type RunApi interface {
 	FetchRunDetails(nodePostfix string) (*Run, error)
-	UpdateState(status *RunStatus) (bool, error)
+	UpdateState(ctx context.Context, status *RunStatus) (bool, error)
 	Register(status *RunStatus) error
 	SetRunToken(token string) // Set the runToken from the fetched run
 	ClearRunToken()           // Clear the runToken to force basic auth for next fetch
@@ -133,13 +134,13 @@ func (api *RunApiClient) Register(runStatus *RunStatus) error {
 	return nil
 }
 
-func (api *RunApiClient) UpdateState(status *RunStatus) (bool, error) {
+func (api *RunApiClient) UpdateState(ctx context.Context, status *RunStatus) (bool, error) {
 	dto, err := status.toExternal()
 	if err != nil {
 		return false, err
 	}
 
-	data, err := api.client.PatchStatus(status.RunId, AppConfig.RunnerUuid, dto)
+	data, err := api.client.PatchStatus(ctx, status.RunId, AppConfig.RunnerUuid, dto)
 	if err != nil {
 		return false, err
 	}

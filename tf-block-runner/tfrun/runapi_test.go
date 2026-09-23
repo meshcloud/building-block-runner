@@ -1,6 +1,7 @@
 package tfrun
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -293,7 +294,7 @@ func (suite *ApiTestSuite) Test_RegisterSource() {
 }
 
 func (suite *ApiTestSuite) Test_UpdateState() {
-	_, err := suite.api.UpdateState(
+	_, err := suite.api.UpdateState(context.Background(),
 		&RunStatus{
 			RunId:            "run-uuid",
 			Status:           IN_PROGRESS,
@@ -378,7 +379,7 @@ func (suite *ApiTestSuite) Test_UpdateState() {
 }
 
 func (suite *ApiTestSuite) Test_UpdateStateOutputs() {
-	_, err := suite.api.UpdateState(
+	_, err := suite.api.UpdateState(context.Background(),
 		&RunStatus{
 			RunId:            "run-uuid",
 			Status:           IN_PROGRESS,
@@ -783,7 +784,7 @@ func (suite *ApiTestSuite) Test_ClearRunToken_ResetsToBasicAuth() {
 	suite.caughtRequests = make([]*CaughtRequest, 0)
 
 	// Execute: Update state (should use Bearer token)
-	_, err = api.UpdateState(status)
+	_, err = api.UpdateState(context.Background(), status)
 	assert.Nil(suite.T(), err)
 
 	// Verify: Second request uses Bearer token
@@ -860,7 +861,7 @@ func (suite *ApiTestSuite) Test_ClearRunToken_MultipleRunCycle() {
 			Status: IN_PROGRESS,
 			Steps:  nil,
 		}
-		_, err = api.UpdateState(status)
+		_, err = api.UpdateState(context.Background(), status)
 		assert.Nil(suite.T(), err, "Iteration %d: UpdateState should not error", i)
 
 		// Verify update used Bearer token

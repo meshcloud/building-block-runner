@@ -508,7 +508,7 @@ func (suite *WorkerTestSuite) Test_DestroyTfFailure() {
 }
 
 func (suite *WorkerTestSuite) Test_FinalStatusIsRetriedWhileMeshfedAnswers503() {
-	suite.w.finalStatusRetry = retrySchedule{initialDelay: time.Millisecond, maxDelay: time.Millisecond, giveUpAfter: time.Second}
+	suite.w.finalStatusRetry = retrySchedule{initialDelay: time.Millisecond, maxDelay: time.Millisecond, attemptTimeout: time.Second, giveUpAfter: time.Second}
 	suite.calls.fetch = mockValidRunDetailsFetchCall(DESTROY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
 
 	finalStatusAttempts := 0

@@ -233,7 +233,7 @@ func (w *Worker) observerRoutine(ctx context.Context, cancel context.CancelFunc,
 		// as this is handled in the previous case block (workRoutine done)
 		case <-ticker.C:
 			if !runContextInfo.reportStatus.Status.isTerminalState() {
-				abort, err := w.runApi.UpdateState(&runContextInfo.reportStatus)
+				abort, err := w.runApi.UpdateState(context.Background(), &runContextInfo.reportStatus)
 				if err != nil {
 					runContextInfo.logwrap.PrintlnToLocalLogs(fmt.Sprintf("Failed to update state: %s", err.Error()))
 				}

@@ -1,6 +1,7 @@
 package tfrun
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -35,7 +36,7 @@ func TestUpdateState_ErrorHandling(t *testing.T) {
 		Steps: []*StepStatus{},
 	}
 
-	abort, err := api.UpdateState(status)
+	abort, err := api.UpdateState(context.Background(), status)
 
 	if err == nil {
 		t.Error("Expected error due to 403 response, but got none")

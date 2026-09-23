@@ -2,6 +2,7 @@ package meshapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -225,7 +226,7 @@ func (c *Client) RegisterSource(runID string, registration RegistrationDTO) erro
 // PatchStatus sends a status update (PATCH) for a run to the given sourceID endpoint.
 // payload is JSON-marshalled and sent as the request body.
 // The raw response body is returned so callers can parse response fields (e.g. runAborted).
-func (c *Client) PatchStatus(runID, sourceID string, payload interface{}) ([]byte, error) {
+func (c *Client) PatchStatus(ctx context.Context, runID, sourceID string, payload interface{}) ([]byte, error) {
 	url := fmt.Sprintf(EPRunSourceUpdate, c.baseURL, runID, sourceID)
 
 	body, err := json.Marshal(payload)
@@ -233,7 +234,7 @@ func (c *Client) PatchStatus(runID, sourceID string, payload interface{}) ([]byt
 		return nil, fmt.Errorf("failed to marshal status payload: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPatch, url, bytes.NewBuffer(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, url, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

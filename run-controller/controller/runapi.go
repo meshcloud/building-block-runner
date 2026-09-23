@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"log"
@@ -106,7 +107,7 @@ func (api *RunApiClient) UpdateRunStatus(runId string, status string, summary st
 		},
 	}
 
-	if _, err := client.PatchStatus(runId, AppConfig.Uuid, dto); err != nil {
+	if _, err := client.PatchStatus(context.Background(), runId, AppConfig.Uuid, dto); err != nil {
 		return fmt.Errorf("update status failed: %w", err)
 	}
 

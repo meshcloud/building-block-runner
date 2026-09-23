@@ -247,7 +247,7 @@ func (c *Client) PatchStatus(runID, sourceID string, payload interface{}) ([]byt
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("patch status returned HTTP %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("patch status: %w: %s", &StatusError{Status: resp.StatusCode}, string(respBody))
 	}
 
 	data, err := io.ReadAll(resp.Body)

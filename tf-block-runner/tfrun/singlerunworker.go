@@ -19,6 +19,7 @@ type SingleRunWorker struct {
 	tfBinaries           *TfBinaries
 	log                  *log.Logger
 	statusUpdateInterval time.Duration
+	finalStatusRetry     retrySchedule
 }
 
 // NewSingleRunWorker creates a new single-run worker
@@ -30,6 +31,7 @@ func NewSingleRunWorker(logger *log.Logger, workerDir string, timeoutMins int, t
 		tfBinaries:           tfbin,
 		log:                  logger,
 		statusUpdateInterval: time.Second * 10,
+		finalStatusRetry:     finalStatusRetry,
 	}
 }
 
@@ -43,6 +45,7 @@ func NewSingleRunWorkerWithApi(logger *log.Logger, workerDir string, timeoutMins
 		tfBinaries:           tfbin,
 		log:                  logger,
 		statusUpdateInterval: time.Second * 10,
+		finalStatusRetry:     finalStatusRetry,
 	}
 }
 
@@ -169,7 +172,7 @@ func (w *SingleRunWorker) observerRoutine(ctx context.Context, cancel context.Ca
 			reportStatus.Status = finalStatus
 
 			w.log.Printf("Sending final status update for run %s: %s", runContextInfo.runId, finalStatus.str())
-			_, err := w.runApi.UpdateState(&reportStatus)
+			err := updateStateWithRetry(w.runApi, &reportStatus, w.finalStatusRetry, w.log)
 
 			if err != nil {
 				w.log.Printf("ERROR: Failed to send final status for run %s: %v", runContextInfo.runId, err)
@@ -201,13 +204,16 @@ func (w *SingleRunWorker) observerRoutine(ctx context.Context, cancel context.Ca
 
 func (w *SingleRunWorker) sendInitFail(run *Run) {
 	summary := "Something went wrong while starting the run."
-	_, err := w.runApi.UpdateState(
+	err := updateStateWithRetry(
+		w.runApi,
 		&RunStatus{
 			RunId:   run.Id,
 			Status:  FAILED,
 			Steps:   nil,
 			Summary: &summary,
 		},
+		w.finalStatusRetry,
+		w.log,
 	)
 	if err != nil {
 		w.log.Printf("Failed to update initial state: %s\n", err.Error())

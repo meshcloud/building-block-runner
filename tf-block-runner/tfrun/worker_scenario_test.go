@@ -507,6 +507,38 @@ func (suite *WorkerTestSuite) Test_DestroyTfFailure() {
 	assert.Equal(suite.T(), "Aborted due to failure in an earlier step", *outputStep.SystemMessage)
 }
 
+func (suite *WorkerTestSuite) Test_FinalStatusIsRetriedWhileMeshfedAnswers503() {
+	suite.w.finalStatusRetry = retrySchedule{initialDelay: time.Millisecond, maxDelay: time.Millisecond, giveUpAfter: time.Second}
+	suite.calls.fetch = mockValidRunDetailsFetchCall(DESTROY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+
+	finalStatusAttempts := 0
+	suite.calls.update = func(req *http.Request) *http.Response {
+		data, _ := io.ReadAll(req.Body)
+		var update meshapi.RunStatusUpdateDTO
+		json.Unmarshal(data, &update)
+		status := http.StatusOK
+		if *update.Status == FAILED.str() {
+			finalStatusAttempts++
+			if finalStatusAttempts <= 2 {
+				status = http.StatusServiceUnavailable
+			}
+		}
+		return &http.Response{
+			StatusCode: status,
+			Body:       io.NopCloser(bytes.NewBuffer([]byte("{}"))),
+			Header:     make(http.Header),
+		}
+	}
+
+	suite.tfMock.destroyFunc = func(ctx context.Context, opts ...tfexec.DestroyOption) error {
+		return errors.New("test error")
+	}
+
+	suite.runWorker()
+
+	assert.Equal(suite.T(), 3, finalStatusAttempts)
+}
+
 func (suite *WorkerTestSuite) Test_UpdatesStatusWithLiveLogs() {
 	// let worker report status every half second
 	suite.w.statusUpdateInterval = time.Millisecond * 500

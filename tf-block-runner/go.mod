@@ -3,6 +3,7 @@ module github.com/meshcloud/building-block-runner/tf-block-runner
 go 1.26
 
 require (
+	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/go-git/go-git/v5 v5.19.1
 	github.com/hashicorp/hc-install v0.9.5
 	github.com/hashicorp/hcl/v2 v2.24.0

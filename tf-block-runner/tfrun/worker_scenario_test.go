@@ -140,6 +140,7 @@ func (suite *WorkerTestSuite) SetupTest() {
 		log:                  log.New(io.Discard, "", log.LstdFlags),
 		timeout:              30 * time.Second,
 		statusUpdateInterval: time.Second * 10,
+		finalStatusRetry:     retrySchedule{initialDelay: time.Millisecond, maxDelay: time.Millisecond, attemptTimeout: time.Second, giveUpAfter: time.Second},
 	}
 }
 
@@ -197,7 +198,7 @@ func (suite *WorkerTestSuite) Test_MissingAuth() {
 	updateCalls := make([]http.Request, 0)
 	suite.calls.update = func(req *http.Request) *http.Response {
 		updateCalls = append(updateCalls, *req)
-		return nil
+		return noopCall(req)
 	}
 
 	// execute worker
@@ -508,7 +509,6 @@ func (suite *WorkerTestSuite) Test_DestroyTfFailure() {
 }
 
 func (suite *WorkerTestSuite) Test_FinalStatusIsRetriedWhileMeshfedAnswers503() {
-	suite.w.finalStatusRetry = retrySchedule{initialDelay: time.Millisecond, maxDelay: time.Millisecond, attemptTimeout: time.Second, giveUpAfter: time.Second}
 	suite.calls.fetch = mockValidRunDetailsFetchCall(DESTROY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
 
 	finalStatusAttempts := 0
@@ -556,7 +556,7 @@ func (suite *WorkerTestSuite) Test_UpdatesStatusWithLiveLogs() {
 	updateCalls := make([]http.Request, 0)
 	suite.calls.update = func(req *http.Request) *http.Response {
 		updateCalls = append(updateCalls, *req)
-		return nil
+		return noopCall(req)
 	}
 
 	suite.runWorker()

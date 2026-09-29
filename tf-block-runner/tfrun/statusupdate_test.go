@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,11 +17,11 @@ import (
 
 var shortRetry = retrySchedule{initialDelay: time.Millisecond, maxDelay: 5 * time.Millisecond, attemptTimeout: 50 * time.Millisecond, giveUpAfter: 200 * time.Millisecond}
 
-func runApiAnswering(t *testing.T, statuses ...int) (RunApi, *int) {
-	calls := 0
+func runApiAnswering(t *testing.T, statuses ...int) (RunApi, *atomic.Int32) {
+	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		status := statuses[min(calls, len(statuses)-1)]
-		calls++
+		call := int(calls.Add(1))
+		status := statuses[min(call, len(statuses))-1]
 		w.WriteHeader(status)
 		w.Write([]byte("{}"))
 	}))
@@ -36,7 +37,7 @@ func TestUpdateStateWithRetry_DeliversOnceMeshfedIsBackAfter503(t *testing.T) {
 	err := updateStateWithRetry(api, &RunStatus{RunId: "run", Status: FAILED}, shortRetry, log.New(io.Discard, "", 0))
 
 	assert.NoError(t, err)
-	assert.Equal(t, 3, *calls)
+	assert.Equal(t, int32(3), calls.Load())
 }
 
 func TestUpdateStateWithRetry_DoesNotRetryAClientError(t *testing.T) {
@@ -45,7 +46,7 @@ func TestUpdateStateWithRetry_DoesNotRetryAClientError(t *testing.T) {
 	err := updateStateWithRetry(api, &RunStatus{RunId: "run", Status: FAILED}, shortRetry, log.New(io.Discard, "", 0))
 
 	assert.Error(t, err)
-	assert.Equal(t, 1, *calls)
+	assert.Equal(t, int32(1), calls.Load())
 }
 
 func TestUpdateStateWithRetry_GivesUpWhileMeshfedStaysDown(t *testing.T) {
@@ -53,8 +54,8 @@ func TestUpdateStateWithRetry_GivesUpWhileMeshfedStaysDown(t *testing.T) {
 
 	err := updateStateWithRetry(api, &RunStatus{RunId: "run", Status: FAILED}, shortRetry, log.New(io.Discard, "", 0))
 
-	assert.ErrorContains(t, err, "503")
-	assert.Greater(t, *calls, 1)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Greater(t, calls.Load(), int32(1))
 }
 
 func TestUpdateStateWithRetry_RetriesWhenMeshfedIsUnreachable(t *testing.T) {
@@ -71,10 +72,9 @@ func TestUpdateStateWithRetry_RetriesWhenMeshfedIsUnreachable(t *testing.T) {
 }
 
 func TestUpdateStateWithRetry_RetriesAnAttemptThatGetsNoAnswer(t *testing.T) {
-	calls := 0
+	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
-		if calls == 1 {
+		if calls.Add(1) == 1 {
 			stallUntilTestEnds(t)
 			return
 		}
@@ -87,7 +87,7 @@ func TestUpdateStateWithRetry_RetriesAnAttemptThatGetsNoAnswer(t *testing.T) {
 	err := updateStateWithRetry(api, &RunStatus{RunId: "run", Status: FAILED}, shortRetry, log.New(io.Discard, "", 0))
 
 	assert.NoError(t, err)
-	assert.Equal(t, 2, calls)
+	assert.Equal(t, int32(2), calls.Load())
 }
 
 func TestUpdateStateWithRetry_GivesUpInTimeWhenNoAttemptGetsAnAnswer(t *testing.T) {

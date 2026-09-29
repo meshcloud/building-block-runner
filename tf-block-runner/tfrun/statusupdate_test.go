@@ -45,8 +45,18 @@ func TestUpdateStateWithRetry_DoesNotRetryAClientError(t *testing.T) {
 
 	err := updateStateWithRetry(api, &RunStatus{RunId: "run", Status: FAILED}, shortRetry, log.New(io.Discard, "", 0))
 
-	assert.Error(t, err)
+	assert.ErrorContains(t, err, "403")
+	assert.NotContains(t, err.Error(), "earlier attempt")
 	assert.Equal(t, int32(1), calls.Load())
+}
+
+func TestUpdateStateWithRetry_SaysAnEarlierAttemptMayHaveDeliveredWhenARetryIsRejected(t *testing.T) {
+	api, calls := runApiAnswering(t, http.StatusGatewayTimeout, http.StatusUnauthorized)
+
+	err := updateStateWithRetry(api, &RunStatus{RunId: "run", Status: FAILED}, shortRetry, log.New(io.Discard, "", 0))
+
+	assert.ErrorContains(t, err, "an earlier attempt may have delivered the status")
+	assert.Equal(t, int32(2), calls.Load())
 }
 
 func TestUpdateStateWithRetry_GivesUpWhileMeshfedStaysDown(t *testing.T) {

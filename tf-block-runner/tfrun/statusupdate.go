@@ -38,13 +38,20 @@ func updateStateWithRetry(api RunApi, status *RunStatus, schedule retrySchedule,
 		fmt.Errorf("meshfed did not take the status within %s: %w", schedule.giveUpAfter, context.DeadlineExceeded))
 	defer cancel()
 
+	retried := false
 	_, err := backoff.Retry(ctx,
-		func() (bool, error) {
+		func() (struct{}, error) {
 			_, err := updateStateWithin(ctx, api, status, schedule.attemptTimeout)
-			if err != nil && !isTransient(err) {
-				return false, backoff.Permanent(err)
+			switch {
+			case err == nil:
+			case isTransient(err):
+				retried = true
+			case retried:
+				err = backoff.Permanent(fmt.Errorf("meshfed rejected a retry, so an earlier attempt may have delivered the status: %w", err))
+			default:
+				err = backoff.Permanent(err)
 			}
-			return true, err
+			return struct{}{}, err
 		},
 		backoff.WithBackOff(&backoff.ExponentialBackOff{
 			InitialInterval:     schedule.initialDelay,
@@ -52,6 +59,8 @@ func updateStateWithRetry(api RunApi, status *RunStatus, schedule retrySchedule,
 			Multiplier:          2,
 			RandomizationFactor: backoff.DefaultRandomizationFactor,
 		}),
+		// 0 turns off the library's own 15-minute cap, so the context alone ends the retry.
+		backoff.WithMaxElapsedTime(0),
 		backoff.WithNotify(func(err error, delay time.Duration) {
 			logger.Printf("Status update for run %s failed, retrying in %s: %v", status.RunId, delay, err)
 		}),

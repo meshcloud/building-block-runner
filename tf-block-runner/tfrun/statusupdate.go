@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"net/url"
+	"slices"
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
@@ -46,7 +48,7 @@ func updateStateWithRetry(api RunApi, status *RunStatus, schedule retrySchedule,
 			case err == nil:
 			case isTransient(err):
 				retried = true
-			case retried:
+			case retried && isClientError(err):
 				err = backoff.Permanent(fmt.Errorf("meshfed rejected a retry, so an earlier attempt may have delivered the status: %w", err))
 			default:
 				err = backoff.Permanent(err)
@@ -74,10 +76,17 @@ func updateStateWithin(ctx context.Context, api RunApi, status *RunStatus, timeo
 	return api.UpdateState(ctx, status)
 }
 
+// isTransient leaves out 500: it is unlikely to pass on a retry, and a retry holds one of the few runners for ten
+// minutes, so a run that always fails with 500 could keep every runner from starting other runs.
 func isTransient(err error) bool {
 	if statusErr, ok := errors.AsType[*meshapi.StatusError](err); ok {
-		return statusErr.Status >= 500
+		return slices.Contains([]int{http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout}, statusErr.Status)
 	}
 	_, isTransportErr := errors.AsType[*url.Error](err)
 	return isTransportErr
+}
+
+func isClientError(err error) bool {
+	statusErr, ok := errors.AsType[*meshapi.StatusError](err)
+	return ok && statusErr.Status >= 400 && statusErr.Status < 500
 }

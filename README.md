@@ -48,7 +48,7 @@ For general information about the meshStack platform and Building Blocks, see th
 This repository uses two separate build systems in parallel:
 
 - **Go modules** (`run-controller`, `tf-block-runner`, `go-meshapi-client`) are managed via a [Go workspace](go.work). Run `go work sync` from the root if module references change.
-- **JVM modules** (`block-runner-core`, `github-block-runner`, `gitlab-block-runner`, `azure-devops-block-runner`, `manual-block-runner`) are managed via [Gradle](build.gradle).
+- **JVM modules** (`block-runner-core`, `github-block-runner`, `gitlab-block-runner`, `azure-devops-block-runner`, `manual-block-runner`) are managed via [Gradle](build.gradle). Each runner locks its dependency versions in a `gradle.lockfile`. Run `./gradlew resolveRunners --write-locks` after you change a dependency.
 
 Alongside the runners, the repository contains shared modules:
 

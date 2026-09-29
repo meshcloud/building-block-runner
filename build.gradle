@@ -5,6 +5,9 @@ plugins {
   id 'org.jlleitschuh.gradle.ktlint' version '14.0.1' apply false
 }
 
+// Resolves every runner, so `./gradlew resolveRunners --write-locks` updates all lockfiles.
+tasks.register('resolveRunners')
+
 subprojects {
   group = 'io.meshcloud.buildingblocks'
 
@@ -26,6 +29,15 @@ subprojects {
         freeCompilerArgs.addAll '-Xjsr305=strict', '-Xannotation-default-target=param-property'
       }
     }
+  }
+
+  pluginManager.withPlugin('org.springframework.boot') {
+    dependencyLocking {
+      lockAllConfigurations()
+    }
+
+    def dependenciesTask = tasks.named('dependencies')
+    rootProject.tasks.named('resolveRunners') { dependsOn(dependenciesTask) }
   }
 
   pluginManager.withPlugin('java') {

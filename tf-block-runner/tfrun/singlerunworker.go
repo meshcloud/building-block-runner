@@ -19,6 +19,7 @@ type SingleRunWorker struct {
 	tfBinaries           *TfBinaries
 	log                  *log.Logger
 	statusUpdateInterval time.Duration
+	statusRequestTimeout time.Duration
 	finalStatusRetry     retrySchedule
 }
 
@@ -31,6 +32,7 @@ func NewSingleRunWorker(logger *log.Logger, workerDir string, timeoutMins int, t
 		tfBinaries:           tfbin,
 		log:                  logger,
 		statusUpdateInterval: time.Second * 10,
+		statusRequestTimeout: statusRequestTimeout,
 		finalStatusRetry:     finalStatusRetry,
 	}
 }
@@ -45,6 +47,7 @@ func NewSingleRunWorkerWithApi(logger *log.Logger, workerDir string, timeoutMins
 		tfBinaries:           tfbin,
 		log:                  logger,
 		statusUpdateInterval: time.Second * 10,
+		statusRequestTimeout: statusRequestTimeout,
 		finalStatusRetry:     finalStatusRetry,
 	}
 }
@@ -186,7 +189,7 @@ func (w *SingleRunWorker) observerRoutine(ctx context.Context, cancel context.Ca
 		// send out updates as liveliness update
 		case <-ticker.C:
 			if !runContextInfo.reportStatus.Status.isTerminalState() {
-				abort, err := w.runApi.UpdateState(context.Background(), &runContextInfo.reportStatus)
+				abort, err := updateStateWithin(context.Background(), w.runApi, &runContextInfo.reportStatus, w.statusRequestTimeout)
 				if err != nil {
 					runContextInfo.logwrap.PrintlnToLocalLogs(fmt.Sprintf("Failed to update state: %s", err.Error()))
 				}

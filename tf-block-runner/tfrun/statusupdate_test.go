@@ -50,6 +50,25 @@ func TestUpdateStateWithRetry_DoesNotRetryAClientError(t *testing.T) {
 	assert.Equal(t, int32(1), calls.Load())
 }
 
+func TestUpdateStateWithRetry_DoesNotRetryAnInternalServerError(t *testing.T) {
+	api, calls := runApiAnswering(t, http.StatusInternalServerError)
+
+	err := updateStateWithRetry(api, &RunStatus{RunId: "run", Status: FAILED}, shortRetry, log.New(io.Discard, "", 0))
+
+	assert.ErrorContains(t, err, "500")
+	assert.Equal(t, int32(1), calls.Load())
+}
+
+func TestUpdateStateWithRetry_StopsAtAnInternalServerErrorAfter503(t *testing.T) {
+	api, calls := runApiAnswering(t, http.StatusServiceUnavailable, http.StatusInternalServerError)
+
+	err := updateStateWithRetry(api, &RunStatus{RunId: "run", Status: FAILED}, shortRetry, log.New(io.Discard, "", 0))
+
+	assert.ErrorContains(t, err, "500")
+	assert.NotContains(t, err.Error(), "earlier attempt")
+	assert.Equal(t, int32(2), calls.Load())
+}
+
 func TestUpdateStateWithRetry_SaysAnEarlierAttemptMayHaveDeliveredWhenARetryIsRejected(t *testing.T) {
 	api, calls := runApiAnswering(t, http.StatusGatewayTimeout, http.StatusUnauthorized)
 

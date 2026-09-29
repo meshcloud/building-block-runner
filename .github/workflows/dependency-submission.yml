@@ -1,0 +1,42 @@
+name: Dependency Submission
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '**/gradle.lockfile'
+      - '.github/workflows/dependency-submission.yml'
+
+concurrency:
+  group: dependency-submission
+  cancel-in-progress: true
+
+jobs:
+  gradle:
+    # Dependabot reads only the default branch's graph.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write # Dependency Submission API
+
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Submit the shipped Gradle dependencies
+        uses: gradle/actions/dependency-submission@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-provider: basic
+          # The graph cannot mark a Gradle package as test-only.
+          dependency-graph-include-configurations: productionRuntimeClasspath

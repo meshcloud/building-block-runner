@@ -514,13 +514,13 @@ func (suite *WorkerTestSuite) Test_FinalStatusIsSentWhenAHeartbeatGetsNoAnswer()
 	suite.w.statusRequestTimeout = 50 * time.Millisecond
 	suite.calls.fetch = mockValidRunDetailsFetchCall(DESTROY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
 
-	finalStatusSent := false
+	var workDone, finalStatusSent time.Time
 	suite.calls.update = func(req *http.Request) *http.Response {
 		data, _ := io.ReadAll(req.Body)
 		var update meshapi.RunStatusUpdateDTO
 		json.Unmarshal(data, &update)
 		if *update.Status == FAILED.str() {
-			finalStatusSent = true
+			finalStatusSent = time.Now()
 		} else {
 			select {
 			case <-req.Context().Done():
@@ -536,14 +536,14 @@ func (suite *WorkerTestSuite) Test_FinalStatusIsSentWhenAHeartbeatGetsNoAnswer()
 
 	suite.tfMock.destroyFunc = func(ctx context.Context, opts ...tfexec.DestroyOption) error {
 		time.Sleep(20 * time.Millisecond)
+		workDone = time.Now()
 		return errors.New("test error")
 	}
 
-	start := time.Now()
 	suite.runWorker()
 
-	assert.True(suite.T(), finalStatusSent)
-	assert.Less(suite.T(), time.Since(start), 5*time.Second)
+	assert.False(suite.T(), finalStatusSent.IsZero())
+	assert.Less(suite.T(), finalStatusSent.Sub(workDone), 2*time.Second)
 }
 
 func (suite *WorkerTestSuite) Test_FinalStatusIsRetriedWhileMeshfedAnswers503() {

@@ -140,6 +140,7 @@ func (suite *WorkerTestSuite) SetupTest() {
 		log:                  log.New(io.Discard, "", log.LstdFlags),
 		timeout:              30 * time.Second,
 		statusUpdateInterval: time.Second * 10,
+		statusRequestTimeout: time.Second,
 		finalStatusRetry:     retrySchedule{initialDelay: time.Millisecond, maxDelay: time.Millisecond, attemptTimeout: time.Second, giveUpAfter: time.Second},
 	}
 }
@@ -506,6 +507,43 @@ func (suite *WorkerTestSuite) Test_DestroyTfFailure() {
 	assert.Equal(suite.T(), FAILED.str(), *outputStep.Status)
 	assert.Nil(suite.T(), outputStep.UserMessage)
 	assert.Equal(suite.T(), "Aborted due to failure in an earlier step", *outputStep.SystemMessage)
+}
+
+func (suite *WorkerTestSuite) Test_FinalStatusIsSentWhenAHeartbeatGetsNoAnswer() {
+	suite.w.statusUpdateInterval = 5 * time.Millisecond
+	suite.w.statusRequestTimeout = 50 * time.Millisecond
+	suite.calls.fetch = mockValidRunDetailsFetchCall(DESTROY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+
+	finalStatusSent := false
+	suite.calls.update = func(req *http.Request) *http.Response {
+		data, _ := io.ReadAll(req.Body)
+		var update meshapi.RunStatusUpdateDTO
+		json.Unmarshal(data, &update)
+		if *update.Status == FAILED.str() {
+			finalStatusSent = true
+		} else {
+			select {
+			case <-req.Context().Done():
+			case <-time.After(10 * time.Second):
+			}
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer([]byte("{}"))),
+			Header:     make(http.Header),
+		}
+	}
+
+	suite.tfMock.destroyFunc = func(ctx context.Context, opts ...tfexec.DestroyOption) error {
+		time.Sleep(20 * time.Millisecond)
+		return errors.New("test error")
+	}
+
+	start := time.Now()
+	suite.runWorker()
+
+	assert.True(suite.T(), finalStatusSent)
+	assert.Less(suite.T(), time.Since(start), 5*time.Second)
 }
 
 func (suite *WorkerTestSuite) Test_FinalStatusIsRetriedWhileMeshfedAnswers503() {

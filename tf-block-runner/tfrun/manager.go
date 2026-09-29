@@ -73,6 +73,7 @@ func (rm *DefaultRunManager) run(timeout time.Duration) {
 			tfBinaries:           rm.tfbinaries,
 			log:                  log.New(os.Stdout, fmt.Sprintf("[WORKER-%03d] ", i+1), log.LstdFlags),
 			statusUpdateInterval: time.Second * 10,
+			statusRequestTimeout: statusRequestTimeout,
 			finalStatusRetry:     finalStatusRetry,
 		}
 		go worker.work()

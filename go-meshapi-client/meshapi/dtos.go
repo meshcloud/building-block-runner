@@ -21,17 +21,30 @@ type LinksDTO struct {
 	RegisterSource   LinkDTO `json:"registerSource"`
 	UpdateSource     LinkDTO `json:"updateSource"`
 	MeshstackBaseUrl LinkDTO `json:"meshstackBaseUrl"`
-	// PlanArtifact carries a link ONLY when this APPLY run must apply a predecessor DETECT run's
+	// Artifact carries a link ONLY when this APPLY run must apply a predecessor DETECT run's
 	// saved terraform plan. Because it is a value (not pointer) struct, an absent JSON field
 	// unmarshals to a zero LinkDTO: an empty Href is the runner's signal to perform a plain apply.
+	Artifact LinkDTO `json:"artifact"`
+	// PlanArtifact is the name meshStack used for Artifact before it renamed the rel. Read both through
+	// PredecessorArtifactHref, so the runner keeps working against meshStack versions that do not emit
+	// Artifact yet.
 	PlanArtifact LinkDTO `json:"planArtifact"`
 	// ArtifactUpload is where the runner uploads the artifact it produced (a DETECT run's terraform
-	// plan). Unlike PlanArtifact an empty Href is NOT a signal to skip the upload: the backend emits this
+	// plan). Unlike Artifact an empty Href is NOT a signal to skip the upload: the backend emits this
 	// link for every dry-run capable implementation, so a DETECT run without it fails.
 	ArtifactUpload LinkDTO `json:"artifactUpload"`
 	// TfStateLock is absent on an older meshStack, which cannot lock the state. OpenTofu fails every
 	// command when lock_address points to an endpoint that does not exist, so an empty Href means: do not lock.
 	TfStateLock LinkDTO `json:"tfStateLock,omitzero"`
+}
+
+// PredecessorArtifactHref returns where to download the predecessor DETECT run's artifact, or ""
+// when this run has none to apply.
+func (l LinksDTO) PredecessorArtifactHref() string {
+	if l.Artifact.Href != "" {
+		return l.Artifact.Href
+	}
+	return l.PlanArtifact.Href
 }
 
 type LinkDTO struct {

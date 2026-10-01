@@ -44,12 +44,12 @@ func noopCall(req *http.Request) *http.Response {
 
 func (suite *WorkerTestSuite) scenarioClientBehavior(req *http.Request) *http.Response {
 	switch {
-	// this is the predecessor plan-artifact download call
-	case req.Method == http.MethodGet && strings.Contains(req.URL.Path, "/plan-artifact"):
+	// this is the predecessor artifact download call
+	case req.Method == http.MethodGet && strings.Contains(req.URL.Path, "/artifact"):
 		return suite.calls.download(req)
 
-	// this is the plan-artifact upload call
-	case req.Method == http.MethodPut && strings.Contains(req.URL.Path, "/plan-artifact"):
+	// this is the artifact upload call
+	case req.Method == http.MethodPut && strings.Contains(req.URL.Path, "/artifact"):
 		return suite.calls.upload(req)
 
 	// this is the "status update" call
@@ -691,7 +691,7 @@ func mockValidRunDetailsFetchCall(behavior, repo, path string) func(_ *http.Requ
 	// hands out an artifactUpload link for it.
 	var links meshapi.LinksDTO
 	if behavior == DETECT.str() {
-		links.ArtifactUpload = meshapi.LinkDTO{Href: "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/plan-artifact"}
+		links.ArtifactUpload = meshapi.LinkDTO{Href: "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/artifact"}
 	}
 	return mockRunDetailsFetchCall(behavior, impl, links)
 }
@@ -773,7 +773,7 @@ func mockApplyRunWithPlanArtifactFetchCall(repo, repoPath, planArtifactHref stri
 					},
 				},
 				Links: meshapi.LinksDTO{
-					PlanArtifact: meshapi.LinkDTO{Href: planArtifactHref},
+					Artifact: meshapi.LinkDTO{Href: planArtifactHref},
 				},
 			},
 		)

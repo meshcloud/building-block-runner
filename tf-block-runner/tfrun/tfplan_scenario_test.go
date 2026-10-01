@@ -19,7 +19,7 @@ import (
 // the artifactUpload endpoint (correct method, URL, run-scoped auth, and payload) and ends SUCCEEDED.
 func (suite *WorkerTestSuite) Test_DetectSucceeded_UploadsArtifactViaEndpoint() {
 	planBytes := []byte("fake-plan-binary-data")
-	uploadHref := "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/plan-artifact"
+	uploadHref := "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/artifact"
 
 	suite.tfMock.planFunc = func(ctx context.Context, opts ...tfexec.PlanOption) (bool, error) {
 		rci := ctx.Value(runInfoContextKey).(*RunContextInfo)
@@ -77,7 +77,7 @@ func (suite *WorkerTestSuite) Test_DetectSucceeded_UploadsArtifactViaEndpoint() 
 // bytes, so a run must never declare success while the plan is missing from the backend.
 func (suite *WorkerTestSuite) Test_DetectSucceeded_UploadFailureFailsRun() {
 	planBytes := []byte("fake-plan-binary-data")
-	uploadHref := "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/plan-artifact"
+	uploadHref := "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/artifact"
 
 	suite.tfMock.planFunc = func(ctx context.Context, opts ...tfexec.PlanOption) (bool, error) {
 		rci := ctx.Value(runInfoContextKey).(*RunContextInfo)
@@ -220,7 +220,7 @@ func (suite *WorkerTestSuite) Test_DetectSucceeded_NoChangesDetected() {
 func (suite *WorkerTestSuite) Test_ApplyWithPlanArtifact_DownloadsAndAppliesSavedPlan() {
 	savedPlanBytes := []byte("predecessor-saved-plan-binary")
 
-	planArtifactHref := "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/plan-artifact"
+	planArtifactHref := "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/artifact"
 	suite.calls.fetch = mockApplyRunWithPlanArtifactFetchCall(
 		"https://github.com/meshcloud/meshstack-hub.git",
 		"modules/github/repository/buildingblock",
@@ -319,7 +319,7 @@ func (suite *WorkerTestSuite) Test_ApplyWithoutPlanArtifact_PlainApply() {
 // Test_ApplyWithPlanArtifact_DownloadFailureFailsRun verifies that when the planArtifact download
 // returns a non-2xx (e.g. the artifact is gone), the run FAILS and terraform apply is never called.
 func (suite *WorkerTestSuite) Test_ApplyWithPlanArtifact_DownloadFailureFailsRun() {
-	planArtifactHref := "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/plan-artifact"
+	planArtifactHref := "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/artifact"
 	suite.calls.fetch = mockApplyRunWithPlanArtifactFetchCall(
 		"https://github.com/meshcloud/meshstack-hub.git",
 		"modules/github/repository/buildingblock",

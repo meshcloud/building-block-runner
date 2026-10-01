@@ -54,7 +54,7 @@ func runDTOToInternal(dto *meshapi.RunDetailsDTO) (*Run, error) {
 		Source:                 source,
 		UseMeshBackendFallback: impl.UseMeshHttpBackendFallback,
 		PreRunScript:           impl.PreRunScript,
-		PlanArtifactUrl:        dto.Links.PlanArtifact.Href,
+		PlanArtifactUrl:        dto.Links.PredecessorArtifactHref(),
 		ArtifactUploadUrl:      dto.Links.ArtifactUpload.Href,
 		TfStateLockUrl:         dto.Links.TfStateLock.Href,
 	}, nil
@@ -114,7 +114,7 @@ func ToInternalWithoutDecryption(dto *meshapi.RunDetailsDTO) (*Run, error) {
 		Source:                 source,
 		UseMeshBackendFallback: impl.UseMeshHttpBackendFallback,
 		PreRunScript:           impl.PreRunScript,
-		PlanArtifactUrl:        dto.Links.PlanArtifact.Href,
+		PlanArtifactUrl:        dto.Links.PredecessorArtifactHref(),
 		ArtifactUploadUrl:      dto.Links.ArtifactUpload.Href,
 		TfStateLockUrl:         dto.Links.TfStateLock.Href,
 	}, nil

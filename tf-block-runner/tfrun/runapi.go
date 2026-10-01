@@ -50,7 +50,7 @@ type RunApi interface {
 	SetRunToken(token string) // Set the runToken from the fetched run
 	ClearRunToken()           // Clear the runToken to force basic auth for next fetch
 	// DownloadPredecessorArtifact streams the bytes referenced by the given absolute URL
-	// (the runner-facing _links.planArtifact.href) into w using the current run authentication.
+	// (the runner-facing _links.artifact.href) into w using the current run authentication.
 	DownloadPredecessorArtifact(url string, w io.Writer) error
 	// UploadArtifact PUTs the raw plan bytes to the given absolute URL
 	// (the runner-facing _links.artifactUpload.href) using the current run authentication.

@@ -21,12 +21,12 @@ type LinksDTO struct {
 	RegisterSource   LinkDTO `json:"registerSource"`
 	UpdateSource     LinkDTO `json:"updateSource"`
 	MeshstackBaseUrl LinkDTO `json:"meshstackBaseUrl"`
-	// PlanArtifact carries a link ONLY when this APPLY run must apply a predecessor DETECT run's
+	// Artifact carries a link ONLY when this APPLY run must apply a predecessor DETECT run's
 	// saved terraform plan. Because it is a value (not pointer) struct, an absent JSON field
 	// unmarshals to a zero LinkDTO: an empty Href is the runner's signal to perform a plain apply.
-	PlanArtifact LinkDTO `json:"planArtifact,omitempty"`
+	Artifact LinkDTO `json:"artifact,omitempty"`
 	// ArtifactUpload is where the runner uploads the artifact it produced (a DETECT run's terraform
-	// plan). Unlike PlanArtifact an empty Href is NOT a signal to skip the upload: the backend emits this
+	// plan). Unlike Artifact an empty Href is NOT a signal to skip the upload: the backend emits this
 	// link for every dry-run capable implementation, so a DETECT run without it fails.
 	ArtifactUpload LinkDTO `json:"artifactUpload,omitempty"`
 }

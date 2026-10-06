@@ -47,7 +47,7 @@ For general information about the meshStack platform and Building Blocks, see th
 
 This repository uses two separate build systems in parallel:
 
-- **Go modules** (`run-controller`, `tf-block-runner`, `go-meshapi-client`) are managed via a [Go workspace](go.work). Run `go work sync` from the root if module references change.
+- **Go** (`run-controller`, `tf-block-runner`, `go-meshapi-client`) shares one [Go module](go.mod) at the repository root.
 - **JVM modules** (`block-runner-core`, `github-block-runner`, `gitlab-block-runner`, `azure-devops-block-runner`, `manual-block-runner`) are managed via [Gradle](build.gradle). Each runner locks its dependency versions in a `gradle.lockfile`. Run `./gradlew resolveRunners --write-locks` after you change a dependency.
 
 Alongside the runners, the repository contains shared modules:
@@ -101,8 +101,7 @@ If you are running a runner through a Docker image, it will default to PORT=8080
 task test          # run all Go tests
 task lint          # run golangci-lint, including the format check
 task fmt           # format Go code
-task tidy          # tidy go modules
-task work:sync     # sync go.work entries
+task tidy          # tidy go.mod and go.sum
 ```
 
 CI runs the equivalent plain `go` commands rather than these tasks.

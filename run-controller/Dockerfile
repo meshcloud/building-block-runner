@@ -2,19 +2,10 @@ FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS builder
 
 WORKDIR /app
 
-# Copy workspace files and shared library first for better layer caching
-# go.work references all three modules, so all go.mod/go.sum files must be present
-COPY go.work go.work.sum ./
-COPY go-meshapi-client/ ./go-meshapi-client/
-COPY run-controller/go.mod run-controller/go.sum ./run-controller/
-COPY tf-block-runner/go.mod tf-block-runner/go.sum ./tf-block-runner/
-
-# Download dependencies (replace directive resolves to local path, no network needed)
-WORKDIR /app/run-controller
+COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy the rest of the source
-WORKDIR /app
+COPY go-meshapi-client/ ./go-meshapi-client/
 COPY run-controller/ ./run-controller/
 
 WORKDIR /app/run-controller

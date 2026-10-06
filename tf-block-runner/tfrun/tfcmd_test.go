@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-exec/tfexec"
+	meshcrypto "github.com/meshcloud/building-block-runner/go-meshapi-client/crypto"
 	"github.com/sebdah/goldie/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -346,6 +347,38 @@ func Test_vars_WithSpecialCharacters(t *testing.T) {
 	assertContainsHCL(t, contentStr, `path = "C:\\Program Files\\App"`)
 	assertContainsHCL(t, contentStr, `json_string = "{\"key\": \"value with \\\"quotes\\\"\"}"`)
 	assertContainsHCL(t, contentStr, `description = "This is a \"quoted\" string with \\backslashes\\"`)
+}
+
+func Test_vars_SensitiveCodeInputThatIsNoValidHcl_ValueNotInLog(t *testing.T) {
+	pubKey, err := os.ReadFile("../../go-meshapi-client/resources/test.pem")
+	require.NoError(t, err)
+	crypto, pubKeyErr, privKeyErr := meshcrypto.NewCertBasedCrypto("../../go-meshapi-client/resources/test.key", pubKey)
+	require.NoError(t, pubKeyErr)
+	require.NoError(t, privKeyErr)
+	previousCrypto := meshcrypto.Crypto
+	meshcrypto.Crypto = crypto
+	t.Cleanup(func() { meshcrypto.Crypto = previousCrypto })
+
+	secret := `{"token": "s3cr3t-${not-hcl}"}`
+	encrypted, err := crypto.EncryptMeshCertBased(secret)
+	require.NoError(t, err)
+
+	uut := makeTestGenericTfCmd(t)
+	updateLogPath := path.Join(t.TempDir(), "update.log")
+	uut.runContextInfo.logwrap = NewLogWrap(log.New(io.Discard, "[tfCmd_test] ", log.LstdFlags), updateLogPath)
+	uut.params.vars["secret_code"] = &Variable{
+		value:       encrypted,
+		Type:        DATA_TYPE_CODE,
+		isSensitive: true,
+	}
+
+	require.NoError(t, uut.vars())
+
+	updateLog, err := os.ReadFile(updateLogPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(updateLog), "While adding variable 'secret_code': Failed to parse raw HCL expression")
+	assert.NotContains(t, string(updateLog), "s3cr3t")
+	assertContainsHCL(t, readGeneratedTfvars(t, uut), `secret_code = "{\"token\": \"s3cr3t-$${not-hcl}\"}"`)
 }
 
 // Test_vars_WithPrettyPrintedJSONObjects tests that CODE/LIST values containing

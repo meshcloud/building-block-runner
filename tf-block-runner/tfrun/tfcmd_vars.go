@@ -89,8 +89,8 @@ func (f VarsFile) AddRawVariable(name string, rawExpression string, options AddV
 			Append(&hcl.Diagnostic{
 				Severity: hcl.DiagWarning,
 				Subject:  &hcl.Range{Filename: fmt.Sprintf("<var=%s>", name)},
-				Summary:  "Failed to parse raw HCL expression",
-				Detail:   "Cannot parse raw HCL as value expression, will fallback to string variable",
+				Summary:  "Failed to parse input as JSON or HCL",
+				Detail:   "Cannot parse input as JSON or as HCL value expression, will fallback to string variable",
 			}).
 			Extend(f.AddVariable(name, rawExpression, AddVariableOptions{EncodeAsJsonString: false}))
 	}
@@ -104,12 +104,7 @@ func (f VarsFile) AddRawVariable(name string, rawExpression string, options AddV
 		return diags
 	}
 
-	expr, diags := hclsyntax.ParseExpression([]byte(rawExpression), fmt.Sprintf("<var=%s>", name), hcl.Pos{Line: 1, Column: 1})
-	if diags.HasErrors() || expr == nil {
-		return fallbackUseRawHclAsStringValue(convertErrorDiagsToWarnings(diags))
-	}
-
-	if v, diags := expr.Value(nil); diags.HasErrors() {
+	if v, diags := parseJsonOrHcl(name, rawExpression); diags.HasErrors() {
 		return fallbackUseRawHclAsStringValue(convertErrorDiagsToWarnings(diags))
 	} else if options.EncodeAsJsonString {
 		vJson, err := ctyjson.Marshal(v, v.Type())
@@ -126,4 +121,34 @@ func (f VarsFile) AddRawVariable(name string, rawExpression string, options AddV
 		f.Body().SetAttributeValue(name, v)
 		return nil
 	}
+}
+
+// JSON goes first because HCL would read "${" and "%{" inside a JSON string as a template.
+func parseJsonOrHcl(name string, raw string) (cty.Value, hcl.Diagnostics) {
+	if json.Valid([]byte(raw)) {
+		v, err := unmarshalJson([]byte(raw))
+		if err != nil {
+			return cty.NilVal, hcl.Diagnostics{{
+				Severity: hcl.DiagError,
+				Subject:  &hcl.Range{Filename: fmt.Sprintf("<var=%s>", name)},
+				Summary:  "Cannot convert JSON to cty.Value",
+				Detail:   fmt.Sprintf("The given JSON cannot be converted: %s", err.Error()),
+			}}
+		}
+		return v, nil
+	}
+
+	expr, diags := hclsyntax.ParseExpression([]byte(raw), fmt.Sprintf("<var=%s>", name), hcl.Pos{Line: 1, Column: 1})
+	if diags.HasErrors() {
+		return cty.NilVal, diags
+	}
+	return expr.Value(nil)
+}
+
+func unmarshalJson(raw []byte) (cty.Value, error) {
+	impliedType, err := ctyjson.ImpliedType(raw)
+	if err != nil {
+		return cty.NilVal, err
+	}
+	return ctyjson.Unmarshal(raw, impliedType)
 }

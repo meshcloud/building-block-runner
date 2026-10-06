@@ -16,6 +16,13 @@ import (
 var (
 	//go:embed testdata/tf-variables
 	testdataWorkingDirFs embed.FS
+
+	//go:embed testdata/code-inputs/json-with-template-sequences.json
+	codeInputJsonWithTemplateSequences string
+	//go:embed testdata/code-inputs/hcl-object.hcl
+	codeInputHclObject string
+	//go:embed testdata/code-inputs/plain-text.txt
+	codeInputPlainText string
 )
 
 func TestParseVariableInputs(t *testing.T) {
@@ -74,6 +81,8 @@ nested:
 		require.Empty(t, f.AddVariable("var7", []any{"item1", "item2"}, AddVariableOptions{}))
 
 		require.Empty(t, f.AddRawVariable("var8", `"justword"`, AddVariableOptions{}))
+		require.Empty(t, f.AddRawVariable("var9", codeInputJsonWithTemplateSequences, AddVariableOptions{}))
+		require.Empty(t, f.AddRawVariable("var10", codeInputHclObject, AddVariableOptions{}))
 	})
 
 	t.Run("Clean, with JSON Encoding", func(t *testing.T) {
@@ -87,29 +96,34 @@ nested:
 		require.Empty(t, f.AddVariable("encoded_var6", nil, opts))
 		require.Empty(t, f.AddVariable("encoded_var7", []any{"item1", "item2"}, opts))
 		require.Empty(t, f.AddRawVariable("encoded_var8", `"justword"`, opts))
+		require.Empty(t, f.AddRawVariable("encoded_var9", codeInputJsonWithTemplateSequences, opts))
+		require.Empty(t, f.AddRawVariable("encoded_var10", codeInputHclObject, opts))
 	})
 
 	t.Run("With warnings", func(t *testing.T) {
 		assertWarnings(t, f.AddRawVariable("weird-var1", `justbareword`, AddVariableOptions{}),
 			"Variables may not be used here.",
-			"Cannot parse raw HCL as value expression, will fallback to string variable",
+			"Cannot parse input as JSON or as HCL value expression, will fallback to string variable",
 		)
 		assertWarnings(t, f.AddRawVariable("weird-var2", `{{]]`, AddVariableOptions{}),
 			"Expected the start of an expression, but found an invalid expression token.",
-			"Cannot parse raw HCL as value expression, will fallback to string variable",
+			"Cannot parse input as JSON or as HCL value expression, will fallback to string variable",
 		)
 		assertWarnings(t, f.AddRawVariable("weird-var3", "\n\t  \t", AddVariableOptions{}),
 			"Expected the start of an expression, but found the end of the file.",
-			"Cannot parse raw HCL as value expression, will fallback to string variable",
+			"Cannot parse input as JSON or as HCL value expression, will fallback to string variable",
 		)
 		assertWarnings(t, f.AddRawVariable("weird-var4", " ", AddVariableOptions{}),
 			"Expected the start of an expression, but found the end of the file.",
-			"Cannot parse raw HCL as value expression, will fallback to string variable",
+			"Cannot parse input as JSON or as HCL value expression, will fallback to string variable",
 		)
 
 		assertWarnings(t, f.AddRawVariable("weird-var4", testRawYaml, AddVariableOptions{}),
 			"An expression was successfully parsed, but extra characters were found after it.",
-			"Cannot parse raw HCL as value expression, will fallback to string variable",
+			"Cannot parse input as JSON or as HCL value expression, will fallback to string variable",
+		)
+		assertWarnings(t, f.AddRawVariable("weird-var5", codeInputPlainText, AddVariableOptions{}),
+			"Cannot parse input as JSON or as HCL value expression, will fallback to string variable",
 		)
 	})
 
@@ -122,6 +136,8 @@ nested:
 		"encoded_var6",
 		"encoded_var7",
 		"encoded_var8",
+		"encoded_var9",
+		"encoded_var10",
 		"var1",
 		"var2",
 		"var3",
@@ -130,10 +146,13 @@ nested:
 		"var6",
 		"var7",
 		"var8",
+		"var9",
+		"var10",
 		"weird-var1",
 		"weird-var2",
 		"weird-var3",
 		"weird-var4",
+		"weird-var5",
 	})
 
 	g := goldie.New(t, goldie.WithNameSuffix(".golden.tfvars"))

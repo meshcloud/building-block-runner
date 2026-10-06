@@ -4,12 +4,17 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
+	"sync/atomic"
 )
 
+// logwrap is written from two goroutines at once while tofu runs: tfexec copies its stdout and its stderr
+// separately. writeMu keeps the writes and the callbacks, which change the run status, in sequence.
 type logwrap struct {
 	logger       *log.Logger
 	updateLogger *os.File
-	logSize      int64
+	logSize      atomic.Int64
+	writeMu      sync.Mutex
 	callback     func()
 }
 
@@ -22,21 +27,27 @@ func NewLogWrap(logger *log.Logger, logsFileName string) *logwrap {
 	return &logwrap{
 		logger:       logger,
 		updateLogger: outlog,
-		logSize:      0,
 		callback:     func() {},
 	}
 }
 
 // this writes to the tf output log file
 func (l *logwrap) Write(p []byte) (int, error) {
+	l.writeMu.Lock()
+	defer l.writeMu.Unlock()
 	n, err := l.updateLogger.Write(p)
 	if err != nil {
 		return n, err
-	} else {
-		l.logSize = l.logSize + int64(n)
-		l.callback() // inform that there are new logs for updates
-		return n, err
 	}
+	l.logSize.Add(int64(n))
+	l.callback() // inform that there are new logs for updates
+	return n, nil
+}
+
+func (l *logwrap) onWrite(callback func()) {
+	l.writeMu.Lock()
+	defer l.writeMu.Unlock()
+	l.callback = callback
 }
 
 func (l *logwrap) PrintlnToLocalLogs(v ...any) {

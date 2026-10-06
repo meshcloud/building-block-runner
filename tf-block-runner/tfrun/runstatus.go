@@ -1,6 +1,9 @@
 package tfrun
 
-import "errors"
+import (
+	"errors"
+	"maps"
+)
 
 type RunStatus struct {
 	RunId            string
@@ -59,4 +62,17 @@ func (r *RunStatus) failRunAndNotFinishedSteps() {
 		}
 	}
 	r.Status = FAILED
+}
+
+// clone copies the steps, but shares the strings and outputs they point to: the run replaces those and
+// never changes them in place.
+func (r *RunStatus) clone() RunStatus {
+	c := *r
+	c.Steps = make([]*StepStatus, len(r.Steps))
+	for i, step := range r.Steps {
+		stepCopy := *step
+		stepCopy.Outputs = maps.Clone(step.Outputs)
+		c.Steps[i] = &stepCopy
+	}
+	return c
 }

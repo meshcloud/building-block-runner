@@ -177,7 +177,7 @@ func (w *Worker) workRoutine(ctx context.Context, run *Run, wg *sync.WaitGroup, 
 		// Explicitly mark as FAILED so the observer sends the correct final status.
 		// Without this, IN_PROGRESS would be sent as the final status, leaving
 		// the run stuck until the coordinator eventually times it out.
-		runContextInfo.reportStatus.Status = FAILED
+		runContextInfo.reportFailed()
 	} else {
 		runContextInfo.logwrap.PrintlnToLocalLogs(fmt.Sprintf("Registered '%s' as a source for runId: %s", AppConfig.RunnerUuid, runContextInfo.runId))
 		tfCommand.execute()
@@ -209,8 +209,8 @@ func (w *Worker) observerRoutine(ctx context.Context, cancel context.CancelFunc,
 		// do NOT send in case we are in a terminal state, to prevent duplicate "final updates",
 		// as this is handled in the previous case block (workRoutine done)
 		case <-ticker.C:
-			if !runContextInfo.reportStatus.Status.isTerminalState() {
-				abort, err := updateStateWithin(context.Background(), w.runApi, &runContextInfo.reportStatus, w.statusRequestTimeout)
+			if status := runContextInfo.reportedStatus(); !status.Status.isTerminalState() {
+				abort, err := updateStateWithin(context.Background(), w.runApi, &status, w.statusRequestTimeout)
 				if err != nil {
 					runContextInfo.logwrap.PrintlnToLocalLogs(fmt.Sprintf("Failed to update state: %s", err.Error()))
 				}
@@ -229,7 +229,7 @@ func (w *Worker) observerRoutine(ctx context.Context, cancel context.CancelFunc,
 // run in progress, with a valid run key, until the runner reports ABORTED, so tofu can still save its
 // partial state and release its state lock.
 func sendFinalStatus(api RunApi, run *Run, runContextInfo *RunContextInfo, abortRequested bool, retry retrySchedule, logger *log.Logger) {
-	status := runContextInfo.reportStatus
+	status := runContextInfo.reportedStatus()
 	switch {
 	case abortRequested:
 		status.Status = ABORTED

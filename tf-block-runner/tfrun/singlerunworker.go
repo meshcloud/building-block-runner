@@ -139,7 +139,7 @@ func (w *SingleRunWorker) workRoutine(ctx context.Context, run *Run, wg *sync.Wa
 		// Explicitly mark as FAILED so the observer sends the correct final status.
 		// Without this, IN_PROGRESS would be sent as the final status, leaving
 		// the run stuck until the coordinator eventually times it out.
-		runContextInfo.reportStatus.Status = FAILED
+		runContextInfo.reportFailed()
 	} else {
 		runContextInfo.logwrap.PrintlnToLocalLogs(fmt.Sprintf("Registered '%s' as a source for runId: %s", AppConfig.RunnerUuid, runContextInfo.runId))
 		tfCommand.execute()
@@ -165,8 +165,8 @@ func (w *SingleRunWorker) observerRoutine(ctx context.Context, cancel context.Ca
 
 		// send out updates as liveliness update
 		case <-ticker.C:
-			if !runContextInfo.reportStatus.Status.isTerminalState() {
-				abort, err := updateStateWithin(context.Background(), w.runApi, &runContextInfo.reportStatus, w.statusRequestTimeout)
+			if status := runContextInfo.reportedStatus(); !status.Status.isTerminalState() {
+				abort, err := updateStateWithin(context.Background(), w.runApi, &status, w.statusRequestTimeout)
 				if err != nil {
 					runContextInfo.logwrap.PrintlnToLocalLogs(fmt.Sprintf("Failed to update state: %s", err.Error()))
 				}

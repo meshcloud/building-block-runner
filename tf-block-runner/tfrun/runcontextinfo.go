@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"path"
+	"sync"
 )
 
 type RunContextInfo struct {
@@ -18,8 +19,10 @@ type RunContextInfo struct {
 	filename_state         string
 	logFile_name           string
 	logwrap                *logwrap
-	runStatus              *RunStatus
-	// the reportStatus is an atomic version of the runStatus, meaning the reportStatus is safe to use in the worker / observer routine
+	// Only the tf command changes runStatus: on its own goroutine, or in logwrap callbacks while it waits
+	// for tofu. The observer goroutine reads only reportStatus, a copy that shares nothing mutable with it.
+	runStatus        *RunStatus
+	reportStatusMu   sync.Mutex
 	reportStatus     RunStatus
 	artifactFilePath string
 	runToken         string
@@ -61,4 +64,22 @@ func initRunContextInfo(run *Run, logPrefix string, logWriter io.Writer, wd stri
 	}
 
 	return runContextInfo
+}
+
+func (r *RunContextInfo) publishStatus() {
+	r.reportStatusMu.Lock()
+	defer r.reportStatusMu.Unlock()
+	r.reportStatus = r.runStatus.clone()
+}
+
+func (r *RunContextInfo) reportedStatus() RunStatus {
+	r.reportStatusMu.Lock()
+	defer r.reportStatusMu.Unlock()
+	return r.reportStatus
+}
+
+func (r *RunContextInfo) reportFailed() {
+	r.reportStatusMu.Lock()
+	defer r.reportStatusMu.Unlock()
+	r.reportStatus.Status = FAILED
 }

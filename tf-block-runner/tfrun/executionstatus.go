@@ -7,10 +7,11 @@ const (
 	IN_PROGRESS
 	SUCCEEDED
 	FAILED
+	ABORTED
 )
 
 func (status ExecutionStatus) isTerminalState() bool {
-	return status == SUCCEEDED || status == FAILED
+	return status == SUCCEEDED || status == FAILED || status == ABORTED
 }
 
 func (status ExecutionStatus) str() string {
@@ -23,6 +24,8 @@ func (status ExecutionStatus) str() string {
 		return "SUCCEEDED"
 	case FAILED:
 		return "FAILED"
+	case ABORTED:
+		return "ABORTED"
 	default:
 		panic("Unmapped ExecutionStatus")
 	}

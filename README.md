@@ -56,10 +56,10 @@ Alongside the runners, the repository contains shared modules:
 - [`block-runner-core`](block-runner-core/) — shared Kotlin library used by all JVM-based runners
 - [`go-meshapi-client`](go-meshapi-client/) — shared Go client for the meshcloud API
 
-Common tasks are available via `make`:
+Common tasks are available via [Task](https://taskfile.dev), which the [Nix](flake.nix) dev shell provides:
 
 ```
-make help
+task --list
 ```
 
 ## Health endpoint
@@ -89,18 +89,23 @@ If you are running a runner through a Docker image, it will default to PORT=8080
 
 ### Prerequisites
 
-- Go 1.22+
+`nix develop` provides everything below. Without Nix:
+
+- Go 1.27+
+- [Task](https://taskfile.dev)
 - JDK 21+
 
 ### Build and test (Go)
 
 ```bash
-make test          # run all Go tests
-make fmt           # format Go code
-make vet           # run go vet
-make tidy          # tidy go modules
-make work-sync     # sync go.work entries
+task test          # run all Go tests
+task lint          # run golangci-lint, including the format check
+task fmt           # format Go code
+task tidy          # tidy go modules
+task work:sync     # sync go.work entries
 ```
+
+CI runs the equivalent plain `go` commands rather than these tasks.
 
 ### Build and test (JVM)
 
@@ -112,9 +117,11 @@ make work-sync     # sync go.work entries
 ### Run locally
 
 ```bash
-make start-run-controller    # start run-controller
-make start-tf-block-runner   # start tf-block-runner
+task start:run-controller    # start run-controller
+task start:tf-block-runner   # start tf-block-runner
 ```
+
+`task acceptance-runner` starts the runners that meshStack's acceptance tests run against; `task --summary acceptance-runner` lists its settings.
 
 See the individual module READMEs for module-specific instructions:
 

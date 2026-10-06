@@ -21,7 +21,8 @@
 
         core_packages = [
           pkgs.go
-          pkgs.golangci-lint
+          # No golangci-lint here: the Taskfile builds it with the Go that go.mod asks for.
+          pkgs.go-task
           pkgs.jdk21_headless
           pkgs.opentofu
           pkgs.minikube

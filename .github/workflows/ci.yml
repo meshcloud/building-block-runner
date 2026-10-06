@@ -4,12 +4,12 @@ env:
   REGISTRY: ghcr.io
   DOCKERHUB_REGISTRY: docker.io
   IMAGE_NAMESPACE: ${{ github.repository_owner }}
+  CGO_ENABLED: "0" # like the images, so building needs no C compiler
 
 on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -162,15 +162,27 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Parse commit
-        id: commit
-        run: |
-          echo "commit=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
-
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ matrix.go-dir }}/go.mod
-          cache: false
+          cache-dependency-path: ${{ matrix.go-dir }}/go.sum
+
+      - name: Build
+        run: go build ./...
+
+      # Built here rather than downloaded by the action below: golangci-lint's formatters use the
+      # go/format compiled into the binary, so it has to be built with the Go that go.mod asks for.
+      # The version is the one the Taskfile runs.
+      - name: Build the pinned golangci-lint
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          # The step above already installed it; the action is here for the annotations it puts on
+          # the pull request diff, which a bare `run:` does not produce.
+          install-mode: none
+          working-directory: ${{ matrix.go-dir }}
 
       - name: Test
         run: go test -race ./...

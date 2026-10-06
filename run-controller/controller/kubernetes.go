@@ -127,12 +127,12 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 			"meshcloud.io/runner-type": implType,
 		},
 		Spec: batchv1.JobSpec{
-			BackoffLimit: int32Ptr(1),
+			BackoffLimit: new(int32(1)),
 			// Clean up after 2 minutes of completion.
 			// NOTE: it's important this is not too short and not too long:
 			// Too short: jobs might be deleted before we can inspect them in case of failures
 			// Too long: completed jobs take up from the job quota and can block new jobs from being created
-			TTLSecondsAfterFinished: int32Ptr(120),
+			TTLSecondsAfterFinished: new(int32(120)),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
@@ -233,11 +233,6 @@ func isJobFinished(job *batchv1.Job) bool {
 		}
 	}
 	return false
-}
-
-//go:fix inline
-func int32Ptr(i int32) *int32 {
-	return new(i)
 }
 
 func buildTolerations(configs []TolerationConfig) []corev1.Toleration {

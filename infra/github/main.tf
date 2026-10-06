@@ -44,9 +44,7 @@ variable "main_required_status_checks" {
     "gitlab-block-runner - image",
     "azure-devops-block-runner - image",
 
-    "manual-block-runner - test",
-    "run-controller - test",
-    "tf-block-runner - test",
+    "go - test",
 
     "manual-block-runner - image",
     "run-controller - image",

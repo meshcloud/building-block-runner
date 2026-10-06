@@ -137,22 +137,10 @@ jobs:
             VERSION=${{ steps.meta.outputs.version }}
 
   go-runners-ci:
-    name: ${{ matrix.app }} - test
+    name: go - test
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - app: go-meshapi-client
-            go-dir: go-meshapi-client
-          - app: manual-block-runner
-            go-dir: manual-block-runner
-          - app: run-controller
-            go-dir: run-controller
-          - app: tf-block-runner
-            go-dir: tf-block-runner
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -162,7 +150,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Build
-        run: go build ./${{ matrix.go-dir }}/...
+        run: go build ./...
 
       # Built here rather than downloaded by the action below: golangci-lint's formatters use the
       # go/format compiled into the binary, so the formatting they enforce comes from the Go release
@@ -176,12 +164,27 @@ jobs:
           # The step above already installed it; the action is here for the annotations it puts on
           # the pull request diff, which a bare `run:` does not produce.
           install-mode: none
-          args: ./${{ matrix.go-dir }}/...
 
+      # Binary coverage data (GOCOVERDIR format) rather than a text profile, because only the binary
+      # form merges with the acceptance run's coverage. `-coverpkg=./...` matches what meshfed-release
+      # instruments, so both figures share one denominator.
       - name: Test
-        run: go test -race ./${{ matrix.go-dir }}/...
+        run: |
+          mkdir -p covdata/unit
+          go test -race -coverpkg=./... ./... -args -test.gocoverdir="$PWD/covdata/unit"
         env:
           CGO_ENABLED: "1" # the race detector needs cgo
+
+      # meshfed-release's satellite coverage finds this by the commit sha and merges it with the
+      # acceptance run's coverage. The contract is the artifact name `covdata-unit` and
+      # covmeta.*/covcounters.* at its root, which naming the directory gives and a glob would nest.
+      - name: Upload unit coverage data
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: covdata-unit
+          path: covdata/unit
+          retention-days: 3
 
   # One job for PRs and main (see jvm-runners-image for the rationale): the matrix always expands, so
   # there are no skipped jobs with unresolved ${{ matrix.* }} names. PRs only build (never push);

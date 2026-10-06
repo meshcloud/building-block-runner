@@ -168,7 +168,7 @@ func (tfcmd *TfDestroyCommand) execute() {
 	// is only required for async runs where the run object must be properly propagated into the external pipeline.
 	if tfcmd.runContextInfo.asyncRun {
 		// Variables are now in meshstack.auto.tfvars file, no command-line args needed
-		if err = tf.Apply(tfcmd.ctx); err != nil {
+		if err = tf.Apply(tfcmd.ctx, stateLockTimeout()); err != nil {
 			tfcmd.fail(err)
 			return
 		}
@@ -196,10 +196,11 @@ func (tfcmd *TfDestroyCommand) execute() {
 
 // destroyOptions lets OpenTofu finish a destroy that forgets resources with lifecycle { destroy = false }.
 func destroyOptions(tfVersion string) []tfexec.DestroyOption {
+	options := []tfexec.DestroyOption{stateLockTimeout()}
 	v, err := version.NewVersion(tfVersion)
 	if err != nil || v.LessThan(suppressForgetErrorsMinVersion) {
-		return nil
+		return options
 	}
 	// terraform-exec has no option for this flag; Dir appends it as the last argument.
-	return []tfexec.DestroyOption{tfexec.Dir("-suppress-forget-errors")}
+	return append(options, tfexec.Dir("-suppress-forget-errors"))
 }

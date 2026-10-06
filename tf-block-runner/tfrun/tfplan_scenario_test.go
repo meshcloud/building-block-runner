@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 
 	"github.com/hashicorp/terraform-exec/tfexec"
 	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
@@ -239,11 +240,11 @@ func (suite *WorkerTestSuite) Test_ApplyWithPlanArtifact_DownloadsAndAppliesSave
 		}
 	}
 
-	applyOptCount := -1
+	var appliedPlan bool
 	var planOnDisk []byte
 	suite.tfMock.applyFunc = func(ctx context.Context, opts ...tfexec.ApplyOption) error {
-		applyOptCount = len(opts)
 		rci := ctx.Value(runInfoContextKey).(*RunContextInfo)
+		appliedPlan = slices.ContainsFunc(opts, isDirOrPlanOption)
 		planOnDisk, _ = os.ReadFile(rci.artifactFilePath)
 		return nil
 	}
@@ -261,7 +262,7 @@ func (suite *WorkerTestSuite) Test_ApplyWithPlanArtifact_DownloadsAndAppliesSave
 	suite.runWorker()
 
 	assert.True(suite.T(), downloadCalled, "expected the predecessor plan artifact to be downloaded")
-	assert.Equal(suite.T(), 1, applyOptCount, "expected apply to be called with a single (DirOrPlan) option")
+	assert.True(suite.T(), appliedPlan, "expected apply to be called with a DirOrPlan option")
 	assert.Equal(suite.T(), savedPlanBytes, planOnDisk, "expected the downloaded plan bytes to be written to plan.tfplan")
 
 	require.GreaterOrEqual(suite.T(), len(updateCalls), 1)
@@ -284,9 +285,9 @@ func (suite *WorkerTestSuite) Test_ApplyWithoutPlanArtifact_PlainApply() {
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewBuffer(nil)), Header: make(http.Header)}
 	}
 
-	applyOptCount := -1
+	appliedPlan := true
 	suite.tfMock.applyFunc = func(ctx context.Context, opts ...tfexec.ApplyOption) error {
-		applyOptCount = len(opts)
+		appliedPlan = slices.ContainsFunc(opts, isDirOrPlanOption)
 		return nil
 	}
 
@@ -303,7 +304,7 @@ func (suite *WorkerTestSuite) Test_ApplyWithoutPlanArtifact_PlainApply() {
 	suite.runWorker()
 
 	assert.False(suite.T(), downloadCalled, "plain apply must not download any plan artifact")
-	assert.Equal(suite.T(), 0, applyOptCount, "plain apply must call terraform apply with no plan option")
+	assert.False(suite.T(), appliedPlan, "plain apply must call terraform apply with no plan option")
 
 	require.GreaterOrEqual(suite.T(), len(updateCalls), 1)
 	lastUpdate := updateCalls[len(updateCalls)-1]
@@ -405,4 +406,9 @@ func (suite *WorkerTestSuite) Test_DetectFailed_WhenPlanFileNotWritten() {
 	assert.Equal(suite.T(), FAILED.str(), *executeTf.Status)
 	require.NotNil(suite.T(), executeTf.UserMessage)
 	assert.Contains(suite.T(), *executeTf.UserMessage, "failed to read plan artifact")
+}
+
+func isDirOrPlanOption(opt tfexec.ApplyOption) bool {
+	_, ok := opt.(*tfexec.DirOrPlanOption)
+	return ok
 }

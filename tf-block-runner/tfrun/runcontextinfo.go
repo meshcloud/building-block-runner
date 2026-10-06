@@ -24,6 +24,7 @@ type RunContextInfo struct {
 	artifactFilePath string
 	runToken         string
 	meshstackBaseUrl string
+	tfStateLockUrl   string
 }
 
 func initRunContextInfo(run *Run, logPrefix string, logWriter io.Writer, wd string) *RunContextInfo {
@@ -56,6 +57,7 @@ func initRunContextInfo(run *Run, logPrefix string, logWriter io.Writer, wd stri
 		logwrap:                NewLogWrap(log, outFile),
 		runToken:               run.RunToken,
 		meshstackBaseUrl:       run.MeshstackBaseUrl,
+		tfStateLockUrl:         run.TfStateLockUrl,
 	}
 
 	return runContextInfo

@@ -29,6 +29,9 @@ type LinksDTO struct {
 	// plan). Unlike PlanArtifact an empty Href is NOT a signal to skip the upload: the backend emits this
 	// link for every dry-run capable implementation, so a DETECT run without it fails.
 	ArtifactUpload LinkDTO `json:"artifactUpload"`
+	// TfStateLock is absent on an older meshStack, which cannot lock the state. OpenTofu fails every
+	// command when lock_address points to an endpoint that does not exist, so an empty Href means: do not lock.
+	TfStateLock LinkDTO `json:"tfStateLock,omitzero"`
 }
 
 type LinkDTO struct {

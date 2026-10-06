@@ -35,6 +35,8 @@ type Run struct {
 	// ArtifactUploadUrl (from _links.artifactUpload.href) is where a DETECT run uploads the
 	// plan it produced.
 	ArtifactUploadUrl string
+	// TfStateLockUrl is empty when this meshStack cannot lock the state.
+	TfStateLockUrl string
 }
 
 type Variable struct {

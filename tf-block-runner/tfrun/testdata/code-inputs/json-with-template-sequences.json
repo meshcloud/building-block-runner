@@ -1,0 +1,4 @@
+{
+  "password": "pa${ss}wo%{rd}",
+  "computed": "${1 + 1}"
+}

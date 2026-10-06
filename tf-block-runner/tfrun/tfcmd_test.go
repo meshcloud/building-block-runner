@@ -149,6 +149,7 @@ func Test_vars_correctlyEncodesNoMatterTheType(t *testing.T) {
 	uut.params.vars["v6"] = &Variable{value: "this-is-not-double-encoded", Type: DATA_TYPE_STRING}
 	uut.params.vars["v7"] = &Variable{value: "some: key\nother: yaml", Type: DATA_TYPE_CODE}
 	uut.params.vars["v8"] = &Variable{value: "single-select-not-double-encoded", Type: DATA_TYPE_SINGLESELECT}
+	uut.params.vars["v9"] = &Variable{value: codeInputJsonWithTemplateSequences, Type: DATA_TYPE_CODE}
 
 	// Make some variables with explicit type
 	variableTf, err := os.Create(path.Join(uut.runContextInfo.workingDirectory, "variable.tf"))
@@ -183,6 +184,7 @@ func Test_vars_correctlyEncodesNoMatterTheType(t *testing.T) {
 	assertContainsHCL(t, string(content), `v6 = "this-is-not-double-encoded"`)
 	assertContainsHCL(t, string(content), `v7 = "some: key\nother: yaml"`)
 	assertContainsHCL(t, string(content), `v8 = "single-select-not-double-encoded"`)
+	assert.Contains(t, string(content), "v9 = {\n  computed = \"$${1 + 1}\"\n  password = \"pa$${ss}wo%%{rd}\"\n}")
 
 }
 
@@ -359,8 +361,7 @@ func Test_vars_SensitiveCodeInputThatIsNoValidHcl_ValueNotInLog(t *testing.T) {
 	meshcrypto.Crypto = crypto
 	t.Cleanup(func() { meshcrypto.Crypto = previousCrypto })
 
-	secret := `{"token": "s3cr3t-${not-hcl}"}`
-	encrypted, err := crypto.EncryptMeshCertBased(secret)
+	encrypted, err := crypto.EncryptMeshCertBased(codeInputPlainText)
 	require.NoError(t, err)
 
 	uut := makeTestGenericTfCmd(t)
@@ -376,9 +377,9 @@ func Test_vars_SensitiveCodeInputThatIsNoValidHcl_ValueNotInLog(t *testing.T) {
 
 	updateLog, err := os.ReadFile(updateLogPath)
 	require.NoError(t, err)
-	assert.Contains(t, string(updateLog), "While adding variable 'secret_code': Failed to parse raw HCL expression")
+	assert.Contains(t, string(updateLog), "While adding variable 'secret_code': Failed to parse input as JSON or HCL")
 	assert.NotContains(t, string(updateLog), "s3cr3t")
-	assertContainsHCL(t, readGeneratedTfvars(t, uut), `secret_code = "{\"token\": \"s3cr3t-$${not-hcl}\"}"`)
+	assertContainsHCL(t, readGeneratedTfvars(t, uut), `secret_code = "token: s3cr3t-$${not-hcl}\n"`)
 }
 
 // Test_vars_WithPrettyPrintedJSONObjects tests that CODE/LIST values containing

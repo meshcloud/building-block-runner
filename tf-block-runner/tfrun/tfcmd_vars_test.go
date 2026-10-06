@@ -92,24 +92,24 @@ nested:
 	t.Run("With warnings", func(t *testing.T) {
 		assertWarnings(t, f.AddRawVariable("weird-var1", `justbareword`, AddVariableOptions{}),
 			"Variables may not be used here.",
-			`Cannot parse raw HCL 'justbareword' as value expression, will fallback to string variable`,
+			"Cannot parse raw HCL as value expression, will fallback to string variable",
 		)
 		assertWarnings(t, f.AddRawVariable("weird-var2", `{{]]`, AddVariableOptions{}),
 			"Expected the start of an expression, but found an invalid expression token.",
-			"Cannot parse raw HCL '{{]]' as value expression, will fallback to string variable",
+			"Cannot parse raw HCL as value expression, will fallback to string variable",
 		)
 		assertWarnings(t, f.AddRawVariable("weird-var3", "\n\t  \t", AddVariableOptions{}),
 			"Expected the start of an expression, but found the end of the file.",
-			"Cannot parse raw HCL '\n\t  \t' as value expression, will fallback to string variable",
+			"Cannot parse raw HCL as value expression, will fallback to string variable",
 		)
 		assertWarnings(t, f.AddRawVariable("weird-var4", " ", AddVariableOptions{}),
 			"Expected the start of an expression, but found the end of the file.",
-			"Cannot parse raw HCL ' ' as value expression, will fallback to string variable",
+			"Cannot parse raw HCL as value expression, will fallback to string variable",
 		)
 
 		assertWarnings(t, f.AddRawVariable("weird-var4", testRawYaml, AddVariableOptions{}),
 			"An expression was successfully parsed, but extra characters were found after it.",
-			"Cannot parse raw HCL '\n# this is a comment\nsome-key: value1 # this as well\nnested:\n  bla: foo\n' as value expression, will fallback to string variable",
+			"Cannot parse raw HCL as value expression, will fallback to string variable",
 		)
 	})
 

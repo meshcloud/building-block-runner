@@ -14,6 +14,7 @@ import (
 	ctyjson "github.com/zclconf/go-cty/cty/json"
 )
 
+// Diagnostics never quote a variable's value, because they end up in the run log and the value may be a secret.
 type VarsFile struct {
 	*hclwrite.File
 }
@@ -42,7 +43,7 @@ func (f VarsFile) AddVariable(name string, value any, opts AddVariableOptions) (
 				Severity: hcl.DiagWarning,
 				Subject:  &hcl.Range{Filename: fmt.Sprintf("<var=%s>", name)},
 				Summary:  "Failed to marshal value into JSON",
-				Detail:   fmt.Sprintf("Cannot marshal generic value '%#v' to JSON, will fallback to fmt.Sprintf to string value: %s", value, err.Error()),
+				Detail:   fmt.Sprintf("Cannot marshal generic value to JSON, will fallback to fmt.Sprintf to string value: %s", err.Error()),
 			}).
 			Extend(f.AddVariable(name, fmt.Sprintf("%v", value), AddVariableOptions{EncodeAsJsonString: false}))
 	}
@@ -65,7 +66,7 @@ func (f VarsFile) AddVariable(name string, value any, opts AddVariableOptions) (
 				Severity: hcl.DiagError,
 				Subject:  &hcl.Range{Filename: fmt.Sprintf("<var=%s>", name)},
 				Summary:  "Failed to marshal value into JSON after failing to imply type",
-				Detail:   fmt.Sprintf("Cannot marshal generic value '%#v' to JSON: %s", value, err.Error()),
+				Detail:   fmt.Sprintf("Cannot marshal generic value to JSON: %s", err.Error()),
 			})
 	}
 
@@ -75,7 +76,7 @@ func (f VarsFile) AddVariable(name string, value any, opts AddVariableOptions) (
 			Severity: hcl.DiagError,
 			Subject:  &hcl.Range{Filename: fmt.Sprintf("<var=%s>", name)},
 			Summary:  "Cannot convert value to cty.Value",
-			Detail:   fmt.Sprintf("The given value '%#v' cannot be converted: %s", value, err.Error()),
+			Detail:   fmt.Sprintf("The given value cannot be converted: %s", err.Error()),
 		})
 	}
 	f.Body().SetAttributeValue(name, ctyValue)
@@ -89,7 +90,7 @@ func (f VarsFile) AddRawVariable(name string, rawExpression string, options AddV
 				Severity: hcl.DiagWarning,
 				Subject:  &hcl.Range{Filename: fmt.Sprintf("<var=%s>", name)},
 				Summary:  "Failed to parse raw HCL expression",
-				Detail:   fmt.Sprintf("Cannot parse raw HCL '%s' as value expression, will fallback to string variable", rawExpression),
+				Detail:   "Cannot parse raw HCL as value expression, will fallback to string variable",
 			}).
 			Extend(f.AddVariable(name, rawExpression, AddVariableOptions{EncodeAsJsonString: false}))
 	}
@@ -119,7 +120,7 @@ func (f VarsFile) AddRawVariable(name string, rawExpression string, options AddV
 			Severity: hcl.DiagWarning,
 			Subject:  &hcl.Range{Filename: fmt.Sprintf("<var=%s>", name)},
 			Summary:  "Cannot marshal raw HCL value to JSON",
-			Detail:   fmt.Sprintf("The given raw HCL '%s' cannot be marshalled: %s", rawExpression, err.Error()),
+			Detail:   fmt.Sprintf("The given raw HCL cannot be marshalled: %s", err.Error()),
 		}))
 	} else {
 		f.Body().SetAttributeValue(name, v)

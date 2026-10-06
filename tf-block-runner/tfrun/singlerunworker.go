@@ -107,17 +107,17 @@ func (w *SingleRunWorker) workRoutine(ctx context.Context, run *Run, wg *sync.Wa
 
 	runContextInfo := ctx.Value(runInfoContextKey).(*RunContextInfo)
 	params := &TfCmdParams{
-		dir:                   w.workerDir,
-		buildingBlockId:       run.BuildingBlockId,
-		tfVersion:             run.TerraformVersion,
-		useWorkspaces:         true,
-		suggestedWorkspace:    run.toWorkspaceStr(),
-		vars:                  run.Vars,
-		source:                run.Source,
-		preRunScript:          run.PreRunScript,
-		runMode:               run.Behavior.str(),
-		planArtifactUrl:       run.PlanArtifactUrl,
-		artifactUploadUrl: run.ArtifactUploadUrl,
+		dir:                w.workerDir,
+		buildingBlockId:    run.BuildingBlockId,
+		tfVersion:          run.TerraformVersion,
+		useWorkspaces:      true,
+		suggestedWorkspace: run.toWorkspaceStr(),
+		vars:               run.Vars,
+		source:             run.Source,
+		preRunScript:       run.PreRunScript,
+		runMode:            run.Behavior.str(),
+		planArtifactUrl:    run.PlanArtifactUrl,
+		artifactUploadUrl:  run.ArtifactUploadUrl,
 	}
 
 	var tfCommand TfCmd

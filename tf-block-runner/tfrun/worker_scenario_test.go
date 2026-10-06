@@ -423,6 +423,12 @@ func (suite *WorkerTestSuite) Test_ApplyTfFailure() {
 func (suite *WorkerTestSuite) Test_DestroySucceeded() {
 	suite.calls.fetch = mockValidRunDetailsFetchCall(DESTROY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
 
+	var destroyOpts []tfexec.DestroyOption
+	suite.tfMock.destroyFunc = func(ctx context.Context, opts ...tfexec.DestroyOption) error {
+		destroyOpts = opts
+		return nil
+	}
+
 	updateCalls := make([]http.Request, 0)
 	suite.calls.update = func(req *http.Request) *http.Response {
 		updateCalls = append(updateCalls, *req)
@@ -451,6 +457,7 @@ func (suite *WorkerTestSuite) Test_DestroySucceeded() {
 		assert.Nil(suite.T(), step.UserMessage)
 	}
 	assert.Nil(suite.T(), update.Summary)
+	assert.Empty(suite.T(), destroyOpts, "a Terraform destroy gets no extra flags")
 }
 
 func (suite *WorkerTestSuite) Test_DestroyTfFailure() {

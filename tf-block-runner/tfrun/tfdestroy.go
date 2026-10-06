@@ -2,7 +2,13 @@ package tfrun
 
 import (
 	"context"
+
+	"github.com/hashicorp/go-version"
+	"github.com/hashicorp/terraform-exec/tfexec"
 )
+
+// OpenTofu added -suppress-forget-errors in 1.12.0; versions up to 1.5.5 run Terraform (see GetTF), which lacks it.
+var suppressForgetErrorsMinVersion = version.Must(version.NewVersion("1.12.0"))
 
 type TfDestroyCommand struct {
 	GenericTfCmd
@@ -169,7 +175,7 @@ func (tfcmd *TfDestroyCommand) execute() {
 	}
 
 	// Variables are now in meshstack.auto.tfvars file, no command-line args needed
-	if err = tf.Destroy(tfcmd.ctx); err != nil {
+	if err = tf.Destroy(tfcmd.ctx, destroyOptions(tfcmd.params.tfVersion)...); err != nil {
 		tfcmd.fail(err)
 		return
 	}
@@ -186,4 +192,14 @@ func (tfcmd *TfDestroyCommand) execute() {
 	tfcmd.deleteWorkspaceIfNeeded(tf)
 
 	tfcmd.completeRun(nil)
+}
+
+// destroyOptions lets OpenTofu finish a destroy that forgets resources with lifecycle { destroy = false }.
+func destroyOptions(tfVersion string) []tfexec.DestroyOption {
+	v, err := version.NewVersion(tfVersion)
+	if err != nil || v.LessThan(suppressForgetErrorsMinVersion) {
+		return nil
+	}
+	// terraform-exec has no option for this flag; Dir appends it as the last argument.
+	return []tfexec.DestroyOption{tfexec.Dir("-suppress-forget-errors")}
 }

@@ -149,6 +149,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - app: go-meshapi-client
+            go-dir: go-meshapi-client
           - app: run-controller
             go-dir: run-controller
           - app: tf-block-runner

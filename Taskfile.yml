@@ -1,0 +1,98 @@
+version: '3'
+
+vars:
+  MODULES: go-meshapi-client run-controller tf-block-runner
+  # `go run` rather than a binary from the dev shell: golangci-lint's formatters use the go/format
+  # compiled into it, so it has to be built with the Go that go.mod asks for.
+  GOLANGCI_LINT: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
+
+env:
+  CGO_ENABLED: "0" # like the images, so building needs no C compiler
+
+tasks:
+  default:
+    cmds:
+      - task --list
+
+  test:
+    desc: Run the Go tests of every module
+    summary: |
+      Pass MODULES to test fewer modules, e.g. `task test MODULES=run-controller`.
+      Arguments after `--` go to `go test`.
+    env:
+      CGO_ENABLED: "1" # the race detector needs cgo
+    cmds:
+      - for: { var: MODULES }
+        cmd: cd {{.ITEM}} && go test -race {{.CLI_ARGS}} ./...
+
+  lint:
+    desc: Run golangci-lint on every module, including the format check
+    summary: |
+      Pass MODULES to lint fewer modules. `task lint -- --fix` fixes what it can.
+    cmds:
+      - for: { var: MODULES }
+        cmd: cd {{.ITEM}} && {{.GOLANGCI_LINT}} run {{.CLI_ARGS}} ./...
+
+  fmt:
+    desc: Format the Go code of every module
+    cmds:
+      - for: { var: MODULES }
+        cmd: cd {{.ITEM}} && {{.GOLANGCI_LINT}} fmt ./...
+
+  tidy:
+    desc: Tidy go.mod and go.sum of every module
+    cmds:
+      - for: { var: MODULES }
+        cmd: cd {{.ITEM}} && go mod tidy
+
+  work:sync:
+    desc: Sync the go.work dependencies back into the modules
+    cmds:
+      - go work sync
+
+  start:run-controller:
+    desc: Run run-controller from source
+    env:
+      RUNCONTROLLER_CONFIG_FILE: run-controller/runner-config.yml
+    cmds:
+      - go run ./run-controller {{.CLI_ARGS}}
+
+  start:tf-block-runner:
+    desc: Run tf-block-runner from source
+    env:
+      RUNNER_CONFIG_FILE: tf-block-runner/runner-config.yml
+    cmds:
+      - go run ./tf-block-runner {{.CLI_ARGS}}
+
+  acceptance-runner:
+    desc: Run the runners that meshfed-release's acceptance tests use, until one of them exits
+    summary: |
+      meshfed-release starts this from the repository root and kills it when its tests end.
+      It always exits non-zero, because a runner that exits on its own is a failure.
+
+      Environment, all optional:
+        RUNNER_API_CLIENT_ID, RUNNER_API_CLIENT_SECRET
+                                  API key of every runner; without it they use basic auth
+        TF_BLOCK_RUNNER_API_URL   default http://127.0.0.1:8300
+        TF_BLOCK_RUNNER_PORT      default 8100, health at http://127.0.0.1:$TF_BLOCK_RUNNER_PORT/healthz
+    cmds:
+      - go build -o bin/tf-block-runner ./tf-block-runner
+      # bash, because go-task's built-in shell has no `wait -n`.
+      - |
+        bash -u <<'EOF'
+        trap 'kill $(jobs -p) 2>/dev/null; wait' EXIT
+        trap 'exit 143' INT TERM
+
+        RUNNER_CONFIG_FILE=tf-block-runner/runner-config.yml \
+        RUNNER_API_URL="${TF_BLOCK_RUNNER_API_URL:-http://127.0.0.1:8300}" \
+        PORT="${TF_BLOCK_RUNNER_PORT:-8100}" \
+          bin/tf-block-runner &
+
+        # go-task ignores a SIGTERM sent to it alone, and dies of a SIGKILL without stopping its
+        # commands, so the runners stop with it.
+        while kill -0 "$PPID" 2>/dev/null; do sleep 1; done &
+
+        wait -n
+        echo "acceptance-runner: a runner or go-task exited, stopping the others" >&2
+        exit 1
+        EOF

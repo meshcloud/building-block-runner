@@ -1,0 +1,13 @@
+# Starts as the `go vet` and `gofmt` checks the Makefile ran. The modules do not pass golangci-lint's
+# standard linter set yet, so each further linter comes with the fixes it needs.
+version: "2"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+linters:
+  default: none
+  enable:
+    - govet

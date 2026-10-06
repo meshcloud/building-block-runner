@@ -28,7 +28,7 @@ go run .
 Or from the repo root:
 
 ```bash
-make start-run-controller
+task start:run-controller
 ```
 
 ## Test

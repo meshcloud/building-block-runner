@@ -41,7 +41,7 @@ func meshBackendImplementation() meshapi.TerraformImplementation {
 	return meshapi.TerraformImplementation{
 		TerraformVersion:           DEFAULT_TF_VER,
 		RepositoryUrl:              noopBlockRepo,
-		RepositoryPath:             p(noopBlockPath),
+		RepositoryPath:             new(noopBlockPath),
 		UseMeshHttpBackendFallback: true,
 	}
 }

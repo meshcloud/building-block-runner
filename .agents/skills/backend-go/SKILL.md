@@ -9,11 +9,9 @@ description: Go development conventions for the tf-block-runner service — load
 ## Mandatory Steps After Every Change
 
 ```bash
-cd tf-block-runner
-goimports -w ./...
-go build ./...
-go vet ./...
-go test ./...
+task fmt
+task lint
+task test
 ```
 
 Never skip formatting or tests. Fix all failures before finishing.

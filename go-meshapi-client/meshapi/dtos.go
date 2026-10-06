@@ -24,11 +24,11 @@ type LinksDTO struct {
 	// PlanArtifact carries a link ONLY when this APPLY run must apply a predecessor DETECT run's
 	// saved terraform plan. Because it is a value (not pointer) struct, an absent JSON field
 	// unmarshals to a zero LinkDTO: an empty Href is the runner's signal to perform a plain apply.
-	PlanArtifact LinkDTO `json:"planArtifact,omitempty"`
+	PlanArtifact LinkDTO `json:"planArtifact"`
 	// ArtifactUpload is where the runner uploads the artifact it produced (a DETECT run's terraform
 	// plan). Unlike PlanArtifact an empty Href is NOT a signal to skip the upload: the backend emits this
 	// link for every dry-run capable implementation, so a DETECT run without it fails.
-	ArtifactUpload LinkDTO `json:"artifactUpload,omitempty"`
+	ArtifactUpload LinkDTO `json:"artifactUpload"`
 }
 
 type LinkDTO struct {
@@ -69,11 +69,11 @@ type ParentBuildingBlockDTO struct {
 }
 
 type BuildingBlockInputSpecDTO struct {
-	Key         string      `json:"key"`
-	Value       interface{} `json:"value"`
-	Type        string      `json:"type"`
-	IsSensitive bool        `json:"isSensitive"`
-	Env         bool        `json:"isEnvironment"`
+	Key         string `json:"key"`
+	Value       any    `json:"value"`
+	Type        string `json:"type"`
+	IsSensitive bool   `json:"isSensitive"`
+	Env         bool   `json:"isEnvironment"`
 }
 
 type DefinitionSpecDTO struct {

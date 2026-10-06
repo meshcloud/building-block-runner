@@ -1,6 +1,6 @@
 module github.com/meshcloud/building-block-runner/run-controller
 
-go 1.26
+go 1.27
 
 require (
 	github.com/meshcloud/building-block-runner/go-meshapi-client v0.0.0

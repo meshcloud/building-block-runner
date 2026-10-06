@@ -142,17 +142,17 @@ func (w *Worker) workRoutine(ctx context.Context, run *Run, wg *sync.WaitGroup, 
 
 	runContextInfo := ctx.Value(runInfoContextKey).(*RunContextInfo)
 	params := &TfCmdParams{
-		dir:                   w.workerDir,
-		buildingBlockId:       run.BuildingBlockId,
-		tfVersion:             run.TerraformVersion,
-		useWorkspaces:         true,
-		suggestedWorkspace:    run.toWorkspaceStr(),
-		vars:                  run.Vars,
-		source:                run.Source,
-		preRunScript:          run.PreRunScript,
-		runMode:               run.Behavior.str(),
-		planArtifactUrl:       run.PlanArtifactUrl,
-		artifactUploadUrl: run.ArtifactUploadUrl,
+		dir:                w.workerDir,
+		buildingBlockId:    run.BuildingBlockId,
+		tfVersion:          run.TerraformVersion,
+		useWorkspaces:      true,
+		suggestedWorkspace: run.toWorkspaceStr(),
+		vars:               run.Vars,
+		source:             run.Source,
+		preRunScript:       run.PreRunScript,
+		runMode:            run.Behavior.str(),
+		planArtifactUrl:    run.PlanArtifactUrl,
+		artifactUploadUrl:  run.ArtifactUploadUrl,
 	}
 
 	var tfCommand TfCmd
@@ -270,8 +270,10 @@ func (w *Worker) sendInitFail(run *Run) {
 }
 
 // to inline string pointers
+//
+//go:fix inline
 func message(text string) *string {
-	return &text
+	return new(text)
 }
 
 // TODO rather inefficient version for now, but io.Seeker does not support Seek(..) on a file opened in append mode

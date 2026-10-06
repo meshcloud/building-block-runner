@@ -1,6 +1,6 @@
 module github.com/meshcloud/building-block-runner/go-meshapi-client
 
-go 1.26
+go 1.27
 
 require github.com/stretchr/testify v1.11.1
 

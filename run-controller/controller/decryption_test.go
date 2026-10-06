@@ -22,7 +22,7 @@ func TestGetImplementationType_ValidTypes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			impl := map[string]interface{}{
+			impl := map[string]any{
 				"type": string(tt.implType),
 			}
 			implJson, _ := json.Marshal(impl)

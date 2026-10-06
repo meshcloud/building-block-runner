@@ -55,7 +55,7 @@ func (r *RunStatus) failRunAndNotFinishedSteps() {
 			s.Status = FAILED
 		}
 		if idx > r.CurrentStepIndex {
-			s.SystemMessage = message("Aborted due to failure in an earlier step")
+			s.SystemMessage = new("Aborted due to failure in an earlier step")
 		}
 	}
 	r.Status = FAILED

@@ -226,7 +226,7 @@ func (c *Client) RegisterSource(runID string, registration RegistrationDTO) erro
 // PatchStatus sends a status update (PATCH) for a run to the given sourceID endpoint.
 // payload is JSON-marshalled and sent as the request body.
 // The raw response body is returned so callers can parse response fields (e.g. runAborted).
-func (c *Client) PatchStatus(ctx context.Context, runID, sourceID string, payload interface{}) ([]byte, error) {
+func (c *Client) PatchStatus(ctx context.Context, runID, sourceID string, payload any) ([]byte, error) {
 	url := fmt.Sprintf(EPRunSourceUpdate, c.baseURL, runID, sourceID)
 
 	body, err := json.Marshal(payload)

@@ -75,7 +75,7 @@ func (suite *GitSourceTestSuite) Test_GitSourceCloneWithRef() {
 
 	uut := GitSource{
 		url:       "url",
-		refName:   p("ref"),
+		refName:   new("ref"),
 		auth:      auth,
 		gitFacade: mock,
 		log:       suite.log,
@@ -115,7 +115,7 @@ func (suite *GitSourceTestSuite) Test_GitSourceCloneWithRefAzure() {
 	mock := suite.newGitFacadeMock()
 	auth := &NoAuth{}
 	azureUrl := AZURE_DEVOPS_DOMAIN + "/url"
-	ref := p("ref")
+	ref := new("ref")
 
 	uut := GitSource{
 		url:       azureUrl,

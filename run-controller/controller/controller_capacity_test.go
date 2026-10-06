@@ -56,7 +56,7 @@ func (q *queueRunApi) FetchRunDetails(string) (string, *meshapi.RunDetailsDTO, e
 // enqueueRuns appends n TERRAFORM runs to the queue.
 func (q *queueRunApi) enqueueRuns(t *testing.T, n int) {
 	t.Helper()
-	for i := 0; i < n; i++ {
+	for range n {
 		dto, raw, err := buildRunDetailsWithImplType("TERRAFORM")
 		if err != nil {
 			t.Fatalf("failed to build run details: %v", err)

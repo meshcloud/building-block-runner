@@ -62,7 +62,7 @@ func (rm *DefaultRunManager) run(timeout time.Duration) {
 	rm.workerIn <- work
 
 	// start the worker
-	for i := 0; i < 1; i++ {
+	for i := range 1 {
 		worker := &Worker{
 			workerNumber:         i + 1,
 			workerDir:            AppConfig.TfParentWorkingDir,

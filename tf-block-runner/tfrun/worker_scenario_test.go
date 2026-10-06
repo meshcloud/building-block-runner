@@ -153,12 +153,10 @@ func (suite *WorkerTestSuite) TearDownTest() {
 
 func (suite *WorkerTestSuite) runWorker() {
 	var wg sync.WaitGroup
-	wg.Add(1)
 
-	go func() {
+	wg.Go(func() {
 		suite.w.work()
-		wg.Done()
-	}()
+	})
 
 	// simulate manager interaction
 	suite.w.workerIn <- work
@@ -589,7 +587,7 @@ func (suite *WorkerTestSuite) Test_UpdatesStatusWithLiveLogs() {
 	suite.w.statusUpdateInterval = time.Millisecond * 500
 
 	suite.tfMock.applyFunc = func(ctx context.Context, opts ...tfexec.ApplyOption) error {
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			suite.tfMock.stdOut.Write([]byte(fmt.Sprintf("%d", i)))
 			time.Sleep(time.Second * 1)
 		}
@@ -651,7 +649,7 @@ func mockValidRunDetailsFetchCall(behavior, repo, path string) func(_ *http.Requ
 		implDTO := meshapi.TerraformImplementation{
 			TerraformVersion: DEFAULT_TF_VER,
 			RepositoryUrl:    repo,
-			RepositoryPath:   p(path),
+			RepositoryPath:   new(path),
 			RefName:          nil,
 			SshPrivateKey:    nil,
 			KnownHost:        nil,
@@ -709,7 +707,7 @@ func mockApplyRunWithPlanArtifactFetchCall(repo, repoPath, planArtifactHref stri
 		implDTO := meshapi.TerraformImplementation{
 			TerraformVersion: DEFAULT_TF_VER,
 			RepositoryUrl:    repo,
-			RepositoryPath:   p(repoPath),
+			RepositoryPath:   new(repoPath),
 			Async:            false,
 		}
 		implJSON, _ := json.Marshal(implDTO)
@@ -758,7 +756,7 @@ func mockDetectRunWithUploadLinkFetchCall(repo, repoPath, artifactUploadHref str
 		implDTO := meshapi.TerraformImplementation{
 			TerraformVersion: DEFAULT_TF_VER,
 			RepositoryUrl:    repo,
-			RepositoryPath:   p(repoPath),
+			RepositoryPath:   new(repoPath),
 			Async:            false,
 		}
 		implJSON, _ := json.Marshal(implDTO)
@@ -809,7 +807,7 @@ func mockDetectRunWithoutUploadLinkFetchCall(repo, repoPath string) func(_ *http
 		implDTO := meshapi.TerraformImplementation{
 			TerraformVersion: DEFAULT_TF_VER,
 			RepositoryUrl:    repo,
-			RepositoryPath:   p(repoPath),
+			RepositoryPath:   new(repoPath),
 			Async:            false,
 		}
 		implJSON, _ := json.Marshal(implDTO)
@@ -852,8 +850,10 @@ func mockDetectRunWithoutUploadLinkFetchCall(repo, repoPath string) func(_ *http
 }
 
 // returns pointer of given value to be able to inline value without var usage
+//
+//go:fix inline
 func p[T any](v T) *T {
-	return &v
+	return new(v)
 }
 
 type testRoundTripper func(req *http.Request) *http.Response

@@ -27,8 +27,6 @@ jobs:
         include:
           - name: block-runner-core
             gradle-task: :block-runner-core:check
-          - name: manual-block-runner
-            gradle-task: :manual-block-runner:check
           - name: github-block-runner
             gradle-task: :github-block-runner:check
           - name: gitlab-block-runner
@@ -63,8 +61,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - image: manual-block-runner
-            module: manual-block-runner
           - image: github-block-runner
             module: github-block-runner
           - image: gitlab-block-runner
@@ -151,6 +147,8 @@ jobs:
         include:
           - app: go-meshapi-client
             go-dir: go-meshapi-client
+          - app: manual-block-runner
+            go-dir: manual-block-runner
           - app: run-controller
             go-dir: run-controller
           - app: tf-block-runner
@@ -199,6 +197,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - app: manual-block-runner
+            dockerfile: manual-block-runner/Dockerfile
           - app: run-controller
             dockerfile: run-controller/Dockerfile
           - app: tf-block-runner

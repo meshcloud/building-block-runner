@@ -17,7 +17,7 @@ This repository contains multiple runners, one for each supported tool:
 | [`github-block-runner`](github-block-runner/)             | Kotlin   | Triggers GitHub Actions workflows                 |
 | [`gitlab-block-runner`](gitlab-block-runner/)             | Kotlin   | Triggers GitLab CI pipelines                      |
 | [`azure-devops-block-runner`](azure-devops-block-runner/) | Kotlin   | Triggers Azure DevOps pipelines                   |
-| [`manual-block-runner`](manual-block-runner/)             | Kotlin   | No-op runner for manually managed building blocks |
+| [`manual-block-runner`](manual-block-runner/)             | Go       | No-op runner for manually managed building blocks |
 
 ## Running a runner
 
@@ -47,8 +47,8 @@ For general information about the meshStack platform and Building Blocks, see th
 
 This repository uses two separate build systems in parallel:
 
-- **Go** (`run-controller`, `tf-block-runner`, `go-meshapi-client`) shares one [Go module](go.mod) at the repository root.
-- **JVM modules** (`block-runner-core`, `github-block-runner`, `gitlab-block-runner`, `azure-devops-block-runner`, `manual-block-runner`) are managed via [Gradle](build.gradle). Each runner locks its dependency versions in a `gradle.lockfile`. Run `./gradlew resolveRunners --write-locks` after you change a dependency.
+- **Go** (`run-controller`, `tf-block-runner`, `manual-block-runner`, `go-meshapi-client`) shares one [Go module](go.mod) at the repository root.
+- **JVM modules** (`block-runner-core`, `github-block-runner`, `gitlab-block-runner`, `azure-devops-block-runner`) are managed via [Gradle](build.gradle). Each runner locks its dependency versions in a `gradle.lockfile`. Run `./gradlew resolveRunners --write-locks` after you change a dependency.
 
 Alongside the runners, the repository contains shared modules:
 
@@ -116,8 +116,9 @@ CI runs the equivalent plain `go` commands rather than these tasks.
 ### Run locally
 
 ```bash
-task start:run-controller    # start run-controller
-task start:tf-block-runner   # start tf-block-runner
+task start:run-controller        # start run-controller
+task start:tf-block-runner       # start tf-block-runner
+task start:manual-block-runner   # start manual-block-runner
 ```
 
 `task acceptance-runner` starts the runners that meshStack's acceptance tests run against; `task --summary acceptance-runner` lists its settings.

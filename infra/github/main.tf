@@ -36,19 +36,19 @@ variable "main_required_status_checks" {
   type        = list(string)
   default = [
     "block-runner-core - check",
-    "manual-block-runner - check",
     "github-block-runner - check",
     "gitlab-block-runner - check",
     "azure-devops-block-runner - check",
 
-    "manual-block-runner - image",
     "github-block-runner - image",
     "gitlab-block-runner - image",
     "azure-devops-block-runner - image",
 
+    "manual-block-runner - test",
     "run-controller - test",
     "tf-block-runner - test",
 
+    "manual-block-runner - image",
     "run-controller - image",
     "tf-block-runner - image",
   ]

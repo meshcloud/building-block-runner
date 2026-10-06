@@ -1,0 +1,58 @@
+{
+  "kind": "meshBuildingBlockRun",
+  "apiVersion": "v1",
+  "metadata": {
+    "uuid": "c662eb0d-2ee2-4dc3-92df-d0b8bd41df44"
+  },
+  "spec": {
+    "runToken": "aaaa-bbbb-cccc-dddd",
+    "runNumber": 1,
+    "buildingBlock": {
+      "uuid": "23cf7c1b-f0ba-4139-a98c-b8cea37e83cf",
+      "spec": {
+        "displayName": "testmanualsss",
+        "workspaceIdentifier": "managed-customer",
+        "inputs": [
+          { "key": "test", "value": "first", "type": "STRING", "isSensitive": false, "isEnvironment": false },
+          { "key": "test", "value": "sss", "type": "STRING", "isSensitive": false, "isEnvironment": false },
+          { "key": "count", "value": 12345678901234567890, "type": "INTEGER", "isSensitive": false, "isEnvironment": false },
+          { "key": "enabled", "value": true, "type": "BOOLEAN", "isSensitive": false, "isEnvironment": false },
+          { "key": "config", "value": "{\"a\": 1}", "type": "CODE", "isSensitive": false, "isEnvironment": false },
+          { "key": "file", "value": "data:text/plain;base64,aGk=", "type": "FILE", "isSensitive": false, "isEnvironment": false },
+          { "key": "regions", "value": ["eu", "us"], "type": "LIST", "isSensitive": false, "isEnvironment": false },
+          { "key": "size", "value": "large", "type": "SINGLE_SELECT", "isSensitive": false, "isEnvironment": false },
+          { "key": "zones", "value": ["a", "b"], "type": "MULTI_SELECT", "isSensitive": false, "isEnvironment": false },
+          { "key": "password", "value": "ZW5jcnlwdGVk", "type": "STRING", "isSensitive": true, "isEnvironment": false }
+        ],
+        "parentBuildingBlocks": []
+      }
+    },
+    "buildingBlockDefinition": {
+      "uuid": "f3228cf4-acde-4ff3-a0a5-1720b69d5bcd",
+      "spec": {
+        "version": 1,
+        "workspaceIdentifier": "test-workspace",
+        "implementation": {
+          "type": "MANUAL"
+        }
+      }
+    },
+    "behavior": "APPLY"
+  },
+  "status": "IN_PROGRESS",
+  "_links": {
+    "self": {
+      "href": "http://localhost:8080/api/meshobjects/meshbuildingblockruns/c662eb0d-2ee2-4dc3-92df-d0b8bd41df44"
+    },
+    "registerSource": {
+      "href": "http://localhost:8080/api/meshobjects/meshbuildingblockruns/c662eb0d-2ee2-4dc3-92df-d0b8bd41df44/status/source"
+    },
+    "updateSource": {
+      "href": "http://localhost:8080/api/meshobjects/meshbuildingblockruns/c662eb0d-2ee2-4dc3-92df-d0b8bd41df44/status/source/{sourceId}",
+      "templated": true
+    },
+    "meshstackBaseUrl": {
+      "href": "http://localhost:8080"
+    }
+  }
+}

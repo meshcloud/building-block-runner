@@ -3,6 +3,7 @@
 
 build/
 !tf-block-runner/build/
+!manual-block-runner/build/
 !run-controller/build/
 
 out/

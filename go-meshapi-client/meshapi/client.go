@@ -191,14 +191,17 @@ func (c *Client) UploadArtifact(uploadURL string, artifact []byte) error {
 // RegisterSource registers the caller as a status source for the given run via POST.
 // If the source is already registered (HTTP 409 Conflict) the call is treated as a no-op.
 func (c *Client) RegisterSource(runID string, registration RegistrationDTO) error {
-	url := fmt.Sprintf(EPRunSourceRegistration, c.baseURL, runID)
+	return c.RegisterSourceAt(context.Background(), fmt.Sprintf(EPRunSourceRegistration, c.baseURL, runID), registration)
+}
 
+// RegisterSourceAt is RegisterSource for the run's registerSource link.
+func (c *Client) RegisterSourceAt(ctx context.Context, registerURL string, registration RegistrationDTO) error {
 	body, err := json.Marshal(registration)
 	if err != nil {
 		return fmt.Errorf("failed to marshal registration: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, registerURL, bytes.NewBuffer(body))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -227,14 +230,17 @@ func (c *Client) RegisterSource(runID string, registration RegistrationDTO) erro
 // payload is JSON-marshalled and sent as the request body.
 // The raw response body is returned so callers can parse response fields (e.g. runAborted).
 func (c *Client) PatchStatus(ctx context.Context, runID, sourceID string, payload any) ([]byte, error) {
-	url := fmt.Sprintf(EPRunSourceUpdate, c.baseURL, runID, sourceID)
+	return c.PatchStatusAt(ctx, fmt.Sprintf(EPRunSourceUpdate, c.baseURL, runID, sourceID), payload)
+}
 
+// PatchStatusAt is PatchStatus for the run's updateSource link, expanded for the source.
+func (c *Client) PatchStatusAt(ctx context.Context, updateURL string, payload any) ([]byte, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal status payload: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, url, bytes.NewBuffer(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, updateURL, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

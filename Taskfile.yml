@@ -45,6 +45,11 @@ tasks:
     cmds:
       - go run ./run-controller {{.CLI_ARGS}}
 
+  start:manual-block-runner:
+    desc: Run manual-block-runner from source
+    cmds:
+      - go run ./manual-block-runner {{.CLI_ARGS}}
+
   start:tf-block-runner:
     desc: Run tf-block-runner from source
     env:
@@ -60,11 +65,14 @@ tasks:
 
       Environment, all optional:
         RUNNER_API_CLIENT_ID, RUNNER_API_CLIENT_SECRET
-                                  API key of every runner; without it they use basic auth
-        TF_BLOCK_RUNNER_API_URL   default http://127.0.0.1:8300
-        TF_BLOCK_RUNNER_PORT      default 8100, health at http://127.0.0.1:$TF_BLOCK_RUNNER_PORT/healthz
+                                     API key of every runner; without it they use basic auth
+        TF_BLOCK_RUNNER_API_URL      default http://127.0.0.1:8300
+        TF_BLOCK_RUNNER_PORT         default 8100, health at http://127.0.0.1:$TF_BLOCK_RUNNER_PORT/healthz
+        MANUAL_BLOCK_RUNNER_API_URL  default http://127.0.0.1:8301
+        MANUAL_BLOCK_RUNNER_PORT     default 8104, health at http://127.0.0.1:$MANUAL_BLOCK_RUNNER_PORT/healthz
     cmds:
       - go build -o bin/tf-block-runner ./tf-block-runner
+      - go build -o bin/manual-block-runner ./manual-block-runner
       # bash, because go-task's built-in shell has no `wait -n`.
       - |
         bash -u <<'EOF'
@@ -75,6 +83,10 @@ tasks:
         RUNNER_API_URL="${TF_BLOCK_RUNNER_API_URL:-http://127.0.0.1:8300}" \
         PORT="${TF_BLOCK_RUNNER_PORT:-8100}" \
           bin/tf-block-runner &
+
+        RUNNER_API_URL="${MANUAL_BLOCK_RUNNER_API_URL:-http://127.0.0.1:8301}" \
+        PORT="${MANUAL_BLOCK_RUNNER_PORT:-8104}" \
+          bin/manual-block-runner &
 
         # go-task ignores a SIGTERM sent to it alone, and dies of a SIGKILL without stopping its
         # commands, so the runners stop with it.

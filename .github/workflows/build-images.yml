@@ -30,8 +30,7 @@ jobs:
           - app: tf-block-runner
             dockerfile: tf-block-runner/Dockerfile
           - app: manual-block-runner
-            dockerfile: containers/jvm.Dockerfile
-            runner-module: manual-block-runner
+            dockerfile: manual-block-runner/Dockerfile
           - app: github-block-runner
             dockerfile: containers/jvm.Dockerfile
             runner-module: github-block-runner

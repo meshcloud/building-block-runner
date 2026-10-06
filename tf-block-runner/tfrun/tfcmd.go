@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/http"
 	"os"
 	"path"
 	"regexp"
@@ -34,6 +35,13 @@ const (
 	// Bearer <jwt> for the state endpoint. We send a placeholder "x" to make this explicit.
 	MeshStackRunTokenBasicUser = "x"
 )
+
+// stateLockTimeout lets a command wait for a state lock that a short `meshstack bb tfstate exec` session
+// or another run holds, instead of failing at once. Init gets none: tfexec passes -lock-timeout to init
+// only for Terraform before 0.15.
+func stateLockTimeout() *tfexec.LockTimeoutOption {
+	return tfexec.LockTimeout("5m")
+}
 
 type TfCmdParams struct {
 	dir                string
@@ -207,7 +215,7 @@ func (tfcmd *GenericTfCmd) useWorkspaceIfNeeded(tf TfFacade) error {
 	defer cancel()
 
 	tfcmd.Printfln("Workspace does not exist. Creating it with suggested name: %s.", tfcmd.params.suggestedWorkspace)
-	return tf.WorkspaceNew(wsCtx, tfcmd.params.suggestedWorkspace)
+	return tf.WorkspaceNew(wsCtx, tfcmd.params.suggestedWorkspace, stateLockTimeout())
 }
 
 func (tfcmd *GenericTfCmd) selectWorkspace(tf TfFacade) (string, error) {
@@ -263,7 +271,7 @@ func (tfcmd *GenericTfCmd) deleteWorkspaceIfNeeded(tf TfFacade) {
 
 	err = tf.WorkspaceSelect(wsCtx, "default")
 	if err == nil {
-		err = tf.WorkspaceDelete(wsCtx, workspace, tfexec.Force(true))
+		err = tf.WorkspaceDelete(wsCtx, workspace, tfexec.Force(true), stateLockTimeout())
 	}
 
 	if err != nil {
@@ -310,6 +318,12 @@ func (tfcmd *GenericTfCmd) createMeshStackHttpBackendFile() error {
 		AppendNewBlock("backend", []string{"http"}).
 		Body()
 	backendBlockBody.SetAttributeValue("address", cty.StringVal(url))
+	if lockUrl := tfcmd.runContextInfo.tfStateLockUrl; lockUrl != "" {
+		backendBlockBody.SetAttributeValue("lock_address", cty.StringVal(lockUrl))
+		backendBlockBody.SetAttributeValue("lock_method", cty.StringVal(http.MethodPost))
+		backendBlockBody.SetAttributeValue("unlock_address", cty.StringVal(lockUrl))
+		backendBlockBody.SetAttributeValue("unlock_method", cty.StringVal(http.MethodDelete))
+	}
 	if tfcmd.runContextInfo.runToken == "" {
 		// A runToken must always be present when the meshStack HTTP backend is used.
 		// Both standalone (polling) and Kubernetes (single-run) modes receive the token

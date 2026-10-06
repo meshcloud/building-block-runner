@@ -177,7 +177,7 @@ func (tfcmd *TfApplyCommand) execute() {
 		// terraform apply. Surfaced to the user so the two apply paths are distinguishable.
 		tfcmd.PrintlnToLogsAndStep("No plan artifact linked to this run; running a fresh terraform apply.")
 		// Variables are now in meshstack.auto.tfvars file, no command-line args needed
-		if err = tf.Apply(tfcmd.ctx); err != nil {
+		if err = tf.Apply(tfcmd.ctx, stateLockTimeout()); err != nil {
 			tfcmd.fail(err)
 			return
 		}
@@ -233,7 +233,7 @@ func (tfcmd *TfApplyCommand) applyPredecessorPlan(tf TfFacade) error {
 	}
 	tfcmd.Printfln("Wrote predecessor plan artifact to %s", planFile)
 
-	if err := tf.Apply(tfcmd.ctx, tfexec.DirOrPlan(planFile)); err != nil {
+	if err := tf.Apply(tfcmd.ctx, tfexec.DirOrPlan(planFile), stateLockTimeout()); err != nil {
 		// terraform rejects a saved plan whose state/config drifted since the dry-run
 		// (e.g. "Saved plan is stale" / provider or state changes). Do not silently re-plan.
 		return fmt.Errorf("applying the previewed terraform plan failed: %w. "+

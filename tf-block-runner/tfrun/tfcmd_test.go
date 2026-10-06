@@ -720,22 +720,33 @@ func Test_createMeshStackHttpBackendFile_WithRunToken(t *testing.T) {
 	err := uut.createMeshStackHttpBackendFile()
 	require.NoError(t, err)
 
-	g := goldie.New(t, goldie.WithNameSuffix(".golden.tf"))
-	asserted := false
-	require.NoError(t, fs.WalkDir(os.DirFS(uut.runContextInfo.workingDirectory), ".", func(p string, d fs.DirEntry, err error) error {
-		if strings.HasPrefix(p, "meshStack_httpbackend") {
-			content, err := os.ReadFile(path.Join(uut.runContextInfo.workingDirectory, p))
-			if err != nil {
-				return err
-			}
-			asserted = true
-			g.Assert(t, "backend", content)
-			assert.Contains(t, string(content), "address")
-			assert.NotContains(t, string(content), "headers")
-			assert.NotContains(t, string(content), "Authorization")
-			assert.NotContains(t, string(content), "Bearer")
-		}
-		return nil
-	}))
-	assert.True(t, asserted)
+	content := readGeneratedBackendFile(t, uut.runContextInfo.workingDirectory)
+	goldie.New(t, goldie.WithNameSuffix(".golden.tf")).Assert(t, "backend", content)
+	assert.NotContains(t, string(content), "headers")
+	assert.NotContains(t, string(content), "Authorization")
+	assert.NotContains(t, string(content), "Bearer")
+}
+
+func Test_createMeshStackHttpBackendFile_WithTfStateLockUrl_LocksViaPostAndDelete(t *testing.T) {
+	uut := makeTestGenericTfCmd(t)
+	uut.runContextInfo.bbId = "test-bb-id"
+	uut.runContextInfo.workspaceIdentifier = "test-workspace"
+	uut.runContextInfo.runToken = "ephemeral-run-token"
+	uut.runContextInfo.meshstackBaseUrl = "https://meshstack.example.com"
+	uut.runContextInfo.tfStateLockUrl = "https://meshstack.example.com/api/terraform/state/workspace/test-workspace/buildingBlock/test-bb-id/lock"
+
+	require.NoError(t, uut.createMeshStackHttpBackendFile())
+
+	content := readGeneratedBackendFile(t, uut.runContextInfo.workingDirectory)
+	goldie.New(t, goldie.WithNameSuffix(".golden.tf")).Assert(t, "backend-with-lock", content)
+}
+
+func readGeneratedBackendFile(t *testing.T, workingDirectory string) []byte {
+	t.Helper()
+	matches, err := fs.Glob(os.DirFS(workingDirectory), "meshStack_httpbackend-*.tf")
+	require.NoError(t, err)
+	require.Len(t, matches, 1)
+	content, err := os.ReadFile(path.Join(workingDirectory, matches[0]))
+	require.NoError(t, err)
+	return content
 }

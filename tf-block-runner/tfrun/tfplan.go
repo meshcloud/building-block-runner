@@ -156,7 +156,7 @@ func (tfcmd *TfPlanCommand) execute() {
 	// Variables are now in meshstack.auto.tfvars file, no command-line args needed
 	planFile := tfcmd.runContextInfo.artifactFilePath
 	// Plan runs `terraform plan -detailed-exitcode`; changed is true when the plan found changes.
-	changed, err := tf.Plan(tfcmd.ctx, tfexec.Out(planFile))
+	changed, err := tf.Plan(tfcmd.ctx, tfexec.Out(planFile), stateLockTimeout())
 	if err != nil {
 		tfcmd.fail(err)
 		return

@@ -455,7 +455,7 @@ func (suite *WorkerTestSuite) Test_DestroySucceeded() {
 		assert.Nil(suite.T(), step.UserMessage)
 	}
 	assert.Nil(suite.T(), update.Summary)
-	assert.Empty(suite.T(), destroyOpts, "a Terraform destroy gets no extra flags")
+	assert.Equal(suite.T(), []tfexec.DestroyOption{stateLockTimeout()}, destroyOpts, "a Terraform destroy gets no flag but the lock timeout")
 }
 
 func (suite *WorkerTestSuite) Test_DestroyTfFailure() {
@@ -645,23 +645,23 @@ func mockUpdateCallWithAbortResponse() func(_ *http.Request) *http.Response {
 }
 
 func mockValidRunDetailsFetchCall(behavior, repo, path string) func(_ *http.Request) *http.Response {
+	impl := meshapi.TerraformImplementation{
+		TerraformVersion: DEFAULT_TF_VER,
+		RepositoryUrl:    repo,
+		RepositoryPath:   new(path),
+	}
+	// A DETECT run uploads the plan it produces to the dedicated endpoint, so the backend always
+	// hands out an artifactUpload link for it.
+	var links meshapi.LinksDTO
+	if behavior == DETECT.str() {
+		links.ArtifactUpload = meshapi.LinkDTO{Href: "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/plan-artifact"}
+	}
+	return mockRunDetailsFetchCall(behavior, impl, links)
+}
+
+func mockRunDetailsFetchCall(behavior string, impl meshapi.TerraformImplementation, links meshapi.LinksDTO) func(_ *http.Request) *http.Response {
 	return func(_ *http.Request) *http.Response {
-		implDTO := meshapi.TerraformImplementation{
-			TerraformVersion: DEFAULT_TF_VER,
-			RepositoryUrl:    repo,
-			RepositoryPath:   new(path),
-			RefName:          nil,
-			SshPrivateKey:    nil,
-			KnownHost:        nil,
-			Async:            false,
-		}
-		implJSON, _ := json.Marshal(implDTO)
-		// A DETECT run uploads the plan it produces to the dedicated endpoint, so the backend always
-		// hands out an artifactUpload link for it.
-		var links meshapi.LinksDTO
-		if behavior == DETECT.str() {
-			links.ArtifactUpload = meshapi.LinkDTO{Href: "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/plan-artifact"}
-		}
+		implJSON, _ := json.Marshal(impl)
 		body, _ := json.Marshal(
 			&meshapi.RunDetailsDTO{
 				ApiVersion: "v1",

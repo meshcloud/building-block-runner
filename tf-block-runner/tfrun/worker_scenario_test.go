@@ -13,6 +13,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -325,41 +326,77 @@ func (suite *WorkerTestSuite) Test_RegistrationConflict_ContinuesExecution() {
 		"run should complete successfully even when registration returns 409")
 }
 
-func (suite *WorkerTestSuite) Test_ApplyRunAborted() {
-	// simulate an init tf call that needs 11s to finish
-	suite.tfMock.initFunc = func(ctx context.Context, opts ...tfexec.InitOption) error {
-		time.Sleep(time.Second * 11)
-		return nil
-	}
+// tofuShutdownAfterInterrupt stands in for tofu after SIGINT: it stops the operation, saves the partial
+// state and releases the state lock before it exits.
+const tofuShutdownAfterInterrupt = 50 * time.Millisecond
 
-	// we test that apply is called with a cancelled context because run is aborted before
+// abortOnceApplyStarted answers every status update like meshStack does after a user aborted the run,
+// but only once apply runs, so the abort reaches a running tofu and not an earlier step.
+func (suite *WorkerTestSuite) abortOnceApplyStarted() (tofuExited *time.Time, receivedStatuses *[]string, finalStatusAnswer *int) {
+	tofuExited, receivedStatuses, finalStatusAnswer = new(time.Time), new([]string), new(int)
+	*finalStatusAnswer = http.StatusOK
+	var applyStarted atomic.Bool
+
 	suite.tfMock.applyFunc = func(ctx context.Context, opts ...tfexec.ApplyOption) error {
-		assert.Equal(suite.T(), context.Canceled, ctx.Err())
-		return nil
+		applyStarted.Store(true)
+		<-ctx.Done()
+		time.Sleep(tofuShutdownAfterInterrupt)
+		*tofuExited = time.Now()
+		return ctx.Err()
 	}
-
-	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
-
-	updateCalls := make([]http.Request, 0)
 	suite.calls.update = func(req *http.Request) *http.Response {
-		updateCalls = append(updateCalls, *req)
-		return mockUpdateCallWithAbortResponse()(req)
+		data, _ := io.ReadAll(req.Body)
+		var update meshapi.RunStatusUpdateDTO
+		json.Unmarshal(data, &update)
+		*receivedStatuses = append(*receivedStatuses, *update.Status)
+		switch {
+		case *update.Status == ABORTED.str():
+			assert.False(suite.T(), tofuExited.IsZero(), "ABORTED must be sent only after tofu has exited")
+			return &http.Response{StatusCode: *finalStatusAnswer, Body: io.NopCloser(bytes.NewBufferString("{}")), Header: make(http.Header)}
+		case applyStarted.Load():
+			return mockUpdateCallWithAbortResponse()(req)
+		default:
+			return noopCall(req)
+		}
 	}
+	return tofuExited, receivedStatuses, finalStatusAnswer
+}
 
-	// execute worker
+func (suite *WorkerTestSuite) Test_AbortedApply_SendsABORTEDOnceTofuHasExited() {
+	suite.w.statusUpdateInterval = 10 * time.Millisecond
+	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	tofuExited, receivedStatuses, _ := suite.abortOnceApplyStarted()
+
 	suite.runWorker()
 
-	// assertions
+	assert.False(suite.T(), tofuExited.IsZero())
+	assert.Equal(suite.T(), ABORTED.str(), (*receivedStatuses)[len(*receivedStatuses)-1])
+	assert.Equal(suite.T(), 1, countOf(*receivedStatuses, ABORTED.str()))
+}
 
-	// we expect that init is called, but as the first update returns a positive 'abort' flag, apply will be called
-	// with a context that has been cancelled already.
-	// therefore also not more then 1 update call is sent (11s duration / 10sec update interval)
-	// update will have the IN_PROGRESS state, as we are not done yet
-	assert.Equal(suite.T(), 1, len(updateCalls))
-	data, _ := io.ReadAll(updateCalls[0].Body)
-	var update meshapi.RunStatusUpdateDTO
-	json.Unmarshal(data, &update)
-	assert.Equal(suite.T(), IN_PROGRESS.str(), *update.Status)
+func (suite *WorkerTestSuite) Test_AbortedApplyOnMeshStackThatEndedTheRunItself_LogsTheRefusalWithoutError() {
+	suite.w.statusUpdateInterval = 10 * time.Millisecond
+	var workerLog bytes.Buffer
+	suite.w.log = log.New(&workerLog, "", 0)
+	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	_, receivedStatuses, finalStatusAnswer := suite.abortOnceApplyStarted()
+	*finalStatusAnswer = http.StatusUnauthorized
+
+	suite.runWorker()
+
+	assert.Equal(suite.T(), 1, countOf(*receivedStatuses, ABORTED.str()))
+	assert.Contains(suite.T(), workerLog.String(), "meshStack refused the ABORTED status")
+	assert.NotContains(suite.T(), workerLog.String(), "ERROR")
+}
+
+func countOf(values []string, value string) int {
+	count := 0
+	for _, v := range values {
+		if v == value {
+			count++
+		}
+	}
+	return count
 }
 
 func (suite *WorkerTestSuite) Test_ApplyTfFailure() {

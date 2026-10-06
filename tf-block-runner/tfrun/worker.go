@@ -193,6 +193,7 @@ func (w *Worker) observerRoutine(ctx context.Context, cancel context.CancelFunc,
 	defer ticker.Stop()
 
 	runContextInfo := ctx.Value(runInfoContextKey).(*RunContextInfo)
+	abortRequested := false
 
 	for {
 		select {
@@ -201,32 +202,7 @@ func (w *Worker) observerRoutine(ctx context.Context, cancel context.CancelFunc,
 		// send out one last update and end routine
 		case <-doneSignallingChan:
 
-			// context has been cancelled, we omit the final update, nobody wants it.
-			if err := ctx.Err(); err != nil && err == context.Canceled {
-				return
-			}
-
-			// If we are an async run and we finished here with SUCCEEDED we still will signal a IN_PROGRESS
-			// to the coordinator as we basically just handed over execution to the external pipeline.
-			finalStatus := runContextInfo.reportStatus.Status
-			if run.IsAsync && runContextInfo.reportStatus.Status == SUCCEEDED {
-				finalStatus = IN_PROGRESS
-			}
-
-			reportStatus := runContextInfo.reportStatus
-			reportStatus.Status = finalStatus
-
-			// For the final update we do not care about the 'abort-run' flag
-			w.log.Printf("Sending final status update for run %s: %s", runContextInfo.runId, finalStatus.str())
-			err := updateStateWithRetry(w.runApi, &reportStatus, w.finalStatusRetry, w.log)
-
-			if err != nil {
-				w.log.Printf("ERROR: Failed to send final status for run %s: %v", runContextInfo.runId, err)
-				runContextInfo.logwrap.PrintlnToLocalLogs(fmt.Sprintf("Failed to set final state: %s\n", err.Error()))
-			} else {
-				w.log.Printf("Successfully sent final status for run %s: %s", runContextInfo.runId, finalStatus.str())
-			}
-
+			sendFinalStatus(w.runApi, run, runContextInfo, abortRequested, w.finalStatusRetry, w.log)
 			return
 
 		// send out all updates or if none are there, just an empty one as liveliness update
@@ -239,15 +215,39 @@ func (w *Worker) observerRoutine(ctx context.Context, cancel context.CancelFunc,
 					runContextInfo.logwrap.PrintlnToLocalLogs(fmt.Sprintf("Failed to update state: %s", err.Error()))
 				}
 
-				// in case the run should be aborted, we cancel the work context,
-				// so that all tf commands will get the signal
-				if abort {
+				if abort && !abortRequested {
 					w.log.Printf("Received flag to abort run. Cancelling run context.")
+					abortRequested = true
 					cancel()
-					ticker.Stop()
 				}
 			}
 		}
+	}
+}
+
+// sendFinalStatus runs after an abort as well, once tofu has exited: meshStack keeps an aborted synchronous
+// run in progress, with a valid run key, until the runner reports ABORTED, so tofu can still save its
+// partial state and release its state lock.
+func sendFinalStatus(api RunApi, run *Run, runContextInfo *RunContextInfo, abortRequested bool, retry retrySchedule, logger *log.Logger) {
+	status := runContextInfo.reportStatus
+	switch {
+	case abortRequested:
+		status.Status = ABORTED
+	case run.IsAsync && status.Status == SUCCEEDED:
+		// The run continues in the external pipeline, which reports its end itself.
+		status.Status = IN_PROGRESS
+	}
+
+	logger.Printf("Sending final status update for run %s: %s", runContextInfo.runId, status.Status.str())
+	err := updateStateWithRetry(api, &status, retry, logger)
+	switch {
+	case err == nil:
+		logger.Printf("Successfully sent final status for run %s: %s", runContextInfo.runId, status.Status.str())
+	case abortRequested && isClientError(err):
+		logger.Printf("meshStack refused the ABORTED status for run %s. A meshStack that does not wait for the runner has already ended the aborted run: %v", runContextInfo.runId, err)
+	default:
+		logger.Printf("ERROR: Failed to send final status for run %s: %v", runContextInfo.runId, err)
+		runContextInfo.logwrap.PrintlnToLocalLogs(fmt.Sprintf("Failed to set final state: %s\n", err.Error()))
 	}
 }
 

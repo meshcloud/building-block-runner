@@ -345,10 +345,10 @@ func (tfcmd *GenericTfCmd) createMeshStackHttpBackendFile() error {
 
 func (tfcmd *GenericTfCmd) assignOutput(tf TfFacade) {
 	// make sure changes to the log file are written back to the current update status
-	tfcmd.runContextInfo.logwrap.callback = func() {
+	tfcmd.runContextInfo.logwrap.onWrite(func() {
 		tfcmd.setCurrentStepMessage(nil)
 		tfcmd.commitStatus()
-	}
+	})
 
 	// set log wrapper as output for tf lib
 	tf.SetStdout(tfcmd.runContextInfo.logwrap)
@@ -810,7 +810,7 @@ func (tfcmd *GenericTfCmd) setCurrentStepMessage(userMessage *string) {
 			currentStep.UserMessage = userMessage
 		}
 
-		logs := fileContentOrEmpty(tfcmd.runContextInfo.logFile_name, currentStep.LogStartIdx, tfcmd.runContextInfo.logwrap.logSize)
+		logs := fileContentOrEmpty(tfcmd.runContextInfo.logFile_name, currentStep.LogStartIdx, tfcmd.runContextInfo.logwrap.logSize.Load())
 		currentStep.SystemMessage = &logs
 	}
 }
@@ -834,7 +834,7 @@ func (tfcmd *GenericTfCmd) nextStep() {
 		tfcmd.runContextInfo.runStatus.currentStepStatus().Status = IN_PROGRESS
 
 		// next step starts logging here:
-		tfcmd.runContextInfo.runStatus.currentStepStatus().LogStartIdx = tfcmd.runContextInfo.logwrap.logSize
+		tfcmd.runContextInfo.runStatus.currentStepStatus().LogStartIdx = tfcmd.runContextInfo.logwrap.logSize.Load()
 	}
 }
 
@@ -844,7 +844,7 @@ func (tfcmd *GenericTfCmd) setRunStatus(e ExecutionStatus) {
 }
 
 func (tfcmd *GenericTfCmd) commitStatus() {
-	tfcmd.runContextInfo.reportStatus = *(tfcmd.runContextInfo.runStatus)
+	tfcmd.runContextInfo.publishStatus()
 }
 
 // startRun activates the first step and marks the overall run as IN_PROGRESS.

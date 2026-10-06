@@ -1,10 +1,7 @@
 version: '3'
 
 vars:
-  MODULES: go-meshapi-client run-controller tf-block-runner
-  # `go run` rather than a binary from the dev shell: golangci-lint's formatters use the go/format
-  # compiled into it, so it has to be built with the Go that go.mod asks for.
-  GOLANGCI_LINT: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
+  PACKAGES: ./...
 
 env:
   CGO_ENABLED: "0" # like the images, so building needs no C compiler
@@ -15,40 +12,31 @@ tasks:
       - task --list
 
   test:
-    desc: Run the Go tests of every module
+    desc: Run the Go tests
     summary: |
-      Pass MODULES to test fewer modules, e.g. `task test MODULES=run-controller`.
+      Pass PACKAGES to test fewer packages, e.g. `task test PACKAGES=./run-controller/...`.
       Arguments after `--` go to `go test`.
     env:
       CGO_ENABLED: "1" # the race detector needs cgo
     cmds:
-      - for: { var: MODULES }
-        cmd: cd {{.ITEM}} && go test -race {{.CLI_ARGS}} ./...
+      - go test -race {{.CLI_ARGS}} {{.PACKAGES}}
 
   lint:
-    desc: Run golangci-lint on every module, including the format check
+    desc: Run golangci-lint, including the format check
     summary: |
-      Pass MODULES to lint fewer modules. `task lint -- --fix` fixes what it can.
+      Pass PACKAGES to lint fewer packages. `task lint -- --fix` fixes what it can.
     cmds:
-      - for: { var: MODULES }
-        cmd: cd {{.ITEM}} && {{.GOLANGCI_LINT}} run {{.CLI_ARGS}} ./...
+      - 'go tool golangci-lint run {{.CLI_ARGS}} {{.PACKAGES}}'
 
   fmt:
-    desc: Format the Go code of every module
+    desc: Format the Go code
     cmds:
-      - for: { var: MODULES }
-        cmd: cd {{.ITEM}} && {{.GOLANGCI_LINT}} fmt ./...
+      - 'go tool golangci-lint fmt ./...'
 
   tidy:
-    desc: Tidy go.mod and go.sum of every module
+    desc: Tidy go.mod and go.sum
     cmds:
-      - for: { var: MODULES }
-        cmd: cd {{.ITEM}} && go mod tidy
-
-  work:sync:
-    desc: Sync the go.work dependencies back into the modules
-    cmds:
-      - go work sync
+      - go mod tidy
 
   start:run-controller:
     desc: Run run-controller from source

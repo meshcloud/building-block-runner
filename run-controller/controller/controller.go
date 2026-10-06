@@ -213,9 +213,8 @@ func (c *Controller) processNextRun() processResult {
 
 		// Report the failure back to meshfed so the run is marked as failed instead of
 		// being stuck in a pending state. Use a specific message for size-related errors.
-		var runTooLargeErr *RunTooLargeError
 		var errorMessage string
-		if errors.As(err, &runTooLargeErr) {
+		if _, ok := errors.AsType[*RunTooLargeError](err); ok {
 			errorMessage = "Run data is too large to be passed to the runner. The run data exceeds the Kubernetes secret size limit of 1MiB. Please reduce the size of the building block inputs."
 		} else {
 			errorMessage = "Failed to create job for run: " + err.Error()

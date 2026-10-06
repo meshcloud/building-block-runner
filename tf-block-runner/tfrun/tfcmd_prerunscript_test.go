@@ -85,7 +85,9 @@ func makePreRunScriptTfCmd(t *testing.T, preRunScript *string, runMode string, d
 
 // strPtr returns a pointer to s. This is the idiomatic Go workaround for taking
 // the address of a string literal, which the language does not permit directly.
-func strPtr(s string) *string { return &s }
+//
+//go:fix inline
+func strPtr(s string) *string { return new(s) }
 
 // ---------------------------------------------------------------------------
 // Unit tests – step update logic
@@ -101,7 +103,7 @@ func Test_runPreRunScript_nilScript_returnsNilNoError(t *testing.T) {
 }
 
 func Test_runPreRunScript_emptyScript_returnsNilNoError(t *testing.T) {
-	sut, _ := makePreRunScriptTfCmd(t, strPtr(""), "APPLY", false)
+	sut, _ := makePreRunScriptTfCmd(t, new(""), "APPLY", false)
 
 	userMsg, err := sut.runPreRunScript(nil)
 
@@ -110,7 +112,7 @@ func Test_runPreRunScript_emptyScript_returnsNilNoError(t *testing.T) {
 }
 
 func Test_runPreRunScript_scriptWithWindowsLineEndings_returnsNilNoError(t *testing.T) {
-	sut, _ := makePreRunScriptTfCmd(t, strPtr("echo Hello\r\n\r\necho Windows\r\n"), "APPLY", false)
+	sut, _ := makePreRunScriptTfCmd(t, new("echo Hello\r\n\r\necho Windows\r\n"), "APPLY", false)
 
 	userMsg, err := sut.runPreRunScript(nil)
 

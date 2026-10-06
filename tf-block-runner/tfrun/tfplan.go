@@ -17,13 +17,11 @@ func PlanCmd(ctx context.Context, params *TfCmdParams, tfbin *TfBinaries, runApi
 	runContextInfo := ctx.Value(runInfoContextKey).(*RunContextInfo)
 
 	return &TfPlanCommand{
-		GenericTfCmd: GenericTfCmd{
-			ctx:            ctx,
-			runContextInfo: runContextInfo,
-			bin:            tfbin,
-			params:         params,
-		},
-		runApi: runApi,
+		ctx:            ctx,
+		runContextInfo: runContextInfo,
+		bin:            tfbin,
+		params:         params,
+		runApi:         runApi,
 	}
 }
 

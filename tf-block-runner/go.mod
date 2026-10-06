@@ -1,6 +1,6 @@
 module github.com/meshcloud/building-block-runner/tf-block-runner
 
-go 1.26
+go 1.27
 
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3

@@ -298,22 +298,22 @@ func (suite *ApiTestSuite) Test_UpdateState() {
 		&RunStatus{
 			RunId:            "run-uuid",
 			Status:           IN_PROGRESS,
-			Summary:          message("run summary"),
+			Summary:          new("run summary"),
 			CurrentStepIndex: 1,
 			Steps: []*StepStatus{
 				{
 					Name:          "step1",
 					DisplayName:   "display1",
 					Status:        SUCCEEDED,
-					UserMessage:   message("user message for step 1"),
-					SystemMessage: message("logs for step 1"),
+					UserMessage:   new("user message for step 1"),
+					SystemMessage: new("logs for step 1"),
 				},
 				{
 					Name:          "step2",
 					DisplayName:   "display2",
 					Status:        IN_PROGRESS,
 					UserMessage:   nil,
-					SystemMessage: message("logs for step 2"),
+					SystemMessage: new("logs for step 2"),
 				},
 				{
 					Name:        "step3",
@@ -383,15 +383,15 @@ func (suite *ApiTestSuite) Test_UpdateStateOutputs() {
 		&RunStatus{
 			RunId:            "run-uuid",
 			Status:           IN_PROGRESS,
-			Summary:          message("run summary"),
+			Summary:          new("run summary"),
 			CurrentStepIndex: 1,
 			Steps: []*StepStatus{
 				{
 					Name:          "step1",
 					DisplayName:   "display1",
 					Status:        SUCCEEDED,
-					UserMessage:   message("user message for step 1"),
-					SystemMessage: message("logs for step 1"),
+					UserMessage:   new("user message for step 1"),
+					SystemMessage: new("logs for step 1"),
 					Outputs: map[string]*TfOutput{
 						"test1": {
 							Type:  DATA_TYPE_BOOLEAN,

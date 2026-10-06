@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path"
@@ -181,9 +182,7 @@ func buildScriptEnvironmentVariables(terraformBinDir, userMsgPath string, extraE
 	// Start from the minimal clean system environment, then layer on any explicitly
 	// configured variables (e.g. input vars marked as env, GIT_SSH_COMMAND).
 	merged := cleanSystemEnv()
-	for k, v := range extraEnv {
-		merged[k] = v
-	}
+	maps.Copy(merged, extraEnv)
 	merged["MESHSTACK_USER_MESSAGE"] = userMsgPath
 
 	environ := make([]string, 0, len(merged))
@@ -206,8 +205,8 @@ func prependToPathEnvironmentVariable(environ []string, paths ...string) []strin
 	)
 	pathFound := false
 	for i, envKeyValue := range environ {
-		if strings.HasPrefix(envKeyValue, pathKeyPrefix) {
-			if existingPaths := strings.TrimPrefix(envKeyValue, pathKeyPrefix); existingPaths != "" {
+		if after, ok := strings.CutPrefix(envKeyValue, pathKeyPrefix); ok {
+			if existingPaths := after; existingPaths != "" {
 				paths = append(paths, existingPaths)
 			}
 			environ[i] = pathKeyPrefix + strings.Join(paths, pathSeparator)
@@ -227,8 +226,7 @@ func extractExitCode(runErr error) int {
 		return 0
 	}
 
-	var exitErr *exec.ExitError
-	if errors.As(runErr, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](runErr); ok {
 		return exitErr.ExitCode()
 	}
 

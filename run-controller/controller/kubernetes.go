@@ -118,15 +118,13 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 
 	// Create Job with run data mounted as a file via secret volume
 	job := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      jobName,
-			Namespace: namespace,
-			Labels: map[string]string{
-				"app.kubernetes.io/name":   "runner",
-				"meshcloud.io/run-id":      runInfo.Uuid,
-				"meshcloud.io/runner-id":   AppConfig.Uuid,
-				"meshcloud.io/runner-type": implType,
-			},
+		Name:      jobName,
+		Namespace: namespace,
+		Labels: map[string]string{
+			"app.kubernetes.io/name":   "runner",
+			"meshcloud.io/run-id":      runInfo.Uuid,
+			"meshcloud.io/runner-id":   AppConfig.Uuid,
+			"meshcloud.io/runner-type": implType,
 		},
 		Spec: batchv1.JobSpec{
 			BackoffLimit: int32Ptr(1),
@@ -237,8 +235,9 @@ func isJobFinished(job *batchv1.Job) bool {
 	return false
 }
 
+//go:fix inline
 func int32Ptr(i int32) *int32 {
-	return &i
+	return new(i)
 }
 
 func buildTolerations(configs []TolerationConfig) []corev1.Toleration {
@@ -374,14 +373,12 @@ func (k *KubernetesClient) buildArgs(jobSpec *JobSpecTemplate) []string {
 
 func (k *KubernetesClient) createServiceAccount(namespace, name, runID string, metrics *MetricsCollector) error {
 	serviceAccount := &corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-			Labels: map[string]string{
-				"app.kubernetes.io/name": "runner",
-				"meshcloud.io/run-id":    runID,
-				"meshcloud.io/runner-id": AppConfig.Uuid,
-			},
+		Name:      name,
+		Namespace: namespace,
+		Labels: map[string]string{
+			"app.kubernetes.io/name": "runner",
+			"meshcloud.io/run-id":    runID,
+			"meshcloud.io/runner-id": AppConfig.Uuid,
 		},
 	}
 
@@ -413,14 +410,12 @@ func (k *KubernetesClient) createRunJsonSecret(namespace, secretName, runJsonBas
 	}
 
 	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      secretName,
-			Namespace: namespace,
-			Labels: map[string]string{
-				"app.kubernetes.io/name": "runner",
-				"meshcloud.io/run-id":    runID,
-				"meshcloud.io/runner-id": AppConfig.Uuid,
-			},
+		Name:      secretName,
+		Namespace: namespace,
+		Labels: map[string]string{
+			"app.kubernetes.io/name": "runner",
+			"meshcloud.io/run-id":    runID,
+			"meshcloud.io/runner-id": AppConfig.Uuid,
 		},
 		Data: map[string][]byte{
 			"run.json": runJsonBytes,
@@ -482,23 +477,19 @@ func (k *KubernetesClient) createVolumes(namespace string, jobSpec *JobSpecTempl
 	volumes := []corev1.Volume{
 		{
 			Name: "run-json",
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: runJsonSecretName,
-				},
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: runJsonSecretName,
 			},
 		},
 		{
 			Name: "service-account-token-azure",
-			VolumeSource: corev1.VolumeSource{
-				Projected: &corev1.ProjectedVolumeSource{
-					Sources: []corev1.VolumeProjection{
-						{
-							ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
-								Audience:          "api://AzureADTokenExchange",
-								ExpirationSeconds: &expirationSeconds,
-								Path:              "token",
-							},
+			Projected: &corev1.ProjectedVolumeSource{
+				Sources: []corev1.VolumeProjection{
+					{
+						ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
+							Audience:          "api://AzureADTokenExchange",
+							ExpirationSeconds: &expirationSeconds,
+							Path:              "token",
 						},
 					},
 				},
@@ -506,15 +497,13 @@ func (k *KubernetesClient) createVolumes(namespace string, jobSpec *JobSpecTempl
 		},
 		{
 			Name: "service-account-token-gcp",
-			VolumeSource: corev1.VolumeSource{
-				Projected: &corev1.ProjectedVolumeSource{
-					Sources: []corev1.VolumeProjection{
-						{
-							ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
-								Audience:          fmt.Sprintf("gcp-workload-identity-provider:%s", namespace),
-								ExpirationSeconds: &expirationSeconds,
-								Path:              "token",
-							},
+			Projected: &corev1.ProjectedVolumeSource{
+				Sources: []corev1.VolumeProjection{
+					{
+						ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
+							Audience:          fmt.Sprintf("gcp-workload-identity-provider:%s", namespace),
+							ExpirationSeconds: &expirationSeconds,
+							Path:              "token",
 						},
 					},
 				},
@@ -522,15 +511,13 @@ func (k *KubernetesClient) createVolumes(namespace string, jobSpec *JobSpecTempl
 		},
 		{
 			Name: "service-account-token-aws",
-			VolumeSource: corev1.VolumeSource{
-				Projected: &corev1.ProjectedVolumeSource{
-					Sources: []corev1.VolumeProjection{
-						{
-							ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
-								Audience:          fmt.Sprintf("aws-workload-identity-provider:%s", namespace),
-								ExpirationSeconds: &expirationSeconds,
-								Path:              "token",
-							},
+			Projected: &corev1.ProjectedVolumeSource{
+				Sources: []corev1.VolumeProjection{
+					{
+						ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
+							Audience:          fmt.Sprintf("aws-workload-identity-provider:%s", namespace),
+							ExpirationSeconds: &expirationSeconds,
+							Path:              "token",
 						},
 					},
 				},
@@ -545,9 +532,7 @@ func (k *KubernetesClient) createVolumes(namespace string, jobSpec *JobSpecTempl
 		// Set the appropriate volume source based on what's configured
 		if extraVol.ConfigMap != nil {
 			volume.VolumeSource.ConfigMap = &corev1.ConfigMapVolumeSource{
-				LocalObjectReference: corev1.LocalObjectReference{
-					Name: extraVol.ConfigMap.Name,
-				},
+				Name: extraVol.ConfigMap.Name,
 			}
 		} else if extraVol.Secret != nil {
 			volume.VolumeSource.Secret = &corev1.SecretVolumeSource{

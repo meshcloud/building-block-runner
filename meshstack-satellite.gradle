@@ -1,0 +1,12 @@
+plugins {
+  id 'io.meshcloud.meshstack.go-satellite'
+}
+
+satellite {
+  acceptance {
+    run = 'TestAcc'
+    environment BUILDING_BLOCK_RUNNER_TEST_ACC: '1',
+                MESHSTACK_API_KEY: fromBackendConfig('auth.openid.apiKeys.meshcloud-hosted-runner.clientId'),
+                MESHSTACK_API_SECRET: fromBackendConfig('auth.openid.apiKeys.meshcloud-hosted-runner.clientSecret')
+  }
+}

@@ -123,6 +123,27 @@ task start:manual-block-runner   # start manual-block-runner
 
 `task acceptance-runner` starts the runners that meshStack's acceptance tests run against; `task --summary acceptance-runner` lists its settings.
 
+### Acceptance tests
+
+`testacc/` drives the runners' Go code in process against a live meshStack: run-controller's
+registration and a claim on an empty queue, for a runner the suite creates with the hosted-runner
+API key. A whole meshStack only exists in the meshcloud-internal mono repo `meshfed-release`, so CI
+here does not run the suite. `.github/workflows/test-acceptance.yml` asks that repository for the
+run, and `meshstack-satellite.gradle` is everything the run reads from here. The workflow also
+requests the terraform provider's suite against the same branch, which drives real terraform and
+manual runs through the runners.
+
+To run the suite yourself, bring up the local stack of `../meshfed-release` (its `local-dev-stack`
+skill); `./gradlew :building-block-runner:satelliteEnv` there writes
+`../.env-testacc-building-block-runner`. Then run the suite from here with plain `go test`:
+
+```bash
+set -a; . ../.env-testacc-building-block-runner; set +a
+go test ./testacc/... -run TestAcc
+```
+
+Without `BUILDING_BLOCK_RUNNER_TEST_ACC=1`, which that file sets, the suite skips.
+
 See the individual module READMEs for module-specific instructions:
 
 - [run-controller/README.md](run-controller/README.md)

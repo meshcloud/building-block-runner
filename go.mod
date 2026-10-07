@@ -10,12 +10,13 @@ require (
 	github.com/hashicorp/hc-install v0.9.5
 	github.com/hashicorp/hcl/v2 v2.24.0
 	github.com/hashicorp/terraform-exec v0.25.2
+	github.com/meshcloud/meshstack-cli v0.3.1-0.20261005102654-64c94ed4af09
 	github.com/opentofu/tofudl v0.0.1
 	github.com/prometheus/client_golang v1.20.5
 	github.com/sebdah/goldie/v2 v2.8.0
 	github.com/stretchr/testify v1.12.1
 	github.com/zclconf/go-cty v1.18.1
-	golang.org/x/crypto v0.55.0
+	golang.org/x/crypto v0.57.0
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.34.1
@@ -63,6 +64,7 @@ require (
 	github.com/ashanbrown/forbidigo/v2 v2.3.1 // indirect
 	github.com/ashanbrown/makezero/v2 v2.2.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/bitfield/gotestdox v0.2.2 // indirect
 	github.com/bkielbasa/cyclop v1.2.3 // indirect
 	github.com/blizzy78/varnamelen v0.8.0 // indirect
 	github.com/bombsimon/wsl/v4 v4.7.0 // indirect
@@ -92,6 +94,7 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/denis-tingaikin/go-header v0.5.0 // indirect
 	github.com/dlclark/regexp2/v2 v2.2.1 // indirect
+	github.com/dnephin/pflag v1.0.7 // indirect
 	github.com/emicklei/go-restful/v3 v3.12.2 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/ettle/strcase v0.2.0 // indirect
@@ -120,7 +123,7 @@ require (
 	github.com/go-xmlfmt/xmlfmt v1.1.3 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/godoc-lint/godoc-lint v0.11.2 // indirect
-	github.com/gofrs/flock v0.13.0 // indirect
+	github.com/gofrs/flock v0.13.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/golangci/asciicheck v0.5.0 // indirect
@@ -138,6 +141,7 @@ require (
 	github.com/golangci/unconvert v0.0.0-20250410112200-a129a6e6413e // indirect
 	github.com/google/gnostic-models v0.7.0 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
+	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gordonklaus/ineffassign v0.2.0 // indirect
 	github.com/gostaticanalysis/analysisutil v0.7.1 // indirect
@@ -184,7 +188,7 @@ require (
 	github.com/matoous/godox v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/mattn/go-runewidth v0.0.24 // indirect
+	github.com/mattn/go-runewidth v0.0.27 // indirect
 	github.com/mgechev/revive v1.15.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/go-wordwrap v1.0.1 // indirect
@@ -265,20 +269,21 @@ require (
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20260811152304-ee035b5b010f // indirect
-	golang.org/x/mod v0.40.0 // indirect
-	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/mod v0.41.0 // indirect
+	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/oauth2 v0.27.0 // indirect
-	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/term v0.45.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/term v0.46.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/time v0.9.0 // indirect
-	golang.org/x/tools v0.49.0 // indirect
+	golang.org/x/tools v0.50.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
+	gotest.tools/gotestsum v1.13.0 // indirect
 	honnef.co/go/tools v0.8.1 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20250710124328-f3f2b991d03b // indirect
@@ -291,4 +296,8 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-tool github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+// meshfed-release's go-satellite build plugin runs `go tool gotestsum` here to drive the acceptance suite.
+tool (
+	github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+	gotest.tools/gotestsum
+)

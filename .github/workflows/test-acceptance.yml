@@ -1,0 +1,90 @@
+# The acceptance tests need a whole meshStack backend, so they cannot run here. This workflow asks
+# the private meshStack mono repo to run them and report the result back as a check run.
+name: Acceptance Tests
+
+# The push trigger catches a runner/backend regression on main, which meshStack CI runs whenever no
+# branch is paired with it.
+on:
+  pull_request_target:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # No `name:`, unlike ci.yml's jobs: nothing gates on this check. The gating check is
+  # "Acceptance Tests (meshStack backend)", which meshfed-release posts.
+  request:
+    runs-on: ubuntu-latest
+    env:
+      SATELLITE_REF: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.ref || github.ref_name }}
+
+      # The run has to be in our own repository, and on a pull request the head branch has to live
+      # here too — which means its author has write access, so the code under test is code we
+      # already trust. A workflow_dispatch runs on a branch of this repository, started by someone
+      # with write access, so it is trusted like a push.
+      DISPATCH: ${{ github.repository_owner == 'meshcloud' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) }}
+
+    # This workflow MUST NOT check out the pull request, and has no `actions/checkout` for that
+    # reason. `pull_request_target` runs in the base repo's context with its secrets, so checking
+    # out contributor code here would be the classic "pwn request" hole.
+    steps:
+      - name: Explain a skipped fork pull request
+        if: env.DISPATCH != 'true' && github.event_name == 'pull_request_target'
+        env:
+          BASE_REPO: ${{ github.repository }}
+        run: echo "::notice::Acceptance tests are not dispatched for a fork pull request. A maintainer has to adopt the branch into $BASE_REPO before the suite can run against it."
+
+      # Downscoped to `actions: write` at mint time, so a later widening of the app cannot leak
+      # into this workflow.
+      - name: Mint a token for the dispatch
+        id: token
+        if: env.DISPATCH == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          # The secret holds the numeric app id, not a client id: the action reads `client-id` or
+          # the deprecated `app-id` into one value, and GitHub takes either as the JWT issuer. The
+          # name stays because it is an organization secret every satellite reads.
+          client-id: ${{ secrets.SATELLITE_GH_APP_ID }}
+          private-key: ${{ secrets.SATELLITE_GH_APP_PRIVATE_KEY }}
+          owner: meshcloud
+          repositories: meshfed-release
+          permission-actions: write
+
+      # meshfed-release pairs a satellite branch with a same-named branch of its own, so the
+      # dispatch names that branch rather than always `develop`: a `workflow_dispatch` reads the
+      # workflow file from the ref it is given, and `develop` would run the orchestration that is
+      # already merged. This token may dispatch workflows there and read nothing, so trying the
+      # dispatch is the only branch lookup available.
+      #
+      # `$SATELLITE_REF` reaches the script through the environment, never as a `${{ }}` expression
+      # GitHub substitutes into the script text: a branch named `$(id)` would otherwise run as a
+      # command.
+      - name: Request the acceptance runs
+        if: env.DISPATCH == 'true'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          set -euo pipefail
+          request() {
+            gh workflow run ci-satellite.yml \
+              --repo meshcloud/meshfed-release \
+              --ref "$1" \
+              -f repo=building-block-runner \
+              -f branch_name="$SATELLITE_REF" \
+              ${2:+-f suite="$2"}
+          }
+          if request "$SATELLITE_REF"; then
+            orchestrated_from="$SATELLITE_REF"
+          else
+            echo "::notice::meshfed-release has no branch $SATELLITE_REF to dispatch, so develop orchestrates this run."
+            request develop
+            orchestrated_from=develop
+          fi
+          # The provider suite drives real terraform and manual runs through these runners, which our
+          # own suite does not.
+          request "$orchestrated_from" terraform-provider-meshstack
+          echo "::notice::Requested acceptance runs for $SATELLITE_REF, orchestrated from meshfed-release $orchestrated_from. The results arrive as the \"Acceptance Tests (meshStack backend)\" and \"Acceptance Tests (meshStack backend, terraform-provider-meshstack)\" checks."

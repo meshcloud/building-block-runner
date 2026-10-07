@@ -60,7 +60,8 @@ tasks:
   acceptance-runner:
     desc: Run the runners that meshfed-release's acceptance tests use, until one of them exits
     summary: |
-      meshfed-release starts this from the repository root and kills it when its tests end.
+      meshfed-release starts this from the repository root and sends SIGTERM to all its processes
+      when its tests end.
       It always exits non-zero, because a runner that exits on its own is a failure.
 
       Environment, all optional:
@@ -70,29 +71,34 @@ tasks:
         TF_BLOCK_RUNNER_PORT         default 8100, health at http://127.0.0.1:$TF_BLOCK_RUNNER_PORT/healthz
         MANUAL_BLOCK_RUNNER_API_URL  default http://127.0.0.1:8301
         MANUAL_BLOCK_RUNNER_PORT     default 8104, health at http://127.0.0.1:$MANUAL_BLOCK_RUNNER_PORT/healthz
+        GOCOVERDIR                   existing absolute directory the runners write binary coverage data
+                                     into as they exit on SIGTERM; built with `-coverpkg=./...`, like CI's unit tests
     cmds:
-      - go build -o bin/tf-block-runner ./tf-block-runner
-      - go build -o bin/manual-block-runner ./manual-block-runner
+      - go build -cover -coverpkg=./... -o bin/tf-block-runner ./tf-block-runner
+      - go build -cover -coverpkg=./... -o bin/manual-block-runner ./manual-block-runner
       # bash, because go-task's built-in shell has no `wait -n`.
       - |
         bash -u <<'EOF'
-        trap 'kill $(jobs -p) 2>/dev/null; wait' EXIT
-        trap 'exit 143' INT TERM
-
         RUNNER_CONFIG_FILE=tf-block-runner/runner-config.yml \
         RUNNER_API_URL="${TF_BLOCK_RUNNER_API_URL:-http://127.0.0.1:8300}" \
         PORT="${TF_BLOCK_RUNNER_PORT:-8100}" \
           bin/tf-block-runner &
+        tf=$!
 
         RUNNER_API_URL="${MANUAL_BLOCK_RUNNER_API_URL:-http://127.0.0.1:8301}" \
         PORT="${MANUAL_BLOCK_RUNNER_PORT:-8104}" \
           bin/manual-block-runner &
+        manual=$!
 
-        # go-task ignores a SIGTERM sent to it alone, and dies of a SIGKILL without stopping its
-        # commands, so the runners stop with it.
-        while kill -0 "$PPID" 2>/dev/null; do sleep 1; done &
+        runners="$tf $manual"
 
-        wait -n
-        echo "acceptance-runner: a runner or go-task exited, stopping the others" >&2
+        # A Ctrl-C and meshfed-release's stop already reach the runners, and a second signal would
+        # kill a runner while it writes its coverage data.
+        trap 'wait $runners; exit 143' INT TERM
+
+        wait -n $runners
+        echo "acceptance-runner: a runner exited, stopping the others" >&2
+        kill $runners 2>/dev/null
+        wait $runners
         exit 1
         EOF

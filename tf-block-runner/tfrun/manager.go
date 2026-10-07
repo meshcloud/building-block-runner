@@ -26,7 +26,7 @@ type DefaultRunManager struct {
 	workerIn       chan workerToken // commands towards worker routines
 	managerIn      chan workerToken // channel is read by run manager
 	defaultTimeout time.Duration
-	shutdownCalled bool
+	shutdown       chan struct{}
 	tfbinaries     *TfBinaries
 	logger         *log.Logger
 }
@@ -41,7 +41,7 @@ func NewManager(tfbin *TfBinaries) RunManager {
 		defaultTimeout: time.Minute * time.Duration(AppConfig.TfCommandTimeoutMins),
 		workerIn:       make(chan workerToken, 1),
 		managerIn:      make(chan workerToken, 1),
-		shutdownCalled: false,
+		shutdown:       make(chan struct{}),
 		tfbinaries:     tfbin,
 		logger:         log.New(os.Stdout, "[RunManager] ", log.LstdFlags),
 	}
@@ -119,19 +119,20 @@ func (rm *DefaultRunManager) handleWorkers() {
 }
 
 func (rm *DefaultRunManager) handoutWorkerToken(delay time.Duration) {
-	if rm.shutdownCalled {
+	select {
+	case <-rm.shutdown:
+	case <-time.After(delay):
+	}
+	// A timer that fired together with Stop must not hand out work.
+	select {
+	case <-rm.shutdown:
 		rm.workerIn <- stop
-	} else {
-		time.Sleep(delay)
-		if rm.shutdownCalled {
-			rm.workerIn <- stop
-		} else {
-			rm.workerIn <- work
-		}
+	default:
+		rm.workerIn <- work
 	}
 }
 
 func (rm *DefaultRunManager) Stop() {
-	rm.shutdownCalled = true
+	close(rm.shutdown)
 	rm.logger.Println("Shutdown initialized")
 }

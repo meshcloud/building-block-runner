@@ -1,6 +1,7 @@
 package io.meshcloud.buildingblocks.runner
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.meshcloud.buildingblocks.runner.runclient.MeshStackRequestOutcomeUnknownException
 import org.springframework.boot.CommandLineRunner
 import org.springframework.context.annotation.Profile
 import org.springframework.stereotype.Component
@@ -40,6 +41,10 @@ class SingleShotRunner(
       blockRunnerService.processBlock()
 
       // Exit with success code
+      terminator.exit(0)
+    } catch (e: MeshStackRequestOutcomeUnknownException) {
+      // Exit 0, because the Job controller starts a new pod after a failed one, and that pod would trigger the pipeline again.
+      log.error(e) { "Job ended without knowing whether meshStack received the run's status: ${e.message}" }
       terminator.exit(0)
     } catch (e: Exception) {
       log.error(e) { "Job failed: ${e.message}" }

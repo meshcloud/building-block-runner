@@ -76,11 +76,12 @@ func updateStateWithin(ctx context.Context, api RunApi, status *RunStatus, timeo
 	return api.UpdateState(ctx, status)
 }
 
-// isTransient leaves out 500: it is unlikely to pass on a retry, and a retry holds one of the few runners for ten
-// minutes, so a run that always fails with 500 could keep every runner from starting other runs.
+// isTransient includes 423, which meshfed answers while another change to the run holds its lock. It leaves out 500:
+// it is unlikely to pass on a retry, and a retry holds one of the few runners for ten minutes, so a run that always
+// fails with 500 could keep every runner from starting other runs.
 func isTransient(err error) bool {
 	if statusErr, ok := errors.AsType[*meshapi.StatusError](err); ok {
-		return slices.Contains([]int{http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout}, statusErr.Status)
+		return slices.Contains([]int{http.StatusLocked, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout}, statusErr.Status)
 	}
 	_, isTransportErr := errors.AsType[*url.Error](err)
 	return isTransportErr

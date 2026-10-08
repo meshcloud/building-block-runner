@@ -31,13 +31,17 @@ func runApiAnswering(t *testing.T, statuses ...int) (RunApi, *atomic.Int32) {
 	return &RunApiClient{auth: auth, client: meshapi.NewClient(server.URL, "test-runner", auth)}, &calls
 }
 
-func TestUpdateStateWithRetry_DeliversOnceMeshfedIsBackAfter503(t *testing.T) {
-	api, calls := runApiAnswering(t, http.StatusServiceUnavailable, http.StatusServiceUnavailable, http.StatusOK)
+func TestUpdateStateWithRetry_DeliversOnceMeshfedIsBackAfterATransientStatus(t *testing.T) {
+	for _, transient := range []int{http.StatusLocked, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout} {
+		t.Run(http.StatusText(transient), func(t *testing.T) {
+			api, calls := runApiAnswering(t, transient, transient, http.StatusOK)
 
-	err := updateStateWithRetry(api, &RunStatus{RunId: "run", Status: FAILED}, shortRetry, log.New(io.Discard, "", 0))
+			err := updateStateWithRetry(api, &RunStatus{RunId: "run", Status: FAILED}, shortRetry, log.New(io.Discard, "", 0))
 
-	assert.NoError(t, err)
-	assert.Equal(t, int32(3), calls.Load())
+			assert.NoError(t, err)
+			assert.Equal(t, int32(3), calls.Load())
+		})
+	}
 }
 
 func TestUpdateStateWithRetry_DoesNotRetryAClientError(t *testing.T) {

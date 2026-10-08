@@ -4,6 +4,8 @@ import io.meshcloud.buildingblocks.runner.meshobject.HalLink
 import io.meshcloud.buildingblocks.runner.meshobject.ProcessableBlockRun
 import io.meshcloud.buildingblocks.runner.runclient.BlockRunClient
 import io.meshcloud.buildingblocks.runner.runclient.BlockRunClientFetcher
+import io.meshcloud.buildingblocks.runner.runclient.MeshStackRejectedRequestException
+import io.meshcloud.buildingblocks.runner.runclient.MeshStackRequestOutcomeUnknownException
 import io.meshcloud.buildingblocks.runner.security.DecryptionService
 import io.meshcloud.meshobjects.objects.*
 import io.mockk.every
@@ -11,8 +13,10 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import java.io.IOException
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -410,6 +414,50 @@ class GithubBlockRunnerServiceTest {
     verify(exactly = 1) { githubClient.triggerWorkflow(any(), any(), any(), any(), any(), any()) }
     verify(atLeast = 1) { githubClient.listWorkflowRuns(any(), any(), any(), any(), any()) }
     verify(exactly = 0) { githubClient.getWorkflowRun(any(), any(), any(), any()) }
+  }
+
+  @Test
+  fun `a final status that may not have reached meshStack ends the run without reporting a GitHub error`() {
+    stubCompletedSyncWorkflow()
+    every { blockRunClientMockk.updateBlockRun(match { it.status == MeshBuildingBlockRun.ExecutionStatus.SUCCEEDED }) } throws
+      MeshStackRequestOutcomeUnknownException("meshStack did not take the status update", IOException("Connection refused"))
+
+    assertThatThrownBy { sut.processBlock() }.isInstanceOf(MeshStackRequestOutcomeUnknownException::class.java)
+
+    verify(exactly = 0) { blockRunClientMockk.updateBlockRun(match { it.status == MeshBuildingBlockRun.ExecutionStatus.FAILED }) }
+  }
+
+  @Test
+  fun `a final status that meshStack rejects is reported as a meshStack rejection`() {
+    stubCompletedSyncWorkflow()
+    every { blockRunClientMockk.updateBlockRun(match { it.status == MeshBuildingBlockRun.ExecutionStatus.SUCCEEDED }) } throws
+      MeshStackRejectedRequestException(400, "meshStack answered HTTP 400: invalid output")
+
+    sut.processBlock()
+
+    val failedUpdate = slot<MeshBuildingBlockRun.SourceUpdate>()
+    verify(exactly = 1) {
+      blockRunClientMockk.updateBlockRun(
+        and(capture(failedUpdate), match { it.status == MeshBuildingBlockRun.ExecutionStatus.FAILED }),
+      )
+    }
+    assertThat(failedUpdate.captured.steps!!.single().systemMessage)
+      .isEqualTo("meshStack rejected a status update of this run: meshStack answered HTTP 400: invalid output")
+  }
+
+  private fun stubCompletedSyncWorkflow() {
+    val completedWorkflowRun = GithubClient.WorkflowRun(
+      id = 123L,
+      status = GithubClient.WorkflowRunStatus.COMPLETED,
+      conclusion = "success",
+      createdAt = "2023-01-01T12:00:01Z",
+      updatedAt = "2023-01-01T12:05:00Z",
+      htmlUrl = "https://github.com/owner/repo/actions/runs/123",
+    )
+    every { blockRunClientMockk.activeBlockRun } returns createSyncRun()
+    setupGitHubClientStubs()
+    every { githubClient.listWorkflowRuns(any(), any(), any(), any(), any()) } returns listOf(completedWorkflowRun)
+    every { githubClient.listWorkflowJobs(any(), any(), any(), any()) } returns emptyList()
   }
 
   @Test

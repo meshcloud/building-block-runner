@@ -6,6 +6,8 @@ import io.meshcloud.buildingblocks.runner.http.MeshHttpException
 import io.meshcloud.buildingblocks.runner.meshobject.ProcessableBlockRun
 import io.meshcloud.buildingblocks.runner.runclient.BlockRunClient
 import io.meshcloud.buildingblocks.runner.runclient.BlockRunClientFetcher
+import io.meshcloud.buildingblocks.runner.runclient.MeshStackRejectedRequestException
+import io.meshcloud.buildingblocks.runner.runclient.MeshStackRequestOutcomeUnknownException
 import io.meshcloud.buildingblocks.runner.security.DecryptionService
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockGithubImplementation
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
@@ -143,6 +145,11 @@ class GithubBlockRunnerService(
           return null
         }
       }
+    } catch (ex: MeshStackRequestOutcomeUnknownException) {
+      throw ex
+    } catch (ex: MeshStackRejectedRequestException) {
+      updateFailedBlockStatusWithRejectedStatusUpdate(blockRunClient, ex)
+      return null
     } catch (ex: Exception) {
       updateFailedBlockStatusWithException(blockRunClient, ex)
       return null
@@ -302,7 +309,7 @@ class GithubBlockRunnerService(
 
           log.debug { "Workflow run ${currentRun.id} status: ${currentRun.status}, conclusion: ${currentRun.conclusion}, jobs: ${jobs.size}" }
         } catch (ex: Exception) {
-          log.warn(ex) { "Failed to get workflow run status, will retry" }
+          log.warn(ex) { "Failed to poll the workflow run or report its jobs to meshStack, will retry" }
           continue
         }
       }
@@ -322,6 +329,10 @@ class GithubBlockRunnerService(
 
       // Update final status based on workflow conclusion
       updateFinalBlockStatusFromWorkflow(blockRunClient, blockRun.metadata.uuid, currentRun)
+    } catch (ex: MeshStackRequestOutcomeUnknownException) {
+      throw ex
+    } catch (ex: MeshStackRejectedRequestException) {
+      updateFailedBlockStatusWithRejectedStatusUpdate(blockRunClient, ex)
     } catch (ex: Exception) {
       log.error(ex) { "Error during workflow polling" }
       updateFailedBlockStatusWithException(blockRunClient, ex)
@@ -468,6 +479,15 @@ class GithubBlockRunnerService(
     updateFailedBlockStatusWithMessage(
       blockRunClient,
       "There was an internal error while trying to contact GitHub: ${ex.message}",
+    )
+  }
+
+  private fun updateFailedBlockStatusWithRejectedStatusUpdate(blockRunClient: BlockRunClient, ex: MeshStackRejectedRequestException) {
+    log.error(ex) { "meshStack rejected a status update" }
+
+    updateFailedBlockStatusWithMessage(
+      blockRunClient,
+      "meshStack rejected a status update of this run: ${ex.message}",
     )
   }
 

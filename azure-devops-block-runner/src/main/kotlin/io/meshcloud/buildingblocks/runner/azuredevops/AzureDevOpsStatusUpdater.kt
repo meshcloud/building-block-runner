@@ -7,6 +7,7 @@ import io.meshcloud.buildingblocks.runner.azuredevops.client.TimelineRecordState
 import io.meshcloud.buildingblocks.runner.azuredevops.client.TimelineRecordType
 import io.meshcloud.buildingblocks.runner.http.MeshHttpException
 import io.meshcloud.buildingblocks.runner.runclient.BlockRunClient
+import io.meshcloud.buildingblocks.runner.runclient.MeshStackRejectedRequestException
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
 
 private val log = KotlinLogging.logger { }
@@ -51,6 +52,11 @@ class AzureDevOpsStatusUpdater(
     updateFailedBlockStatusWithMessage(
       "There was an internal error while trying to contact Azure DevOps: ${ex.message}",
     )
+  }
+
+  fun updateFailedBlockStatusWithRejectedStatusUpdate(ex: MeshStackRejectedRequestException) {
+    log.error(ex) { "meshStack rejected a status update" }
+    updateFailedBlockStatusWithMessage("meshStack rejected a status update of this run: ${ex.message}")
   }
 
   fun updateFailedBlockStatusWithMessage(message: String) {

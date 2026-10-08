@@ -7,6 +7,7 @@ import io.meshcloud.buildingblocks.runner.http.auth.BearerAuthInterceptor
 import io.meshcloud.buildingblocks.runner.meshobject.ProcessableBlockRun
 import okhttp3.OkHttpClient
 import org.springframework.stereotype.Component
+import java.time.Duration
 
 private val log = KotlinLogging.logger { }
 
@@ -31,11 +32,17 @@ class HttpRunTokenRunClientFactory(
 
     return OkHttpClient.Builder()
       .followRedirects(false)
+      .readTimeout(ATTEMPT_TIMEOUT)
+      .callTimeout(ATTEMPT_TIMEOUT)
       .addLogging(log)
       .addInterceptor(
         BearerAuthInterceptor(
           token = runnerToken,
         ),
       ).build()
+  }
+
+  companion object {
+    private val ATTEMPT_TIMEOUT = Duration.ofSeconds(30)
   }
 }

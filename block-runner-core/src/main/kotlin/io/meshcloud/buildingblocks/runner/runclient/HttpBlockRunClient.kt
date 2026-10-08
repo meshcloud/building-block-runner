@@ -11,6 +11,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import org.springframework.http.HttpStatus
 
 private val log = KotlinLogging.logger { }
@@ -20,9 +21,11 @@ class HttpBlockRunClient(
   private val urlProvider: UrlProvider,
   private val httpClient: OkHttpClient,
   private val config: BlockRunnerApiConfig,
+  private val retry: MeshStackRetry = MeshStackRetry(),
 ) : BlockRunClient {
 
   private val mapper = MeshObjectApiObjectMapper.mapper
+  private val runId = activeBlockRun.meshObject.metadata.uuid
 
   override fun registerAsSource(
     stepId: String,
@@ -50,11 +53,14 @@ class HttpBlockRunClient(
       .addHeader("Accept", MeshHalMediaTypes.MESHBUILDINGBLOCKRUN_MEDIA_TYPE_V1)
       .build()
 
-    httpClient.newCall(request).execute().use { response ->
-      when (HttpStatus.valueOf(response.code)) {
-        HttpStatus.CONFLICT -> log.debug { "Sources ${config.uuid} was already registered" }
-        HttpStatus.OK -> log.debug { "Registered as source." }
-        else -> throw IllegalStateException("Unexpected HTTP code: ${response.code}, body: ${response.body?.string()}")
+    // A second pod can register again: meshStack answers 409 for a registration that already arrived.
+    retry.call(runId, "source registration", outcomeUnknownAfterRetry = false) {
+      httpClient.newCall(request).execute().use { response ->
+        when (response.code) {
+          HttpStatus.CONFLICT.value() -> log.debug { "Sources ${config.uuid} was already registered" }
+          HttpStatus.OK.value() -> log.debug { "Registered as source." }
+          else -> throw rejected(response)
+        }
       }
     }
   }
@@ -79,11 +85,18 @@ class HttpBlockRunClient(
       .addHeader("Accept", MeshHalMediaTypes.MESHBUILDINGBLOCKRUN_MEDIA_TYPE_V1)
       .build()
 
-    httpClient.newCall(request).execute().use { response ->
-      when (HttpStatus.valueOf(response.code)) {
-        HttpStatus.OK -> log.debug { "Block run updated successfully." }
-        else -> throw IllegalStateException("Unexpected HTTP code: ${response.code}, body: ${response.body?.string()}")
+    retry.call(runId, "status update", outcomeUnknownAfterRetry = true) {
+      httpClient.newCall(request).execute().use { response ->
+        when (response.code) {
+          HttpStatus.OK.value() -> log.debug { "Block run updated successfully." }
+          else -> throw rejected(response)
+        }
       }
     }
   }
+
+  private fun rejected(response: Response) = MeshStackRejectedRequestException(
+    statusCode = response.code,
+    message = "meshStack answered HTTP ${response.code}: ${runCatching { response.body?.string() }.getOrElse { "<unreadable body: ${it.message}>" }}",
+  )
 }

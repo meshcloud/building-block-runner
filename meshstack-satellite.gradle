@@ -3,8 +3,25 @@ plugins {
 }
 
 satellite {
+  service('runners') {
+    command 'task', 'acceptance-runner'
+    // The API URLs are the multiplexing-block-runner's ports for TERRAFORM and MANUAL, until it is retired.
+    environment RUNNER_API_CLIENT_ID: fromBackendConfig('auth.openid.apiKeys.meshcloud-hosted-runner.clientId'),
+                RUNNER_API_CLIENT_SECRET: fromBackendConfig('auth.openid.apiKeys.meshcloud-hosted-runner.clientSecret'),
+                TF_BLOCK_RUNNER_API_URL: 'http://127.0.0.1:8300',
+                TF_BLOCK_RUNNER_PORT: '8100',
+                MANUAL_BLOCK_RUNNER_API_URL: 'http://127.0.0.1:8301',
+                MANUAL_BLOCK_RUNNER_PORT: '8104',
+                GOCOVERDIR: coverageDir()
+    health 'http://127.0.0.1:8100/healthz', 'http://127.0.0.1:8104/healthz'
+    // The task compiles the runners first, and a cold go build cache takes minutes.
+    startupMinutes = 10
+    files 'Taskfile.yml', '**/runner-config.yml'
+  }
+
   acceptance {
     run = 'TestAcc'
+    services 'meshfed-api', 'block-coordinator-api'
     environment BUILDING_BLOCK_RUNNER_TEST_ACC: '1',
                 MESHSTACK_API_KEY: fromBackendConfig('auth.openid.apiKeys.meshcloud-hosted-runner.clientId'),
                 MESHSTACK_API_SECRET: fromBackendConfig('auth.openid.apiKeys.meshcloud-hosted-runner.clientSecret')

@@ -4,6 +4,8 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import io.meshcloud.buildingblocks.runner.azuredevops.client.AzureDevOpsClient
 import io.meshcloud.buildingblocks.runner.azuredevops.client.PipelineRun
 import io.meshcloud.buildingblocks.runner.azuredevops.client.PipelineRunState
+import io.meshcloud.buildingblocks.runner.runclient.MeshStackRejectedRequestException
+import io.meshcloud.buildingblocks.runner.runclient.MeshStackRequestOutcomeUnknownException
 import io.meshcloud.meshobjects.objects.MeshBuildingBlockRun
 import java.time.Clock
 import java.time.Duration
@@ -47,23 +49,28 @@ object AzureDevOpsPipelinePoller {
 
           log.debug { "Pipeline run ${currentRun.id} state: ${currentRun.state}, result: ${currentRun.result}" }
 
-          try {
-            val timelineRecords = azureDevOpsClient.getPipelineTimeline(currentRun.id)
-            statusUpdater.updatePipelineAndStageStatuses(currentRun, timelineRecords, reportedStages)
+          val timelineRecords = try {
+            azureDevOpsClient.getPipelineTimeline(currentRun.id)
           } catch (ex: Exception) {
             log.warn(ex) { "Failed to get timeline records, will use basic status update" }
-            if (lastReportedState != currentRun.state.value) {
-              statusUpdater.updatePipelineStatusDuringPolling(currentRun)
-              lastReportedState = currentRun.state.value
-            }
+            null
+          }
+          if (timelineRecords != null) {
+            statusUpdater.updatePipelineAndStageStatuses(currentRun, timelineRecords, reportedStages)
+          } else if (lastReportedState != currentRun.state.value) {
+            statusUpdater.updatePipelineStatusDuringPolling(currentRun)
           }
           lastReportedState = currentRun.state.value
         } catch (ex: Exception) {
-          log.warn(ex) { "Failed to get pipeline run status, will retry" }
+          log.warn(ex) { "Failed to poll the pipeline run or report its status to meshStack, will retry" }
           continue
         }
       }
       statusUpdater.updateFinalBlockStatusFromPipeline(currentRun)
+    } catch (ex: MeshStackRequestOutcomeUnknownException) {
+      throw ex
+    } catch (ex: MeshStackRejectedRequestException) {
+      statusUpdater.updateFailedBlockStatusWithRejectedStatusUpdate(ex)
     } catch (ex: Exception) {
       log.error(ex) { "Error during pipeline polling" }
       statusUpdater.updateFailedBlockStatusWithException(ex)

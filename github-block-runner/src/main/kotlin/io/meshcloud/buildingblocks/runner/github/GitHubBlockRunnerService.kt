@@ -110,6 +110,7 @@ class GithubBlockRunnerService(
       return null
     }
 
+    val triggerTime = Instant.now(clock)
     try {
       val triggerResult = triggerWorkflow(
         processableBlockRun,
@@ -164,6 +165,7 @@ class GithubBlockRunnerService(
         installationAuthToken = installationAuthToken,
         implementation = implementation,
         workflowName = workflowName,
+        triggerTime = triggerTime,
       )
     }
 
@@ -226,9 +228,8 @@ class GithubBlockRunnerService(
     installationAuthToken: String,
     implementation: MeshBuildingBlockGithubImplementation,
     workflowName: String,
+    triggerTime: Instant,
   ) {
-    val triggerTime = Instant.now(clock)
-
     log.info { "Starting workflow and job status polling for run: ${blockRun.metadata.uuid}" }
 
     try {

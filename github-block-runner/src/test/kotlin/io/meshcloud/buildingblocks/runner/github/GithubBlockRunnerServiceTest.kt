@@ -18,7 +18,9 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.io.IOException
 import java.time.Clock
+import java.time.Duration
 import java.time.Instant
+import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.*
 
@@ -443,6 +445,28 @@ class GithubBlockRunnerServiceTest {
     }
     assertThat(failedUpdate.captured.steps!!.single().systemMessage)
       .isEqualTo("meshStack rejected a status update of this run: meshStack answered HTTP 400: invalid output")
+  }
+
+  @Test
+  fun `finds the dispatched workflow when the trigger status update took minutes to reach meshStack`() {
+    val movingClock = object : Clock() {
+      var now: Instant = clock.instant()
+
+      override fun instant() = now
+
+      override fun getZone(): ZoneId = ZoneOffset.UTC
+
+      override fun withZone(zone: ZoneId) = this
+    }
+    sut = GithubBlockRunnerService(blockRunClientFetcherMockk, githubClientFactoryMock, decryptionServiceMockk, appTokenFactory, movingClock)
+    stubCompletedSyncWorkflow()
+    every { blockRunClientMockk.updateBlockRun(match { it.status == MeshBuildingBlockRun.ExecutionStatus.IN_PROGRESS }) } answers {
+      movingClock.now = movingClock.now.plus(Duration.ofMinutes(2))
+    }
+
+    sut.processBlock()
+
+    verify(exactly = 1) { blockRunClientMockk.updateBlockRun(match { it.status == MeshBuildingBlockRun.ExecutionStatus.SUCCEEDED }) }
   }
 
   private fun stubCompletedSyncWorkflow() {

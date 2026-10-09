@@ -31,6 +31,15 @@ Or from the repo root:
 task start:run-controller
 ```
 
+## Run without Kubernetes
+
+```bash
+RUNCONTROLLER_DISPATCHER=in-process RUNNER_API_URL=http://127.0.0.1:8080 task start:run-controller
+```
+
+run-controller then executes TERRAFORM and MANUAL runs itself and reports every other run type as
+FAILED. `http://127.0.0.1:2112/healthz` answers once the controller is registered.
+
 ## Test
 
 ```bash

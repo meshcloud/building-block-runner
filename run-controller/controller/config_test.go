@@ -23,7 +23,8 @@ func createValidImplementations() map[string]JobSpecTemplate {
 // (username + password). Tests exercising API key auth override these fields explicitly.
 func createValidBasicAuthConfig() *ControllerConfig {
 	return &ControllerConfig{
-		Namespace: "test-namespace",
+		Dispatcher: DispatchToKubernetes,
+		Namespace:  "test-namespace",
 		Api: ApiConfig{
 			Url:      "http://localhost:8080",
 			Username: "api-user",
@@ -45,6 +46,52 @@ func TestValidateConfig_ValidConfig(t *testing.T) {
 	if err := validateConfig(config); err != nil {
 		t.Errorf("expected no error for valid config, got: %v", err)
 	}
+}
+
+func TestValidateConfig_InProcess_NeedsNoKubernetesSettings(t *testing.T) {
+	config := createValidBasicAuthConfig()
+	config.Dispatcher = DispatchInProcess
+	config.Namespace = ""
+	config.Implementations = nil
+
+	if err := validateConfig(config); err != nil {
+		t.Errorf("expected no error, got: %v", err)
+	}
+}
+
+func TestValidateConfig_UnknownDispatcher(t *testing.T) {
+	config := createValidBasicAuthConfig()
+	config.Dispatcher = "docker"
+
+	if err := validateConfig(config); err == nil || !strings.Contains(err.Error(), "dispatcher 'docker' is invalid") {
+		t.Errorf("expected invalid dispatcher error, got: %v", err)
+	}
+}
+
+func TestApplyEnvOverrides(t *testing.T) {
+	t.Run("environment wins over the config file", func(t *testing.T) {
+		t.Setenv(envDispatcher, "in-process")
+		t.Setenv(envApiUrl, "http://env:8080")
+		config := createValidBasicAuthConfig()
+
+		applyEnvOverrides(config)
+
+		if config.Dispatcher != DispatchInProcess || config.Api.Url != "http://env:8080" {
+			t.Errorf("expected values from env, got: %q / %q", config.Dispatcher, config.Api.Url)
+		}
+	})
+
+	t.Run("dispatcher defaults to kubernetes", func(t *testing.T) {
+		t.Setenv(envDispatcher, "")
+		config := createValidBasicAuthConfig()
+		config.Dispatcher = ""
+
+		applyEnvOverrides(config)
+
+		if config.Dispatcher != DispatchToKubernetes {
+			t.Errorf("expected kubernetes, got: %q", config.Dispatcher)
+		}
+	})
 }
 
 func TestValidateConfig_MultipleImplementations(t *testing.T) {

@@ -10,13 +10,14 @@ import (
 
 	meshcrypto "github.com/meshcloud/building-block-runner/go-meshapi-client/crypto"
 	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
+	"github.com/meshcloud/building-block-runner/run-controller/build"
 )
 
 type Controller struct {
 	logger         *log.Logger
 	shutdownCalled atomic.Bool
 	runApi         RunApi
-	dispatcher     Dispatcher
+	dispatcher     build.Dispatcher
 	crypto         *meshcrypto.MeshCertBasedCrypto
 	metrics        *MetricsCollector
 }
@@ -32,7 +33,7 @@ const (
 // Guards against an API that never runs out of runs.
 const maxDrainPerCycleUnlimited = 10
 
-func NewController(dispatcher Dispatcher) *Controller {
+func NewController(dispatcher build.Dispatcher) *Controller {
 	cryptoInstance, err := meshcrypto.NewCertBasedDecryptorWithValidation(
 		AppConfig.Crypto.PrivateKey,
 		[]byte(AppConfig.Crypto.PublicKey),
@@ -159,7 +160,7 @@ func dispatchFailureMessage(err error) string {
 	if _, ok := errors.AsType[*RunTooLargeError](err); ok {
 		return "Run data is too large to be passed to the runner. The run data exceeds the Kubernetes secret size limit of 1MiB. Please reduce the size of the building block inputs."
 	}
-	return "Failed to create job for run: " + err.Error()
+	return "Failed to dispatch run: " + err.Error()
 }
 
 // No runner registers as a source for a run that was never dispatched, so the controller does.

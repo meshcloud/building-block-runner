@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"cmp"
 	"fmt"
 	"log"
 	"os"
@@ -14,20 +15,19 @@ var AppConfig *ControllerConfig = nil
 // DiscoveredOidcIssuer holds the OIDC issuer URL discovered from Kubernetes at runtime
 var DiscoveredOidcIssuer string = ""
 
-// ControllerConfig holds the main configuration for the run controller
 type ControllerConfig struct {
-	Namespace              string                     `yaml:"namespace"`              // Kubernetes namespace where jobs are created
-	ImagePullSecrets       []string                   `yaml:"imagePullSecrets"`       // Image pull secrets for runner jobs (optional)
-	PollingIntervalSeconds int                        `yaml:"pollingIntervalSeconds"` // Polling interval in seconds (default: 10)
-	MaxConcurrentJobs      int                        `yaml:"maxConcurrentJobs"`      // Max number of unfinished runner jobs this controller keeps in flight (default: 20; negative = unlimited)
-	Api                    ApiConfig                  `yaml:"api"`                    // Global API config used by controller to fetch runs and register runners
-	Uuid                   string                     `yaml:"uuid"`                   // Unique identifier for this universal run controller
-	OwnedByWorkspace       string                     `yaml:"ownedByWorkspace"`       // The workspace that owns this runner (required for registration)
-	DisplayName            string                     `yaml:"displayName"`            // Human-readable display name for this controller (required for registration)
-	Crypto                 CryptoConfig               `yaml:"crypto"`                 // Cryptographic keys for secure communication
-	Tolerations            []TolerationConfig         `yaml:"tolerations"`            // Pod tolerations applied to all runner jobs (e.g. for spot instances)
-	NodeSelector           map[string]string          `yaml:"nodeSelector"`           // Node selector applied to all runner jobs
-	Implementations        map[string]JobSpecTemplate `yaml:"implementations"`        // Kubernetes job templates keyed by implementation type (e.g. TERRAFORM, GITHUB_WORKFLOW)
+	Namespace              string                     `yaml:"namespace"`
+	ImagePullSecrets       []string                   `yaml:"imagePullSecrets"`
+	PollingIntervalSeconds int                        `yaml:"pollingIntervalSeconds"`
+	MaxConcurrentJobs      int                        `yaml:"maxConcurrentJobs"` // negative means unlimited
+	Api                    ApiConfig                  `yaml:"api"`
+	Uuid                   string                     `yaml:"uuid"`
+	OwnedByWorkspace       string                     `yaml:"ownedByWorkspace"`
+	DisplayName            string                     `yaml:"displayName"`
+	Crypto                 CryptoConfig               `yaml:"crypto"`
+	Tolerations            []TolerationConfig         `yaml:"tolerations"`
+	NodeSelector           map[string]string          `yaml:"nodeSelector"`
+	Implementations        map[string]JobSpecTemplate `yaml:"implementations"`
 }
 
 // ApiConfig holds API connection and authentication details.
@@ -130,6 +130,7 @@ const (
 	defaultConfigFile = "runner-config.yml"
 
 	envConfigFile = "RUNCONTROLLER_CONFIG_FILE"
+	envApiUrl     = "RUNNER_API_URL"
 
 	// Standard runner API-key env vars (shared with the standalone block runners). When set, they
 	// override the api.clientId / api.clientSecret values from runner-config.yml.
@@ -143,32 +144,21 @@ const (
 )
 
 func ReadConfig(logger *log.Logger) *ControllerConfig {
-	configPath := os.Getenv(envConfigFile)
-	if configPath == "" {
-		configPath = defaultConfigFile
-	}
-
-	// Read configuration from file
+	configPath := cmp.Or(os.Getenv(envConfigFile), defaultConfigFile)
 	config, err := ReadInYmlConfig(configPath)
 	if err != nil {
 		logger.Fatalf("Failed to read config file %s: %v\n", configPath, err)
 	}
 
-	// Apply defaults for optional fields before validation/logging.
-	// A zero value means "not configured"; a negative value is an explicit opt-out (unlimited).
 	if config.MaxConcurrentJobs == 0 {
 		config.MaxConcurrentJobs = DefaultMaxConcurrentJobs
 	}
-
-	// Environment overrides take precedence over the config file.
+	config.Api.Url = cmp.Or(os.Getenv(envApiUrl), config.Api.Url)
 	applyApiKeyEnvOverrides(config, logger)
 
-	// Validate configuration
 	if err := validateConfig(config); err != nil {
 		logger.Fatalf("Invalid configuration: %v\n", err)
 	}
-
-	// Log startup configuration
 	logConfig(logger, config)
 
 	AppConfig = config
@@ -235,9 +225,6 @@ func validateApiAuth(c ApiConfig, context string) error {
 }
 
 func validateConfig(config *ControllerConfig) error {
-	if config.Namespace == "" {
-		return fmt.Errorf("namespace is required")
-	}
 	if config.Api.Url == "" {
 		return fmt.Errorf("api.url is required")
 	}
@@ -258,6 +245,9 @@ func validateConfig(config *ControllerConfig) error {
 	}
 	if config.Crypto.PrivateKey == "" {
 		return fmt.Errorf("crypto.privateKey is required")
+	}
+	if config.Namespace == "" {
+		return fmt.Errorf("namespace is required")
 	}
 	if len(config.Implementations) == 0 {
 		return fmt.Errorf("at least one implementation handler must be configured under 'implementations'")
@@ -281,12 +271,8 @@ func logConfig(logger *log.Logger, config *ControllerConfig) {
 		logger.Printf("Image pull secrets: %v\n", config.ImagePullSecrets)
 	}
 
-	if UseTestClient {
-		logger.Printf("(!) Test mode enabled - not connecting to API\n")
-	} else {
-		logger.Printf("API URL: %s\n", config.Api.Url)
-		logger.Printf("API Username: %s\n", config.Api.Username)
-	}
+	logger.Printf("API URL: %s\n", config.Api.Url)
+	logger.Printf("API Username: %s\n", config.Api.Username)
 
 	logger.Printf("Controller UUID: %s\n", config.Uuid)
 	if config.MaxConcurrentJobs < 0 {

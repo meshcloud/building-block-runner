@@ -3,10 +3,14 @@ package controller
 import (
 	"io"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
+	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v2"
 )
 
 var nopLogger = log.New(io.Discard, "", 0)
@@ -44,6 +48,23 @@ func TestValidateConfig_ValidConfig(t *testing.T) {
 	config := createValidBasicAuthConfig()
 	if err := validateConfig(config); err != nil {
 		t.Errorf("expected no error for valid config, got: %v", err)
+	}
+}
+
+func TestReadConfig_ApiUrlFromEnvironment(t *testing.T) {
+	configFile := filepath.Join(t.TempDir(), "runner-config.yml")
+	configYaml, err := yaml.Marshal(createValidBasicAuthConfig())
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(configFile, configYaml, 0o600))
+	t.Setenv(envConfigFile, configFile)
+	t.Setenv(envApiUrl, "http://env:8080")
+	prev := AppConfig
+	t.Cleanup(func() { AppConfig = prev })
+
+	config := ReadConfig(nopLogger)
+
+	if config.Api.Url != "http://env:8080" {
+		t.Errorf("expected api url from env, got: %q", config.Api.Url)
 	}
 }
 

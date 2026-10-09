@@ -110,11 +110,6 @@ func (api *RegistrationApiClient) setHeaders(req *http.Request) {
 
 // RegisterController registers the universal run controller on startup.
 func RegisterController(logger *log.Logger) error {
-	if UseTestClient {
-		logger.Println("Test mode enabled - skipping controller registration")
-		return nil
-	}
-
 	api := NewRegistrationApi(logger)
 	metrics := NewMetricsCollector()
 

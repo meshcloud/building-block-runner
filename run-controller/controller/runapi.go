@@ -11,8 +11,6 @@ import (
 	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
 )
 
-var UseTestClient = false
-
 const requesterPrefix = "run-controller"
 
 type RunApiClient struct {

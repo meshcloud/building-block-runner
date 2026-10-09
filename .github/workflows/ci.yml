@@ -164,6 +164,7 @@ jobs:
           # The step above already installed it; the action is here for the annotations it puts on
           # the pull request diff, which a bare `run:` does not produce.
           install-mode: none
+          args: --build-tags inprocess
 
       # Binary coverage data (GOCOVERDIR format) rather than a text profile, because only the binary
       # form merges with the acceptance run's coverage. `-coverpkg=./...` matches what meshfed-release
@@ -171,7 +172,7 @@ jobs:
       - name: Test
         run: |
           mkdir -p covdata/unit
-          go test -race -coverpkg=./... ./... -args -test.gocoverdir="$PWD/covdata/unit"
+          go test -race -tags inprocess -coverpkg=./... ./... -args -test.gocoverdir="$PWD/covdata/unit"
         env:
           CGO_ENABLED: "1" # the race detector needs cgo
 

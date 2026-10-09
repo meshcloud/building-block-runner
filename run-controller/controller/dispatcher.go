@@ -6,12 +6,8 @@ import (
 	"os"
 
 	"github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
+	"github.com/meshcloud/building-block-runner/run-controller/build"
 )
-
-type Dispatcher interface {
-	Dispatch(run *meshapi.RunDetailsDTO, decryptedRunJsonBase64 string, runnerType string) error
-	CountActive() (int, error)
-}
 
 type NoHandlerError struct {
 	RunnerType string
@@ -31,7 +27,7 @@ type kubernetesDispatcher struct {
 	metrics *MetricsCollector
 }
 
-func NewKubernetesDispatcher() Dispatcher {
+func NewKubernetesDispatcher() build.Dispatcher {
 	k8sClient, err := newKubernetesClient(AppConfig.Namespace, log.New(os.Stdout, "[K8S-CLIENT] ", log.LstdFlags))
 	if err != nil {
 		log.Fatalf("Failed to create Kubernetes client: %v", err)

@@ -4,11 +4,9 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
-	"strings"
 	"time"
 
 	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
@@ -38,6 +36,8 @@ func newKubernetesClient(namespace string, logger *log.Logger) (*KubernetesClien
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kubernetes client: %w", err)
 	}
+
+	DiscoveredOidcIssuer = discoverOIDCIssuer(clientset, logger)
 
 	return &KubernetesClient{
 		clientset: clientset,
@@ -621,65 +621,29 @@ func (k *KubernetesClient) buildEnvVars(jobSpec *JobSpecTemplate) []corev1.EnvVa
 	return envVars
 }
 
-// DiscoverOIDCIssuer attempts to discover the OIDC issuer URL from the Kubernetes API server.
-// It queries the /.well-known/openid-configuration endpoint on the API server.
-// Returns empty string if discovery fails (e.g., not running in cluster or OIDC not configured).
-func DiscoverOIDCIssuer(logger *log.Logger) string {
-	config, err := getKubernetesConfig()
+func discoverOIDCIssuer(clientset kubernetes.Interface, logger *log.Logger) string {
+	issuer, err := fetchOIDCIssuer(clientset)
 	if err != nil {
-		logger.Printf("Failed to get Kubernetes config for OIDC discovery: %v", err)
+		logger.Printf("OIDC issuer discovery failed - WIF will not be configured for runners: %v", err)
 		return ""
 	}
+	logger.Printf("WIF enabled with OIDC issuer: %s", issuer)
+	return issuer
+}
 
-	// Build the OIDC configuration URL from the API server host
-	// The Kubernetes API server exposes /.well-known/openid-configuration
-	apiServerURL := strings.TrimSuffix(config.Host, "/")
-	oidcConfigURL := apiServerURL + "/.well-known/openid-configuration"
-
-	logger.Printf("Discovering OIDC issuer from: %s", oidcConfigURL)
-
-	// Create HTTP client with the same TLS config as the Kubernetes client
-	transport, err := rest.TransportFor(config)
+func fetchOIDCIssuer(clientset kubernetes.Interface) (string, error) {
+	body, err := clientset.Discovery().RESTClient().Get().AbsPath("/.well-known/openid-configuration").DoRaw(context.TODO())
 	if err != nil {
-		logger.Printf("Failed to create transport for OIDC discovery: %v", err)
-		return ""
+		return "", fmt.Errorf("failed to fetch OIDC configuration: %w", err)
 	}
-
-	client := &http.Client{Transport: transport}
-
-	resp, err := client.Get(oidcConfigURL)
-	if err != nil {
-		logger.Printf("Failed to fetch OIDC configuration: %v", err)
-		return ""
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		logger.Printf("OIDC configuration endpoint returned status %d", resp.StatusCode)
-		return ""
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		logger.Printf("Failed to read OIDC configuration response: %v", err)
-		return ""
-	}
-
-	// Parse the OpenID configuration to extract the issuer
 	var oidcConfig struct {
 		Issuer string `json:"issuer"`
 	}
-
 	if err := json.Unmarshal(body, &oidcConfig); err != nil {
-		logger.Printf("Failed to parse OIDC configuration: %v", err)
-		return ""
+		return "", fmt.Errorf("failed to parse OIDC configuration: %w", err)
 	}
-
 	if oidcConfig.Issuer == "" {
-		logger.Printf("OIDC configuration does not contain an issuer")
-		return ""
+		return "", errors.New("OIDC configuration does not contain an issuer")
 	}
-
-	logger.Printf("Discovered OIDC issuer: %s", oidcConfig.Issuer)
-	return oidcConfig.Issuer
+	return oidcConfig.Issuer, nil
 }

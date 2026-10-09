@@ -72,7 +72,7 @@ func (suite *WorkerTestSuite) Test_DetectSucceeded_UploadsArtifactViaEndpoint() 
 	assert.Equal(suite.T(), SUCCEEDED.str(), *lastUpdate.Status)
 }
 
-// Test_DetectSucceeded_UploadFailureFailsRun verifies that when the plan-artifact upload returns a
+// Test_DetectSucceeded_UploadFailureFailsRun verifies that when the artifact upload returns a
 // non-2xx, the run FAILS rather than reporting SUCCEEDED — the follow-up APPLY relies on the stored
 // bytes, so a run must never declare success while the plan is missing from the backend.
 func (suite *WorkerTestSuite) Test_DetectSucceeded_UploadFailureFailsRun() {
@@ -213,18 +213,18 @@ func (suite *WorkerTestSuite) Test_DetectSucceeded_NoChangesDetected() {
 	assert.False(suite.T(), *update.ChangesDetected, "planFunc returned no changes")
 }
 
-// Test_ApplyWithPlanArtifact_DownloadsAndAppliesSavedPlan verifies that an APPLY run carrying a
-// planArtifact link downloads the predecessor plan bytes, writes them to <wd>/plan.tfplan, and
+// Test_ApplyWithArtifact_DownloadsAndAppliesSavedPlan verifies that an APPLY run carrying an
+// artifact link downloads the predecessor plan bytes, writes them to <wd>/plan.tfplan, and
 // invokes terraform apply with a (DirOrPlan) option pointing at that saved plan instead of a plain
 // re-plan+apply.
-func (suite *WorkerTestSuite) Test_ApplyWithPlanArtifact_DownloadsAndAppliesSavedPlan() {
+func (suite *WorkerTestSuite) Test_ApplyWithArtifact_DownloadsAndAppliesSavedPlan() {
 	savedPlanBytes := []byte("predecessor-saved-plan-binary")
 
-	planArtifactHref := "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/artifact"
-	suite.calls.fetch = mockApplyRunWithPlanArtifactFetchCall(
+	artifactHref := "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/artifact"
+	suite.calls.fetch = mockApplyRunWithArtifactFetchCall(
 		"https://github.com/meshcloud/meshstack-hub.git",
 		"modules/github/repository/buildingblock",
-		planArtifactHref,
+		artifactHref,
 	)
 
 	downloadCalled := false
@@ -274,9 +274,9 @@ func (suite *WorkerTestSuite) Test_ApplyWithPlanArtifact_DownloadsAndAppliesSave
 	assert.Equal(suite.T(), SUCCEEDED.str(), *update.Status)
 }
 
-// Test_ApplyWithoutPlanArtifact_PlainApply is the backward-compatibility regression: an APPLY run
-// with NO planArtifact link must do a plain terraform apply (no download, no DirOrPlan option).
-func (suite *WorkerTestSuite) Test_ApplyWithoutPlanArtifact_PlainApply() {
+// Test_ApplyWithoutArtifact_PlainApply is the backward-compatibility regression: an APPLY run
+// with NO artifact link must do a plain terraform apply (no download, no DirOrPlan option).
+func (suite *WorkerTestSuite) Test_ApplyWithoutArtifact_PlainApply() {
 	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
 
 	downloadCalled := false
@@ -316,14 +316,14 @@ func (suite *WorkerTestSuite) Test_ApplyWithoutPlanArtifact_PlainApply() {
 	assert.Nil(suite.T(), update.ChangesDetected, "APPLY runs must not report changesDetected")
 }
 
-// Test_ApplyWithPlanArtifact_DownloadFailureFailsRun verifies that when the planArtifact download
+// Test_ApplyWithArtifact_DownloadFailureFailsRun verifies that when the artifact download
 // returns a non-2xx (e.g. the artifact is gone), the run FAILS and terraform apply is never called.
-func (suite *WorkerTestSuite) Test_ApplyWithPlanArtifact_DownloadFailureFailsRun() {
-	planArtifactHref := "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/artifact"
-	suite.calls.fetch = mockApplyRunWithPlanArtifactFetchCall(
+func (suite *WorkerTestSuite) Test_ApplyWithArtifact_DownloadFailureFailsRun() {
+	artifactHref := "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/artifact"
+	suite.calls.fetch = mockApplyRunWithArtifactFetchCall(
 		"https://github.com/meshcloud/meshstack-hub.git",
 		"modules/github/repository/buildingblock",
-		planArtifactHref,
+		artifactHref,
 	)
 
 	suite.calls.download = func(req *http.Request) *http.Response {

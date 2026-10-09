@@ -3,6 +3,11 @@
 # A single controller with one UUID fetches runs for all implementation types and dispatches
 # the appropriate Kubernetes job based on the run's implementation type.
 
+# kubernetes (default) starts a Kubernetes job per run. in-process executes TERRAFORM and MANUAL
+# runs in this process and reports every other run type as FAILED; it needs no Kubernetes.
+# Overridden by the RUNCONTROLLER_DISPATCHER environment variable.
+dispatcher: kubernetes
+
 # Kubernetes namespace where all jobs and resources are created
 namespace: default
 
@@ -24,10 +29,10 @@ api:
 uuid: 98520496-627d-43e6-82da-ce499179ff3f
 
 # The workspace that owns this run controller (required for registration).
-ownedByWorkspace: platform-team
+ownedByWorkspace: admin-customer
 
 # Human-readable display name for this controller shown in the meshStack UI.
-displayName: Universal Run Controller
+displayName: meshcloud-hosted Runner
 
 # Cryptographic keys for encrypting/decrypting sensitive run data
 crypto:

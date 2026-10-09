@@ -58,47 +58,21 @@ tasks:
       - go run ./tf-block-runner {{.CLI_ARGS}}
 
   acceptance-runner:
-    desc: Run the runners that meshfed-release's acceptance tests use, until one of them exits
+    desc: Run the in-process run-controller that meshfed-release's acceptance tests use
     summary: |
-      meshfed-release starts this from the repository root and sends SIGTERM to all its processes
-      when its tests end.
-      It always exits non-zero, because a runner that exits on its own is a failure.
+      meshfed-release starts this from the repository root and sends SIGTERM when its tests end.
+      run-controller polls as the ALL runner, executes TERRAFORM and MANUAL runs in process and
+      reports every other run type as FAILED. Health at http://127.0.0.1:2112/healthz.
 
-      Environment, all optional:
+      Environment:
         RUNNER_API_CLIENT_ID, RUNNER_API_CLIENT_SECRET
-                                     API key of every runner; without it they use basic auth
-        TF_BLOCK_RUNNER_API_URL      default http://127.0.0.1:8300
-        TF_BLOCK_RUNNER_PORT         default 8100, health at http://127.0.0.1:$TF_BLOCK_RUNNER_PORT/healthz
-        MANUAL_BLOCK_RUNNER_API_URL  default http://127.0.0.1:8301
-        MANUAL_BLOCK_RUNNER_PORT     default 8104, health at http://127.0.0.1:$MANUAL_BLOCK_RUNNER_PORT/healthz
-        GOCOVERDIR                   existing absolute directory the runners write binary coverage data
-                                     into as they exit on SIGTERM; built with `-coverpkg=./...`, like CI's unit tests
+                                 API key of the ALL runner, required
+        RUN_CONTROLLER_API_URL   default http://127.0.0.1:8080
+        GOCOVERDIR               existing absolute directory run-controller writes binary coverage data
+                                 into as it exits on SIGTERM; built with `-coverpkg=./...`, like CI's unit tests
+    env:
+      RUNCONTROLLER_CONFIG_FILE: run-controller/runner-config.yml
+      RUNCONTROLLER_DISPATCHER: in-process
     cmds:
-      - go build -cover -coverpkg=./... -o bin/tf-block-runner ./tf-block-runner
-      - go build -cover -coverpkg=./... -o bin/manual-block-runner ./manual-block-runner
-      # bash, because go-task's built-in shell has no `wait -n`.
-      - |
-        bash -u <<'EOF'
-        RUNNER_CONFIG_FILE=tf-block-runner/runner-config.yml \
-        RUNNER_API_URL="${TF_BLOCK_RUNNER_API_URL:-http://127.0.0.1:8300}" \
-        PORT="${TF_BLOCK_RUNNER_PORT:-8100}" \
-          bin/tf-block-runner &
-        tf=$!
-
-        RUNNER_API_URL="${MANUAL_BLOCK_RUNNER_API_URL:-http://127.0.0.1:8301}" \
-        PORT="${MANUAL_BLOCK_RUNNER_PORT:-8104}" \
-          bin/manual-block-runner &
-        manual=$!
-
-        runners="$tf $manual"
-
-        # A Ctrl-C and meshfed-release's stop already reach the runners, and a second signal would
-        # kill a runner while it writes its coverage data.
-        trap 'wait $runners; exit 143' INT TERM
-
-        wait -n $runners
-        echo "acceptance-runner: a runner exited, stopping the others" >&2
-        kill $runners 2>/dev/null
-        wait $runners
-        exit 1
-        EOF
+      - go build -cover -coverpkg=./... -o bin/run-controller ./run-controller
+      - RUNNER_API_URL="${RUN_CONTROLLER_API_URL:-http://127.0.0.1:8080}" bin/run-controller

@@ -6,6 +6,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY go-meshapi-client/ ./go-meshapi-client/
+COPY manual-block-runner/ ./manual-block-runner/
+COPY tf-block-runner/ ./tf-block-runner/
 COPY run-controller/ ./run-controller/
 
 WORKDIR /app/run-controller

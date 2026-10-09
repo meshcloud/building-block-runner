@@ -121,7 +121,7 @@ task start:tf-block-runner       # start tf-block-runner
 task start:manual-block-runner   # start manual-block-runner
 ```
 
-`task acceptance-runner` starts the runners that meshStack's acceptance tests run against; `task --summary acceptance-runner` lists its settings.
+`task acceptance-runner` starts the in-process run-controller that meshStack's acceptance tests run against; `task --summary acceptance-runner` lists its settings.
 
 ### Acceptance tests
 

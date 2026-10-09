@@ -2,12 +2,15 @@ package tfrun
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"path"
 	"sync"
 	"time"
+
+	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
 )
 
 // SingleRunWorker executes a single terraform run without polling or fetching from an API.
@@ -50,6 +53,23 @@ func NewSingleRunWorkerWithApi(logger *log.Logger, workerDir string, timeoutMins
 		statusRequestTimeout: statusRequestTimeout,
 		finalStatusRetry:     finalStatusRetry,
 	}
+}
+
+func ExecuteDecryptedRun(logger *log.Logger, runJson []byte, tfbin *TfBinaries) error {
+	var runDetails meshapi.RunDetailsDTO
+	if err := json.Unmarshal(runJson, &runDetails); err != nil {
+		return fmt.Errorf("parse run JSON: %w", err)
+	}
+	run, err := ToInternalWithoutDecryption(&runDetails)
+	if err != nil {
+		return fmt.Errorf("convert run details: %w", err)
+	}
+
+	logger.Printf("Executing single run: %s - %s", run.Id, run.BuildingBlockName)
+	api := NewRunApi()
+	api.SetRunToken(runDetails.Spec.RunToken)
+	worker := NewSingleRunWorkerWithApi(logger, AppConfig.TfParentWorkingDir, AppConfig.TfCommandTimeoutMins, tfbin, api)
+	return worker.ExecuteRun(run)
 }
 
 // ExecuteRun executes a single run

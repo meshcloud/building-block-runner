@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"log"
 	"net"
 	"net/http"
@@ -110,50 +109,18 @@ func startHealthServer(logger *log.Logger) {
 }
 
 func executeSingleRun(logger *log.Logger, tfBinaryProvider *tfrun.TfBinaries) {
-	// Read RUN_JSON_FILE_PATH from environment - extract the file path of the K8S secret file that is mounted
 	runJsonFilePath := os.Getenv(ENV_RUN_JSON_FILE_PATH)
 	if runJsonFilePath == "" {
 		logger.Fatalf("RUN_JSON_FILE_PATH environment variable is required in single-run mode")
 	}
-
-	// Read JSON from file
-	runJsonBytes, err := os.ReadFile(runJsonFilePath)
+	runJson, err := os.ReadFile(runJsonFilePath)
 	if err != nil {
 		logger.Fatalf("Failed to read run JSON file from %s: %v", runJsonFilePath, err)
 	}
 
-	// Parse JSON into RunDetailsDTO
-	var runDetails meshapi.RunDetailsDTO
-	if err := json.Unmarshal(runJsonBytes, &runDetails); err != nil {
-		logger.Fatalf("Failed to parse run JSON: %v", err)
-	}
-
-	// Convert to internal Run structure (without decryption)
-	run, err := tfrun.ToInternalWithoutDecryption(&runDetails)
-	if err != nil {
-		logger.Fatalf("Failed to convert run details: %v", err)
-	}
-
-	logger.Printf("Executing single run: %s - %s", run.Id, run.BuildingBlockName)
-
-	// Create API client and set the runToken from the run spec
-	// In Kubernetes mode, the runToken is used for authentication instead of basic auth
-	api := tfrun.NewRunApi()
-	logger.Println("Using runToken from run spec for authentication")
-	api.SetRunToken(runDetails.Spec.RunToken)
-
-	// Execute the run using a single worker with the configured API client
-	worker := tfrun.NewSingleRunWorkerWithApi(
-		logger,
-		tfrun.AppConfig.TfParentWorkingDir,
-		tfrun.AppConfig.TfCommandTimeoutMins,
-		tfBinaryProvider,
-		api,
-	)
-
-	if err := worker.ExecuteRun(run); err != nil {
+	// Kubernetes retries a failed job, which would execute the run a second time.
+	if err := tfrun.ExecuteDecryptedRun(logger, runJson, tfBinaryProvider); err != nil {
 		logger.Printf("Run execution failed: %v", err)
 	}
-
 	logger.Println("Single run completed")
 }

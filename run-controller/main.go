@@ -66,8 +66,7 @@ func main() {
 	var wg sync.WaitGroup
 	wg.Add(1)
 
-	// start controller
-	ctrl := controller.NewController()
+	ctrl := controller.NewController(controller.NewKubernetesDispatcher())
 	ctrl.Start(&wg)
 
 	// listen for os signals to be able to shutdown gracefully

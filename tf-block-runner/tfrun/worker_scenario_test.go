@@ -739,7 +739,7 @@ func mockRunDetailsFetchCall(behavior string, impl meshapi.TerraformImplementati
 	}
 }
 
-func mockApplyRunWithPlanArtifactFetchCall(repo, repoPath, planArtifactHref string) func(_ *http.Request) *http.Response {
+func mockApplyRunWithArtifactFetchCall(repo, repoPath, artifactHref string) func(_ *http.Request) *http.Response {
 	return func(_ *http.Request) *http.Response {
 		implDTO := meshapi.TerraformImplementation{
 			TerraformVersion: DEFAULT_TF_VER,
@@ -773,7 +773,7 @@ func mockApplyRunWithPlanArtifactFetchCall(repo, repoPath, planArtifactHref stri
 					},
 				},
 				Links: meshapi.LinksDTO{
-					Artifact: meshapi.LinkDTO{Href: planArtifactHref},
+					Artifact: meshapi.LinkDTO{Href: artifactHref},
 				},
 			},
 		)

@@ -53,8 +53,8 @@ type TfCmdParams struct {
 	source             *GitSource
 	preRunScript       *string
 	runMode            string
-	// planArtifactUrl is copied from Run.PlanArtifactUrl; empty means plain apply.
-	planArtifactUrl string
+	// artifactUrl is copied from Run.ArtifactUrl; empty means plain apply.
+	artifactUrl string
 	// artifactUploadUrl is copied from Run.ArtifactUploadUrl; a DETECT run uploads the plan
 	// artifact it produced to this URL.
 	artifactUploadUrl string
@@ -667,7 +667,7 @@ func (tfcmd *GenericTfCmd) vars() error {
 	}
 	meshStackVarsFile := hclwrite.NewEmptyFile()
 	for _, variable := range meshStackVars {
-		includeRunScopedVars := tfcmd.params.runMode != DETECT.str() && tfcmd.params.planArtifactUrl == ""
+		includeRunScopedVars := tfcmd.params.runMode != DETECT.str() && tfcmd.params.artifactUrl == ""
 		if !variable.RunScoped || includeRunScopedVars {
 			diags = varsFile.AddVariable(variable.Name, variable.Value, AddVariableOptions{})
 			if diags.HasErrors() {

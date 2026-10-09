@@ -116,12 +116,8 @@ CI runs the equivalent plain `go` commands rather than these tasks.
 ### Run locally
 
 ```bash
-task start:run-controller        # start run-controller
-task start:tf-block-runner       # start tf-block-runner
-task start:manual-block-runner   # start manual-block-runner
+task start:runner
 ```
-
-`task acceptance-runner` starts the runners that meshStack's acceptance tests run against; `task --summary acceptance-runner` lists its settings.
 
 ### Acceptance tests
 

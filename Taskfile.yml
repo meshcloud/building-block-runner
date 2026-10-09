@@ -12,21 +12,16 @@ tasks:
       - task --list
 
   test:
-    desc: Run the Go tests
-    summary: |
-      Pass PACKAGES to test fewer packages, e.g. `task test PACKAGES=./run-controller/...`.
-      Arguments after `--` go to `go test`.
+    desc: Run the Go tests. Set PACKAGES to test fewer.
     env:
       CGO_ENABLED: "1" # the race detector needs cgo
     cmds:
-      - go test -race {{.CLI_ARGS}} {{.PACKAGES}}
+      - go test -race -tags inprocess {{.CLI_ARGS}} {{.PACKAGES}}
 
   lint:
-    desc: Run golangci-lint, including the format check
-    summary: |
-      Pass PACKAGES to lint fewer packages. `task lint -- --fix` fixes what it can.
+    desc: Run golangci-lint. Set PACKAGES to lint fewer, `-- --fix` to fix.
     cmds:
-      - 'go tool golangci-lint run {{.CLI_ARGS}} {{.PACKAGES}}'
+      - 'go tool golangci-lint run --build-tags inprocess {{.CLI_ARGS}} {{.PACKAGES}}'
 
   fmt:
     desc: Format the Go code
@@ -38,67 +33,15 @@ tasks:
     cmds:
       - go mod tidy
 
-  start:run-controller:
-    desc: Run run-controller from source
+  start:runner:
+    # The goal is to support every run type in process.
+    desc: Run the ALL runner from source. Currently supports TERRAFORM and MANUAL and fails other runs immediately.
     env:
       RUNCONTROLLER_CONFIG_FILE: run-controller/runner-config.yml
+      RUNCONTROLLER_DISPATCHER: inprocess
+      RUNNER_API_URL: http://127.0.0.1:8080
+    vars:
+      COVER_ARGS: '{{if .GOCOVERDIR}}-cover -coverpkg=./...{{end}}'
     cmds:
-      - go run ./run-controller {{.CLI_ARGS}}
-
-  start:manual-block-runner:
-    desc: Run manual-block-runner from source
-    cmds:
-      - go run ./manual-block-runner {{.CLI_ARGS}}
-
-  start:tf-block-runner:
-    desc: Run tf-block-runner from source
-    env:
-      RUNNER_CONFIG_FILE: tf-block-runner/runner-config.yml
-    cmds:
-      - go run ./tf-block-runner {{.CLI_ARGS}}
-
-  acceptance-runner:
-    desc: Run the runners that meshfed-release's acceptance tests use, until one of them exits
-    summary: |
-      meshfed-release starts this from the repository root and sends SIGTERM to all its processes
-      when its tests end.
-      It always exits non-zero, because a runner that exits on its own is a failure.
-
-      Environment, all optional:
-        RUNNER_API_CLIENT_ID, RUNNER_API_CLIENT_SECRET
-                                     API key of every runner; without it they use basic auth
-        TF_BLOCK_RUNNER_API_URL      default http://127.0.0.1:8300
-        TF_BLOCK_RUNNER_PORT         default 8100, health at http://127.0.0.1:$TF_BLOCK_RUNNER_PORT/healthz
-        MANUAL_BLOCK_RUNNER_API_URL  default http://127.0.0.1:8301
-        MANUAL_BLOCK_RUNNER_PORT     default 8104, health at http://127.0.0.1:$MANUAL_BLOCK_RUNNER_PORT/healthz
-        GOCOVERDIR                   existing absolute directory the runners write binary coverage data
-                                     into as they exit on SIGTERM; built with `-coverpkg=./...`, like CI's unit tests
-    cmds:
-      - go build -cover -coverpkg=./... -o bin/tf-block-runner ./tf-block-runner
-      - go build -cover -coverpkg=./... -o bin/manual-block-runner ./manual-block-runner
-      # bash, because go-task's built-in shell has no `wait -n`.
-      - |
-        bash -u <<'EOF'
-        RUNNER_CONFIG_FILE=tf-block-runner/runner-config.yml \
-        RUNNER_API_URL="${TF_BLOCK_RUNNER_API_URL:-http://127.0.0.1:8300}" \
-        PORT="${TF_BLOCK_RUNNER_PORT:-8100}" \
-          bin/tf-block-runner &
-        tf=$!
-
-        RUNNER_API_URL="${MANUAL_BLOCK_RUNNER_API_URL:-http://127.0.0.1:8301}" \
-        PORT="${MANUAL_BLOCK_RUNNER_PORT:-8104}" \
-          bin/manual-block-runner &
-        manual=$!
-
-        runners="$tf $manual"
-
-        # A Ctrl-C and meshfed-release's stop already reach the runners, and a second signal would
-        # kill a runner while it writes its coverage data.
-        trap 'wait $runners; exit 143' INT TERM
-
-        wait -n $runners
-        echo "acceptance-runner: a runner exited, stopping the others" >&2
-        kill $runners 2>/dev/null
-        wait $runners
-        exit 1
-        EOF
+      - go build -tags inprocess {{.COVER_ARGS}} -o bin/run-controller ./run-controller
+      - bin/run-controller {{.CLI_ARGS}}

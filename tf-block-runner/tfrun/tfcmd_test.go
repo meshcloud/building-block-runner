@@ -502,27 +502,27 @@ func readGeneratedTfvars(t *testing.T, uut *GenericTfCmd) string {
 // Test_vars_OmitsRunScopedVarValuesOnDetectAndSavedPlanReplay verifies the saved-plan invariant:
 // the deprecated run-scoped variables (run id / run b64) get a value written into auto.tfvars only
 // for a fresh apply/destroy. On a DETECT plan (so nothing run-scoped is baked into the plan) and on
-// an APPLY replaying a predecessor plan (planArtifactUrl set, so no "Mismatch between input and plan
+// an APPLY replaying a predecessor plan (artifactUrl set, so no "Mismatch between input and plan
 // variable value") their value is omitted. The building block id is always written, and all three
 // remain declared regardless so building blocks referencing them still parse.
 func Test_vars_OmitsRunScopedVarValuesOnDetectAndSavedPlanReplay(t *testing.T) {
 	cases := []struct {
-		name            string
-		runMode         string
-		planArtifactUrl string
-		wantRunScoped   bool
+		name          string
+		runMode       string
+		artifactUrl   string
+		wantRunScoped bool
 	}{
 		{name: "fresh apply writes run-scoped values", runMode: "APPLY", wantRunScoped: true},
 		{name: "destroy writes run-scoped values", runMode: "DESTROY", wantRunScoped: true},
 		{name: "detect omits run-scoped values", runMode: "DETECT", wantRunScoped: false},
-		{name: "apply replaying predecessor plan omits run-scoped values", runMode: "APPLY", planArtifactUrl: "https://example/artifact", wantRunScoped: false},
+		{name: "apply replaying predecessor plan omits run-scoped values", runMode: "APPLY", artifactUrl: "https://example/artifact", wantRunScoped: false},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			uut := makeTestGenericTfCmd(t)
 			uut.params.runMode = tc.runMode
-			uut.params.planArtifactUrl = tc.planArtifactUrl
+			uut.params.artifactUrl = tc.artifactUrl
 			uut.runContextInfo.bbId = "some-bbd-id-123"
 			uut.runContextInfo.runId = "some-run-id-12345"
 			uut.runContextInfo.runJsonBase64 = "c29tZS1ydW4tanNvbg=="

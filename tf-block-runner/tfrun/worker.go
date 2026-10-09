@@ -151,7 +151,7 @@ func (w *Worker) workRoutine(ctx context.Context, run *Run, wg *sync.WaitGroup, 
 		source:             run.Source,
 		preRunScript:       run.PreRunScript,
 		runMode:            run.Behavior.str(),
-		planArtifactUrl:    run.PlanArtifactUrl,
+		artifactUrl:        run.ArtifactUrl,
 		artifactUploadUrl:  run.ArtifactUploadUrl,
 	}
 

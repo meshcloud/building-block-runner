@@ -38,21 +38,9 @@ func Test_Outputs_EchoInputsWithOutputTypes(t *testing.T) {
 	})
 }
 
-func Test_RunFile_UnreadableFailsBeforeContactingMeshStack(t *testing.T) {
-	cfg := defaultConfig()
-
-	t.Run("missing", func(t *testing.T) {
-		err := ExecuteRunFromFile(t.Context(), cfg, filepath.Join(t.TempDir(), "run.json"))
-		assert.ErrorIs(t, err, os.ErrNotExist)
-	})
-
-	t.Run("not JSON", func(t *testing.T) {
-		runFile := filepath.Join(t.TempDir(), "run.json")
-		require.NoError(t, os.WriteFile(runFile, []byte("not json"), 0o600))
-
-		err := ExecuteRunFromFile(t.Context(), cfg, runFile)
-		assert.ErrorContains(t, err, "parse "+runFile)
-	})
+func Test_RunJsonNotJSON_FailsBeforeContactingMeshStack(t *testing.T) {
+	err := ExecuteRunJson(t.Context(), defaultConfig(), []byte("not json"))
+	assert.ErrorContains(t, err, "parse run")
 }
 
 func Test_Run_ReportsThroughItsSourceLinks(t *testing.T) {

@@ -29,7 +29,7 @@ func main() {
 	defer stop()
 
 	if runFile := os.Getenv("RUN_JSON_FILE_PATH"); runFile != "" {
-		if err := manual.ExecuteRunFromFile(ctx, cfg, runFile); err != nil {
+		if err := executeRunFile(ctx, cfg, runFile); err != nil {
 			slog.Error("run failed", "err", err)
 			os.Exit(1)
 		}
@@ -42,6 +42,14 @@ func main() {
 		os.Exit(1)
 	}
 	manual.NewPoller(cfg).Run(ctx)
+}
+
+func executeRunFile(ctx context.Context, cfg manual.Config, runFile string) error {
+	data, err := os.ReadFile(runFile)
+	if err != nil {
+		return err
+	}
+	return manual.ExecuteRunJson(ctx, cfg, data)
 }
 
 // startHealthServer listens on SERVER_PORT or PORT, which the Kotlin runner's Spring Boot read.

@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -25,15 +24,10 @@ const (
 // Without a timeout, a hanging connection would block the poller and its shutdown forever.
 var meshStackHTTP = &http.Client{Timeout: 30 * time.Second}
 
-// ExecuteRunFromFile executes the run that run-controller decrypted and mounted for this process.
-func ExecuteRunFromFile(ctx context.Context, cfg Config, runFile string) error {
-	data, err := os.ReadFile(runFile)
-	if err != nil {
-		return err
-	}
+func ExecuteRunJson(ctx context.Context, cfg Config, data []byte) error {
 	run, err := parseRun(data)
 	if err != nil {
-		return fmt.Errorf("parse %s: %w", runFile, err)
+		return fmt.Errorf("parse run: %w", err)
 	}
 	return ExecuteRun(ctx, cfg, run)
 }

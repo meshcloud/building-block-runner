@@ -116,7 +116,7 @@ func (w *SingleRunWorker) workRoutine(ctx context.Context, run *Run, wg *sync.Wa
 		source:             run.Source,
 		preRunScript:       run.PreRunScript,
 		runMode:            run.Behavior.str(),
-		planArtifactUrl:    run.PlanArtifactUrl,
+		artifactUrl:        run.ArtifactUrl,
 		artifactUploadUrl:  run.ArtifactUploadUrl,
 	}
 

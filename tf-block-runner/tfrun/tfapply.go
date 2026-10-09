@@ -11,8 +11,7 @@ import (
 type TfApplyCommand struct {
 	GenericTfCmd
 	// runApi is the authenticated run API client (same one used for status updates). APPLY is the
-	// only command that needs it: it downloads the predecessor plan artifact when
-	// params.planArtifactUrl is set.
+	// only command that needs it: it downloads the predecessor plan when params.artifactUrl is set.
 	runApi RunApi
 }
 
@@ -164,7 +163,7 @@ func (tfcmd *TfApplyCommand) execute() {
 
 	tfcmd.advanceStep(preRunUserMsg)
 
-	if applyingPredecessorPlan := tfcmd.params.planArtifactUrl != ""; applyingPredecessorPlan {
+	if applyingPredecessorPlan := tfcmd.params.artifactUrl != ""; applyingPredecessorPlan {
 		// This APPLY is linked to a predecessor DETECT run, so we replay the exact plan previewed
 		// during that dry-run instead of computing a fresh one — the change is applied precisely as
 		// it was reviewed and approved.
@@ -220,11 +219,9 @@ func (tfcmd *TfApplyCommand) applyPredecessorPlan(tf TfFacade) error {
 		return fmt.Errorf("failed to create predecessor plan artifact file %s: %w", planFile, err)
 	}
 	// Stream the download straight to disk so a large terraform plan is never fully buffered in RAM.
-	if err := tfcmd.runApi.DownloadPredecessorArtifact(tfcmd.params.planArtifactUrl, f); err != nil {
+	if err := tfcmd.runApi.DownloadPredecessorArtifact(tfcmd.params.artifactUrl, f); err != nil {
 		f.Close()
-		// A planArtifact link was handed out only when the predecessor plan is genuinely available,
-		// so a download failure here means the previewed plan can no longer be retrieved. Fail the
-		// run rather than silently falling back to a fresh apply.
+		// A fresh apply here would bypass the plan the approver previewed.
 		return fmt.Errorf("failed to download the previewed terraform plan for this approval: %w. "+
 			"The dry-run that produced this plan must be re-run before the change can be applied", err)
 	}

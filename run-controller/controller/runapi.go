@@ -21,7 +21,7 @@ type RunApiClient struct {
 type RunApi interface {
 	FetchRunDetails(nodePostfix string) (string, *meshapi.RunDetailsDTO, error)
 	RegisterSource(runId string) error
-	UpdateRunStatus(runId string, status string, summary string, stepMessage string) error
+	UpdateRunStatus(ctx context.Context, runId string, status string, summary string, stepMessage string) error
 }
 
 func newApi() RunApi {
@@ -85,9 +85,8 @@ func (api *RunApiClient) RegisterSource(runId string) error {
 	return nil
 }
 
-// UpdateRunStatus sends a PATCH status update for a run.
-// It must be called after RegisterSource has been called for the same run.
-func (api *RunApiClient) UpdateRunStatus(runId string, status string, summary string, stepMessage string) error {
+// Must follow RegisterSource for the same run.
+func (api *RunApiClient) UpdateRunStatus(ctx context.Context, runId string, status string, summary string, stepMessage string) error {
 	requester := fmt.Sprintf("%s-%s", requesterPrefix, AppConfig.Uuid)
 	client := api.newMeshClient(requester)
 
@@ -105,7 +104,7 @@ func (api *RunApiClient) UpdateRunStatus(runId string, status string, summary st
 		},
 	}
 
-	if _, err := client.PatchStatus(context.Background(), runId, AppConfig.Uuid, dto); err != nil {
+	if _, err := client.PatchStatus(ctx, runId, AppConfig.Uuid, dto); err != nil {
 		return fmt.Errorf("update status failed: %w", err)
 	}
 

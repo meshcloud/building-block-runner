@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -35,7 +36,7 @@ func NewKubernetesDispatcher() build.Dispatcher {
 	return kubernetesDispatcher{jobs: k8sClient, metrics: NewMetricsCollector()}
 }
 
-func (d kubernetesDispatcher) Dispatch(run *meshapi.RunDetailsDTO, decryptedRunJsonBase64 string, runnerType string) error {
+func (d kubernetesDispatcher) Dispatch(_ context.Context, run *meshapi.RunDetailsDTO, decryptedRunJsonBase64 string, runnerType string) error {
 	jobSpec, ok := AppConfig.Implementations[runnerType]
 	if !ok {
 		return &NoHandlerError{RunnerType: runnerType}
@@ -46,3 +47,6 @@ func (d kubernetesDispatcher) Dispatch(run *meshapi.RunDetailsDTO, decryptedRunJ
 func (d kubernetesDispatcher) CountActive() (int, error) {
 	return d.jobs.CountActiveJobs()
 }
+
+// Jobs outlive the controller in the cluster.
+func (d kubernetesDispatcher) Wait() {}

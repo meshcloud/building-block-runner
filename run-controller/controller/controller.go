@@ -1,11 +1,10 @@
 package controller
 
 import (
+	"context"
 	"errors"
 	"log"
 	"os"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	meshcrypto "github.com/meshcloud/building-block-runner/go-meshapi-client/crypto"
@@ -14,12 +13,11 @@ import (
 )
 
 type Controller struct {
-	logger         *log.Logger
-	shutdownCalled atomic.Bool
-	runApi         RunApi
-	dispatcher     build.Dispatcher
-	crypto         *meshcrypto.MeshCertBasedCrypto
-	metrics        *MetricsCollector
+	logger     *log.Logger
+	runApi     RunApi
+	dispatcher build.Dispatcher
+	crypto     *meshcrypto.MeshCertBasedCrypto
+	metrics    *MetricsCollector
 }
 
 type processResult int
@@ -55,21 +53,7 @@ func NewController(dispatcher build.Dispatcher) *Controller {
 	}
 }
 
-func (c *Controller) Start(wg *sync.WaitGroup) {
-	c.logger.Println("Started")
-
-	go func() {
-		defer wg.Done()
-		c.run()
-	}()
-}
-
-func (c *Controller) Stop() {
-	c.logger.Println("Shutdown requested")
-	c.shutdownCalled.Store(true)
-}
-
-func (c *Controller) run() {
+func (c *Controller) Run(ctx context.Context) {
 	c.logger.Println("Controller running - polling for building block runs")
 
 	pollingInterval := 10
@@ -81,16 +65,19 @@ func (c *Controller) run() {
 	ticker := time.NewTicker(time.Duration(pollingInterval) * time.Second)
 	defer ticker.Stop()
 
-	for !c.shutdownCalled.Load() {
-		<-ticker.C
-		c.metrics.controllerLoopIterations.Inc()
-		c.drainRuns()
+	for {
+		select {
+		case <-ctx.Done():
+			c.logger.Println("Controller stopped")
+			return
+		case <-ticker.C:
+			c.metrics.controllerLoopIterations.Inc()
+			c.drainRuns(ctx)
+		}
 	}
-
-	c.logger.Println("Controller stopped")
 }
 
-func (c *Controller) drainRuns() {
+func (c *Controller) drainRuns(ctx context.Context) {
 	capacity := c.availableCapacity()
 	if capacity <= 0 {
 		c.logger.Printf("At job capacity (max %d concurrent jobs); skipping run fetch this cycle", AppConfig.MaxConcurrentJobs)
@@ -98,8 +85,9 @@ func (c *Controller) drainRuns() {
 		return
 	}
 
-	for dispatched := 0; dispatched < capacity && !c.shutdownCalled.Load(); dispatched++ {
-		if c.processNextRun() != runProcessed {
+	for dispatched := 0; dispatched < capacity && ctx.Err() == nil; dispatched++ {
+		// Shutdown must not cut off a claim or a failure report, or the run stays claimed without a status.
+		if c.processNextRun(context.WithoutCancel(ctx)) != runProcessed {
 			return
 		}
 	}
@@ -120,7 +108,7 @@ func (c *Controller) availableCapacity() int {
 	return max(maxJobs-active, 0)
 }
 
-func (c *Controller) processNextRun() processResult {
+func (c *Controller) processNextRun(ctx context.Context) processResult {
 	runJsonBase64, runDetails, err := c.runApi.FetchRunDetails(AppConfig.Uuid)
 	if err != nil {
 		if !isNoRunError(err) {
@@ -139,15 +127,15 @@ func (c *Controller) processNextRun() processResult {
 	implType, err := runDetails.Spec.Definition.Spec.GetImplementationType()
 	if err != nil {
 		c.logger.Printf("Failed to determine implementation type for run %s: %v", runDetails.Metadata.Uuid, err)
-		c.reportRunFailure(runDetails.Metadata.Uuid, "Failed to determine implementation type: "+err.Error())
+		c.reportRunFailure(ctx, runDetails.Metadata.Uuid, "Failed to determine implementation type: "+err.Error())
 		return processFailed
 	}
 	runnerType := string(meshapi.ToRunnerType(implType))
 
 	c.logger.Printf("Processing run %s (type: %s)", runDetails.Metadata.Uuid, runnerType)
-	if err := c.dispatcher.Dispatch(runDetails, decryptedRunJsonBase64, runnerType); err != nil {
+	if err := c.dispatcher.Dispatch(ctx, runDetails, decryptedRunJsonBase64, runnerType); err != nil {
 		c.logger.Printf("Failed to dispatch run %s: %v", runDetails.Metadata.Uuid, err)
-		c.reportRunFailure(runDetails.Metadata.Uuid, dispatchFailureMessage(err))
+		c.reportRunFailure(ctx, runDetails.Metadata.Uuid, dispatchFailureMessage(err))
 		return processFailed
 	}
 	return runProcessed
@@ -164,13 +152,13 @@ func dispatchFailureMessage(err error) string {
 }
 
 // No runner registers as a source for a run that was never dispatched, so the controller does.
-func (c *Controller) reportRunFailure(runId string, errorMessage string) {
+func (c *Controller) reportRunFailure(ctx context.Context, runId string, errorMessage string) {
 	if regErr := c.runApi.RegisterSource(runId); regErr != nil {
 		c.logger.Printf("Failed to register as status source for run %s: %v", runId, regErr)
 		return
 	}
 
-	if statusErr := c.runApi.UpdateRunStatus(runId, "FAILED", errorMessage, errorMessage); statusErr != nil {
+	if statusErr := c.runApi.UpdateRunStatus(ctx, runId, "FAILED", errorMessage, errorMessage); statusErr != nil {
 		c.logger.Printf("Failed to report error back to meshfed for run %s: %v", runId, statusErr)
 	}
 }

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -23,6 +24,7 @@ type mockRunApi struct {
 	updatedStatusRunId    string
 	updatedStatus         string
 	updatedSummary        string
+	updateStatusCtxErr    error
 }
 
 func (m *mockRunApi) FetchRunDetails(nodePostfix string) (string, *meshapi.RunDetailsDTO, error) {
@@ -34,7 +36,8 @@ func (m *mockRunApi) RegisterSource(runId string) error {
 	return m.registerSourceErr
 }
 
-func (m *mockRunApi) UpdateRunStatus(runId string, status string, summary string, stepMessage string) error {
+func (m *mockRunApi) UpdateRunStatus(ctx context.Context, runId string, status string, summary string, stepMessage string) error {
+	m.updateStatusCtxErr = ctx.Err()
 	m.updatedStatusRunId = runId
 	m.updatedStatus = status
 	m.updatedSummary = summary
@@ -110,7 +113,7 @@ func TestProcessNextRun_NoRunAvailable(t *testing.T) {
 	})
 	defer cleanup()
 
-	ctrl.processNextRun()
+	ctrl.processNextRun(t.Context())
 
 	if mock.registeredSourceRunId != "" {
 		t.Error("expected no RegisterSource call for 404 fetch")
@@ -127,7 +130,7 @@ func TestProcessNextRun_DispatchFails_ReportsFailure(t *testing.T) {
 	defer cleanup()
 	ctrl.dispatcher = &fakeDispatcher{dispatchErr: &NoHandlerError{RunnerType: "TERRAFORM"}}
 
-	if got := ctrl.processNextRun(); got != processFailed {
+	if got := ctrl.processNextRun(t.Context()); got != processFailed {
 		t.Errorf("expected processFailed, got %v", got)
 	}
 	if mock.registeredSourceRunId != dto.Metadata.Uuid {
@@ -150,7 +153,7 @@ func TestKubernetesDispatcher_KnownType_CreatesJobWithItsSpec(t *testing.T) {
 	jobs := &fakeJobManager{}
 	dispatcher := kubernetesDispatcher{jobs: jobs, metrics: NewMetricsCollector()}
 
-	if err := dispatcher.Dispatch(&meshapi.RunDetailsDTO{}, "", "GITHUB_WORKFLOW"); err != nil {
+	if err := dispatcher.Dispatch(t.Context(), &meshapi.RunDetailsDTO{}, "", "GITHUB_WORKFLOW"); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 	if jobs.lastImage != "gh:latest" {
@@ -166,7 +169,7 @@ func TestKubernetesDispatcher_UnknownType_ReturnsNoHandlerError(t *testing.T) {
 	jobs := &fakeJobManager{}
 	dispatcher := kubernetesDispatcher{jobs: jobs, metrics: NewMetricsCollector()}
 
-	err := dispatcher.Dispatch(&meshapi.RunDetailsDTO{}, "", "GITHUB_WORKFLOW")
+	err := dispatcher.Dispatch(t.Context(), &meshapi.RunDetailsDTO{}, "", "GITHUB_WORKFLOW")
 
 	if _, ok := errors.AsType[*NoHandlerError](err); !ok {
 		t.Errorf("expected NoHandlerError, got %v", err)
@@ -181,7 +184,7 @@ func TestReportRunFailure_RegistersSourceThenUpdatesStatus(t *testing.T) {
 	ctrl, cleanup := setupControllerWithMockApi(mock, map[string]JobSpecTemplate{})
 	defer cleanup()
 
-	ctrl.reportRunFailure("run-id-42", "some error occurred")
+	ctrl.reportRunFailure(t.Context(), "run-id-42", "some error occurred")
 
 	if mock.registeredSourceRunId != "run-id-42" {
 		t.Errorf("expected RegisterSource called with %q, got %q", "run-id-42", mock.registeredSourceRunId)
@@ -201,7 +204,7 @@ func TestReportRunFailure_StopsIfRegisterSourceFails(t *testing.T) {
 	ctrl, cleanup := setupControllerWithMockApi(mock, map[string]JobSpecTemplate{})
 	defer cleanup()
 
-	ctrl.reportRunFailure("run-id-99", "some error")
+	ctrl.reportRunFailure(t.Context(), "run-id-99", "some error")
 
 	if mock.updatedStatusRunId != "" {
 		t.Error("expected UpdateRunStatus NOT called when RegisterSource fails")
@@ -217,7 +220,7 @@ func TestProcessNextRun_FetchError_LogsAndReturns(t *testing.T) {
 	})
 	defer cleanup()
 
-	ctrl.processNextRun()
+	ctrl.processNextRun(t.Context())
 
 	if mock.registeredSourceRunId != "" {
 		t.Error("expected no RegisterSource for non-404 fetch error")

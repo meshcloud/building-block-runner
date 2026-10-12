@@ -55,7 +55,7 @@ func NewSingleRunWorkerWithApi(logger *log.Logger, workerDir string, timeoutMins
 	}
 }
 
-func ExecuteDecryptedRun(logger *log.Logger, runJson []byte, tfbin *TfBinaries) error {
+func ExecuteDecryptedRun(ctx context.Context, logger *log.Logger, runJson []byte, tfbin *TfBinaries) error {
 	var runDetails meshapi.RunDetailsDTO
 	if err := json.Unmarshal(runJson, &runDetails); err != nil {
 		return fmt.Errorf("parse run JSON: %w", err)
@@ -69,11 +69,10 @@ func ExecuteDecryptedRun(logger *log.Logger, runJson []byte, tfbin *TfBinaries) 
 	api := NewRunApi()
 	api.SetRunToken(runDetails.Spec.RunToken)
 	worker := NewSingleRunWorkerWithApi(logger, AppConfig.TfParentWorkingDir, AppConfig.TfCommandTimeoutMins, tfbin, api)
-	return worker.ExecuteRun(run)
+	return worker.ExecuteRun(ctx, run)
 }
 
-// ExecuteRun executes a single run
-func (w *SingleRunWorker) ExecuteRun(run *Run) error {
+func (w *SingleRunWorker) ExecuteRun(ctx context.Context, run *Run) error {
 	w.log.Printf("Start execution of run %s: %s %s\n", run.Id, run.Behavior.str(), run.BuildingBlockName)
 
 	// Ensure working directory exists, this is required otherwise we cannot create temp dirs inside it
@@ -100,8 +99,7 @@ func (w *SingleRunWorker) ExecuteRun(run *Run) error {
 	run.Source.setLog(runContextInfo.logwrap)
 	defer runContextInfo.logwrap.Close()
 
-	// create context with timeout settings
-	parentCtx, cancel := context.WithTimeout(context.Background(), w.timeout)
+	parentCtx, cancel := context.WithTimeout(ctx, w.timeout)
 	defer cancel()
 	workCtx, workCancel := context.WithCancel(context.WithValue(parentCtx, runInfoContextKey, runContextInfo))
 

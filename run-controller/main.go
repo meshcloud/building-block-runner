@@ -2,11 +2,11 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
@@ -32,32 +32,25 @@ func main() {
 		}
 	}()
 
-	dispatcher := newDispatcher(logger)
-	registerController(logger)
+	ctx, stopOnSignal := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-	ctrl := controller.NewController(dispatcher)
-	ctrl.Start(&wg)
+	dispatcher := newDispatcher(logger)
+	registerController(ctx, logger)
+
 	http.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("OK"))
 	})
 
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-signalChan
-		ctrl.Stop()
-	}()
-
-	wg.Wait()
-	os.Exit(0)
+	controller.NewController(dispatcher).Run(ctx)
+	// A second signal ends the process without waiting for the runs.
+	stopOnSignal()
+	dispatcher.Wait()
 }
 
 // meshfed-api may still be starting.
-func registerController(logger *log.Logger) {
+func registerController(ctx context.Context, logger *log.Logger) {
 	timeout := 10 * time.Minute
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeoutCause(ctx, timeout, fmt.Errorf("gave up after %s", timeout))
 	defer cancel()
 
 	retryInterval := 10 * time.Second
@@ -69,7 +62,7 @@ func registerController(logger *log.Logger) {
 		logger.Printf("Controller registration failed, retrying in %s: %v", retryInterval, err)
 		select {
 		case <-ctx.Done():
-			logger.Fatalf("Failed to register controller after %s: %v", timeout, err)
+			logger.Fatalf("Failed to register controller (%v): %v", context.Cause(ctx), err)
 		case <-time.After(retryInterval):
 		}
 	}

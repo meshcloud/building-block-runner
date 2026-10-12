@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"runtime/debug"
+	"sync"
 	"sync/atomic"
 
 	"github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
@@ -23,12 +24,13 @@ func init() {
 	}
 }
 
-type executeFunc func(runJson []byte) error
+type executeFunc func(ctx context.Context, runJson []byte) error
 
 type Dispatcher struct {
 	logger    *log.Logger
 	executors map[meshapi.RunnerImplementationType]executeFunc
 	active    atomic.Int64
+	runs      sync.WaitGroup
 }
 
 func NewDispatcher(runnerUuid string, apiUrl string) (*Dispatcher, error) {
@@ -54,17 +56,17 @@ func NewDispatcher(runnerUuid string, apiUrl string) (*Dispatcher, error) {
 	return &Dispatcher{
 		logger: log.New(os.Stdout, "[IN-PROCESS] ", log.LstdFlags),
 		executors: map[meshapi.RunnerImplementationType]executeFunc{
-			meshapi.RunnerTypeTerraform: func(runJson []byte) error {
-				return tfrun.ExecuteDecryptedRun(tfLogger, runJson, tfBinaries)
+			meshapi.RunnerTypeTerraform: func(ctx context.Context, runJson []byte) error {
+				return tfrun.ExecuteDecryptedRun(ctx, tfLogger, runJson, tfBinaries)
 			},
-			meshapi.RunnerTypeManual: func(runJson []byte) error {
-				return manual.ExecuteRunJson(context.Background(), manualConfig, runJson)
+			meshapi.RunnerTypeManual: func(ctx context.Context, runJson []byte) error {
+				return manual.ExecuteRunJson(ctx, manualConfig, runJson)
 			},
 		},
 	}, nil
 }
 
-func (d *Dispatcher) Dispatch(run *meshapi.RunDetailsDTO, decryptedRunJsonBase64 string, runnerType string) error {
+func (d *Dispatcher) Dispatch(ctx context.Context, run *meshapi.RunDetailsDTO, decryptedRunJsonBase64 string, runnerType string) error {
 	execute, ok := d.executors[meshapi.RunnerImplementationType(runnerType)]
 	if !ok {
 		return &controller.NoHandlerError{RunnerType: runnerType}
@@ -75,11 +77,11 @@ func (d *Dispatcher) Dispatch(run *meshapi.RunDetailsDTO, decryptedRunJsonBase64
 	}
 
 	d.active.Add(1)
-	go d.execute(run.Metadata.Uuid, execute, runJson)
+	d.runs.Go(func() { d.execute(ctx, run.Metadata.Uuid, execute, runJson) })
 	return nil
 }
 
-func (d *Dispatcher) execute(runId string, execute executeFunc, runJson []byte) {
+func (d *Dispatcher) execute(ctx context.Context, runId string, execute executeFunc, runJson []byte) {
 	defer d.active.Add(-1)
 	defer func() {
 		if r := recover(); r != nil {
@@ -87,11 +89,16 @@ func (d *Dispatcher) execute(runId string, execute executeFunc, runJson []byte) 
 		}
 	}()
 
-	if err := execute(runJson); err != nil {
+	if err := execute(ctx, runJson); err != nil {
 		d.logger.Printf("Run %s failed: %v", runId, err)
 	}
 }
 
 func (d *Dispatcher) CountActive() (int, error) {
 	return int(d.active.Load()), nil
+}
+
+func (d *Dispatcher) Wait() {
+	d.logger.Printf("Waiting for %d runs to finish", d.active.Load())
+	d.runs.Wait()
 }

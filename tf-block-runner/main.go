@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net"
 	"net/http"
@@ -119,7 +120,7 @@ func executeSingleRun(logger *log.Logger, tfBinaryProvider *tfrun.TfBinaries) {
 	}
 
 	// Kubernetes retries a failed job, which would execute the run a second time.
-	if err := tfrun.ExecuteDecryptedRun(logger, runJson, tfBinaryProvider); err != nil {
+	if err := tfrun.ExecuteDecryptedRun(context.Background(), logger, runJson, tfBinaryProvider); err != nil {
 		logger.Printf("Run execution failed: %v", err)
 	}
 	logger.Println("Single run completed")

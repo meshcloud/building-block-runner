@@ -3,11 +3,13 @@
 package inprocess
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"io"
 	"log"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
@@ -26,7 +28,7 @@ func testDispatcher(execute executeFunc) *Dispatcher {
 func dispatchManual(t *testing.T, d *Dispatcher, runJson string) {
 	t.Helper()
 	run := &meshapi.RunDetailsDTO{Metadata: meshapi.RunMetaDTO{Uuid: "run-1"}}
-	require.NoError(t, d.Dispatch(run, base64.StdEncoding.EncodeToString([]byte(runJson)), "MANUAL"))
+	require.NoError(t, d.Dispatch(t.Context(), run, base64.StdEncoding.EncodeToString([]byte(runJson)), "MANUAL"))
 }
 
 func activeRuns(d *Dispatcher) int {
@@ -35,9 +37,9 @@ func activeRuns(d *Dispatcher) int {
 }
 
 func Test_UnsupportedType_ReturnsNoHandlerError(t *testing.T) {
-	d := testDispatcher(func([]byte) error { return nil })
+	d := testDispatcher(func(context.Context, []byte) error { return nil })
 
-	err := d.Dispatch(&meshapi.RunDetailsDTO{}, "", "GITHUB_WORKFLOW")
+	err := d.Dispatch(t.Context(), &meshapi.RunDetailsDTO{}, "", "GITHUB_WORKFLOW")
 
 	noHandler, ok := errors.AsType[*controller.NoHandlerError](err)
 	require.True(t, ok, "got %v", err)
@@ -47,7 +49,7 @@ func Test_UnsupportedType_ReturnsNoHandlerError(t *testing.T) {
 func Test_RunningRun_CountsAsActiveUntilItEnds(t *testing.T) {
 	received := make(chan []byte, 1)
 	release := make(chan struct{})
-	d := testDispatcher(func(runJson []byte) error {
+	d := testDispatcher(func(_ context.Context, runJson []byte) error {
 		received <- runJson
 		<-release
 		return nil
@@ -62,9 +64,32 @@ func Test_RunningRun_CountsAsActiveUntilItEnds(t *testing.T) {
 }
 
 func Test_PanickingRun_IsRecoveredAndNoLongerActive(t *testing.T) {
-	d := testDispatcher(func([]byte) error { panic("boom") })
+	d := testDispatcher(func(context.Context, []byte) error { panic("boom") })
 
 	dispatchManual(t, d, `{}`)
 
 	assert.Eventually(t, func() bool { return activeRuns(d) == 0 }, time.Second, time.Millisecond)
+}
+
+func Test_Wait_BlocksUntilRunningRunEnds(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		release := make(chan struct{})
+		d := testDispatcher(func(context.Context, []byte) error {
+			<-release
+			return nil
+		})
+		dispatchManual(t, d, `{}`)
+
+		waited := false
+		go func() {
+			d.Wait()
+			waited = true
+		}()
+		synctest.Wait()
+		assert.False(t, waited)
+
+		close(release)
+		synctest.Wait()
+		assert.True(t, waited)
+	})
 }

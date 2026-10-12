@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -25,12 +26,16 @@ func (f *fakeJobManager) CountActiveJobs() (int, error) {
 type fakeDispatcher struct {
 	dispatchCalls int
 	dispatchErr   error
+	onDispatch    func()
 
 	active   int
 	countErr error
 }
 
-func (f *fakeDispatcher) Dispatch(*meshapi.RunDetailsDTO, string, string) error {
+func (f *fakeDispatcher) Dispatch(context.Context, *meshapi.RunDetailsDTO, string, string) error {
+	if f.onDispatch != nil {
+		f.onDispatch()
+	}
 	if f.dispatchErr != nil {
 		return f.dispatchErr
 	}
@@ -45,6 +50,8 @@ func (f *fakeDispatcher) CountActive() (int, error) {
 	}
 	return f.active, nil
 }
+
+func (f *fakeDispatcher) Wait() {}
 
 // queueRunApi answers 404 once its queue is empty, like the API after a drained backlog.
 type queueRunApi struct {
@@ -92,7 +99,7 @@ func TestDrainRuns_ProcessesBacklogBackToBack(t *testing.T) {
 	fake := &fakeDispatcher{}
 	ctrl.dispatcher = fake
 
-	ctrl.drainRuns()
+	ctrl.drainRuns(t.Context())
 
 	if fake.dispatchCalls != 3 {
 		t.Errorf("expected 3 jobs created in one drain cycle, got %d", fake.dispatchCalls)
@@ -112,7 +119,7 @@ func TestDrainRuns_StopsAtCapacity(t *testing.T) {
 	fake := &fakeDispatcher{active: 1}
 	ctrl.dispatcher = fake
 
-	ctrl.drainRuns()
+	ctrl.drainRuns(t.Context())
 
 	if fake.dispatchCalls != 2 {
 		t.Errorf("expected 2 jobs created (capacity 3 minus 1 active), got %d", fake.dispatchCalls)
@@ -135,7 +142,7 @@ func TestDrainRuns_SkipsWhenAlreadyAtCapacity(t *testing.T) {
 	fake := &fakeDispatcher{active: 3}
 	ctrl.dispatcher = fake
 
-	ctrl.drainRuns()
+	ctrl.drainRuns(t.Context())
 
 	if fake.dispatchCalls != 0 {
 		t.Errorf("expected no jobs created when at capacity, got %d", fake.dispatchCalls)
@@ -158,13 +165,56 @@ func TestDrainRuns_StopsOnProcessFailure(t *testing.T) {
 	fake := &fakeDispatcher{dispatchErr: errors.New("quota exceeded")}
 	ctrl.dispatcher = fake
 
-	ctrl.drainRuns()
+	ctrl.drainRuns(t.Context())
 
 	if api.idx != 1 {
 		t.Errorf("expected draining to stop after the first failure, claimed %d runs", api.idx)
 	}
 	if api.updatedStatus != "FAILED" {
 		t.Errorf("expected the failed run to be reported FAILED, got %q", api.updatedStatus)
+	}
+}
+
+func TestDrainRuns_ClaimsNothingOnceShutDown(t *testing.T) {
+	api := &queueRunApi{}
+	api.enqueueRuns(t, 2)
+
+	ctrl, cleanup := setupControllerWithMockApi(&api.mockRunApi, map[string]JobSpecTemplate{
+		"TERRAFORM": {Image: "tf:latest"},
+	})
+	defer cleanup()
+	ctrl.runApi = api
+	AppConfig.MaxConcurrentJobs = 10
+	ctx, shutdown := context.WithCancel(t.Context())
+	shutdown()
+
+	ctrl.drainRuns(ctx)
+
+	if api.idx != 0 {
+		t.Errorf("expected no runs claimed after shutdown, got %d", api.idx)
+	}
+}
+
+func TestDrainRuns_ShutdownDuringDispatch_StillReportsFailure(t *testing.T) {
+	api := &queueRunApi{}
+	api.enqueueRuns(t, 2)
+
+	ctrl, cleanup := setupControllerWithMockApi(&api.mockRunApi, map[string]JobSpecTemplate{
+		"TERRAFORM": {Image: "tf:latest"},
+	})
+	defer cleanup()
+	ctrl.runApi = api
+	AppConfig.MaxConcurrentJobs = 10
+	ctx, shutdown := context.WithCancel(t.Context())
+	ctrl.dispatcher = &fakeDispatcher{onDispatch: shutdown, dispatchErr: errors.New("quota exceeded")}
+
+	ctrl.drainRuns(ctx)
+
+	if api.updatedStatus != "FAILED" {
+		t.Errorf("expected the failed run to be reported FAILED, got %q", api.updatedStatus)
+	}
+	if api.updateStatusCtxErr != nil {
+		t.Errorf("expected the failure report to outlive the shutdown, got %v", api.updateStatusCtxErr)
 	}
 }
 
@@ -226,7 +276,7 @@ func TestProcessNextRun_SuccessReturnsRunProcessed(t *testing.T) {
 	defer cleanup()
 	ctrl.dispatcher = &fakeDispatcher{}
 
-	if got := ctrl.processNextRun(); got != runProcessed {
+	if got := ctrl.processNextRun(t.Context()); got != runProcessed {
 		t.Errorf("expected runProcessed, got %v", got)
 	}
 }

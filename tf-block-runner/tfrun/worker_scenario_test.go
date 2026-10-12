@@ -66,7 +66,16 @@ func (suite *WorkerTestSuite) scenarioClientBehavior(req *http.Request) *http.Re
 	}
 }
 
-func Test_WorkerSuite(t *testing.T) {
+// For tests that download tofu or terraform or clone from GitHub, which takes minutes.
+func skipUnlessAcc(t *testing.T) {
+	t.Helper()
+	if os.Getenv("BUILDING_BLOCK_RUNNER_TEST_ACC") != "1" {
+		t.Skip("acceptance tests are off. Run them with BUILDING_BLOCK_RUNNER_TEST_ACC=1 go test ./tf-block-runner/tfrun/ -run TestAcc")
+	}
+}
+
+func TestAccWorkerSuite(t *testing.T) {
+	skipUnlessAcc(t)
 	suite.Run(t, new(WorkerTestSuite))
 }
 

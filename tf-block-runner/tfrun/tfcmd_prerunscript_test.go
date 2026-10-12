@@ -323,7 +323,8 @@ func Test_runPreRunScript_cwdIsWorkingDirectory(t *testing.T) {
 	)
 }
 
-func Test_runPreRunScript_tofuAndTerraformBinPresent(t *testing.T) {
+func TestAccRunPreRunScript_tofuAndTerraformBinPresent(t *testing.T) {
+	skipUnlessAcc(t)
 	script := `tofu version >>"$MESHSTACK_USER_MESSAGE"`
 	sut, _ := makePreRunScriptTfCmd(t, &script, "APPLY", true)
 

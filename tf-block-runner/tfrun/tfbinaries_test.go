@@ -12,7 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_GetTF(t *testing.T) {
+func TestAccGetTF(t *testing.T) {
+	skipUnlessAcc(t)
 	// These tests verify the behavior of the "real" tfBinaries download
 	// without using the MockedTerraform implementation of the TfFacade
 	const (

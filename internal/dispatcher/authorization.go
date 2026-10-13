@@ -10,8 +10,6 @@ import (
 func newAuthorization(client http.Client, api config.Api) (http.Authorization, error) {
 	auth := api.Auth
 	switch {
-	case auth.Token != "":
-		return http.BearerToken(auth.Token), nil
 	case auth.Key.ClientId != "" && api.Url.URL == nil:
 		return nil, errors.New("api.auth.key needs api.url")
 	case auth.Key.ClientId != "":
@@ -21,5 +19,5 @@ func newAuthorization(client http.Client, api config.Api) (http.Authorization, e
 	case auth.Profile != "":
 		return nil, errors.New("api.auth.profile is not supported yet")
 	}
-	return nil, errors.New("api.auth needs either key, basic or a token")
+	return nil, errors.New("api.auth needs either key or basic")
 }

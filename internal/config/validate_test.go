@@ -47,13 +47,6 @@ dispatcher.register needs api.auth.workspace or api.auth.profile`)
 		assert.NoError(t, cfg.ValidateDispatcher())
 	})
 
-	t.Run("accepts a token alone", func(t *testing.T) {
-		cfg := valid()
-		cfg.Api.Auth.Basic.Username, cfg.Api.Auth.Basic.Password = "", ""
-		cfg.Api.Auth.Token = "run-token"
-		assert.NoError(t, cfg.ValidateDispatcher())
-	})
-
 	t.Run("accepts a key besides basic auth", func(t *testing.T) {
 		cfg := valid()
 		cfg.Api.Auth.Key.ClientId, cfg.Api.Auth.Key.ClientSecret = "id", "secret"
@@ -82,7 +75,7 @@ dispatcher.register needs api.auth.workspace or api.auth.profile`)
 		assert.EqualError(t, Config{}.Validate(), `uuid is required
 dispatcher.forTypes needs exactly one runner type`)
 		assert.EqualError(t, Config{}.ValidateDispatcher(), `api.url or api.auth.profile is required
-api.auth needs either key, basic, profile or a token
+api.auth needs either key, basic or profile
 no private key configured
 dispatcher.pollingInterval must be positive
 dispatcher.timeout must be positive

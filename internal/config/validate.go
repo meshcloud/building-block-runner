@@ -40,10 +40,10 @@ func (auth Auth) validate() error {
 		return nil
 	case hasBasic && (auth.Basic.Username == "" || auth.Basic.Password == ""):
 		return errors.New("api.auth.basic needs both username and password")
-	case hasBasic, auth.Token != "", auth.Profile != "":
+	case hasBasic, auth.Profile != "":
 		return nil
 	}
-	return errors.New("api.auth needs either key, basic, profile or a token")
+	return errors.New("api.auth needs either key, basic or profile")
 }
 
 // ValidateTf checks what the tf runner needs on top of Validate.

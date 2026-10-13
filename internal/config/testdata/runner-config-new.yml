@@ -1,23 +1,21 @@
 uuid: # legacy layouts: uuid, runnerUuid, blockrunner.uuid
 api:
   url: http://host.minikube.internal:8080
+  # the meshstack-cli environment (MESHSTACK_ENDPOINT, MESHSTACK_API_KEY, ...) fills what is empty here
   auth:
     # variant 0: meshstack-cli profile, supplies url, auth and workspace which are not set here
     profile: local-dev
     workspace: admin-customer # old: ownedByWorkspace
 
-    # variant 1: basic auth (non-bearer), needs CLI change for streamlined support
-    # (old: user/password was not nested below basic)
+    # variant 1: basic auth (old: user/password was not nested below basic, env RUNNER_API_USERNAME)
     basic:
       username: bb-api
       password: guest
 
-    # variant 2: apikey (old: id/secret wasn't nested)
+    # variant 2: apikey, wins over basic (old: id/secret wasn't nested, env RUNNER_API_CLIENT_ID)
     key:
      clientId: your-client-id
      clientSecret: your-client-secret
-
-    # variant 3: run token, only from env RUNNER_API_AUTH_TOKEN or MESHSTACK_API_TOKEN
 
 crypto:
   privateKeyFiles: # TODO: same-dir globbing with '*' (make it really safe)?

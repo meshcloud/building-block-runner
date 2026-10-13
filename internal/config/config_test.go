@@ -99,10 +99,10 @@ func TestLoad(t *testing.T) {
 		assert.Equal(t, []string{
 			"Using RUNNER_UUID from environment",
 			"Using RUNNER_API_URL from environment",
-			"Using RUNNER_API_USERNAME from environment for RUNNER_API_AUTH_BASIC_USERNAME",
-			"Using RUNNER_API_PASSWORD from environment for RUNNER_API_AUTH_BASIC_PASSWORD",
-			"Using RUNNER_API_CLIENT_ID from environment for RUNNER_API_AUTH_KEY_CLIENT_ID",
-			"Using RUNNER_API_CLIENT_SECRET from environment for RUNNER_API_AUTH_KEY_CLIENT_SECRET",
+			"Using RUNNER_API_USERNAME from environment",
+			"Using RUNNER_API_PASSWORD from environment",
+			"Using RUNNER_API_CLIENT_ID from environment",
+			"Using RUNNER_API_CLIENT_SECRET from environment",
 			"Using RUNNER_PRIVATE_KEY from environment for RUNNER_CRYPTO_PRIVATE_KEYS",
 			"Using RUNNER_PRIVATE_KEY_FILE from environment for RUNNER_CRYPTO_PRIVATE_KEY_FILES",
 			"Using RUNNER_DISPATCHER_MAX_CONCURRENT_JOBS from environment",
@@ -179,18 +179,6 @@ func TestLoadTfDefaults(t *testing.T) {
 		WsTimeout:          xtime.Minutes(7),
 		InitTimeout:        xtime.Minutes(1),
 	}, cfg.Tf)
-}
-
-func TestLoadApiTokenFromEnv(t *testing.T) {
-	unsetRunnerEnv(t)
-	t.Setenv("MESHSTACK_API_TOKEN", "run-token")
-
-	var logs strings.Builder
-	cfg, err := Load([]byte("api:\n  url: http://localhost:8080\n"), log.New(&logs, "", 0))
-
-	require.NoError(t, err)
-	assert.Equal(t, "run-token", cfg.Api.Auth.Token)
-	assert.Equal(t, "Using MESHSTACK_API_TOKEN from environment for RUNNER_API_AUTH_TOKEN\n", logs.String())
 }
 
 func TestLoadDispatcherForTypesFromEnv(t *testing.T) {
@@ -314,7 +302,7 @@ func unsetRunnerEnv(t *testing.T) {
 	t.Helper()
 	for _, env := range os.Environ() {
 		key, _, _ := strings.Cut(env, "=")
-		if strings.HasPrefix(key, "RUNNER_") || key == "MESHSTACK_API_TOKEN" {
+		if strings.HasPrefix(key, "RUNNER_") {
 			t.Setenv(key, "")
 			require.NoError(t, os.Unsetenv(key))
 		}

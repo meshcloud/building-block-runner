@@ -1,24 +1,70 @@
 package config
 
-import "github.com/meshcloud/building-block-runner/internal/config/xurl"
+import (
+	"context"
 
+	"github.com/meshcloud/meshstack-cli/pkg/setting"
+
+	"github.com/meshcloud/building-block-runner/internal/config/xurl"
+)
+
+// Api is the setting source of the meshStack client, so the MESHSTACK_* environment fills only what it leaves empty.
 type Api struct {
 	Url  xurl.URL `yaml:"url" env:"URL"`
-	Auth Auth     `yaml:"auth" envPrefix:"AUTH_"`
+	Auth Auth     `yaml:"auth"`
 }
 
+// Auth reads the legacy RUNNER_API_* names from the environment.
 type Auth struct {
-	// Profile is a meshstack-cli profile, which supplies the url, the auth and the workspace that the config leaves empty.
-	Profile   string `yaml:"profile" env:"PROFILE"`
-	Workspace string `yaml:"workspace" env:"WORKSPACE"`
-	// Token is the run token, which a k8s job gets from the dispatcher.
-	Token string `yaml:"-" env:"TOKEN" envFallback:"MESHSTACK_API_TOKEN"`
-	Basic struct {
-		Username string `yaml:"username" env:"USERNAME" envFallback:"RUNNER_API_USERNAME"`
-		Password string `yaml:"password" env:"PASSWORD" envFallback:"RUNNER_API_PASSWORD"`
-	} `yaml:"basic" envPrefix:"BASIC_"`
-	Key struct {
-		ClientId     string `yaml:"clientId" env:"CLIENT_ID" envFallback:"RUNNER_API_CLIENT_ID"`
-		ClientSecret string `yaml:"clientSecret" env:"CLIENT_SECRET" envFallback:"RUNNER_API_CLIENT_SECRET"`
-	} `yaml:"key" envPrefix:"KEY_"`
+	Profile   string    `yaml:"profile"`
+	Workspace string    `yaml:"workspace"`
+	Basic     BasicAuth `yaml:"basic"`
+	Key       ApiKey    `yaml:"key"`
+}
+
+type BasicAuth struct {
+	Username string `yaml:"username" env:"USERNAME"`
+	Password string `yaml:"password" env:"PASSWORD"`
+}
+
+type ApiKey struct {
+	ClientId     string `yaml:"clientId" env:"CLIENT_ID"`
+	ClientSecret string `yaml:"clientSecret" env:"CLIENT_SECRET"`
+}
+
+func (api Api) Lookup(_ context.Context, settingKey string) (string, error) {
+	value, _ := api.setting(settingKey)
+	return value, nil
+}
+
+func (api Api) Describe(settingKey string) string {
+	if _, path := api.setting(settingKey); path != "" {
+		return "runner config " + path
+	}
+	return ""
+}
+
+func (api Api) setting(settingKey string) (value, path string) {
+	auth := api.Auth
+	// The legacy run-controller config holds basic auth, which deployments override with a key from the environment.
+	if auth.Key.ClientId != "" {
+		auth.Basic = BasicAuth{}
+	}
+	switch settingKey {
+	case setting.Endpoint.EnvKey():
+		return api.Url.String(), "api.url"
+	case setting.Profile.EnvKey():
+		return auth.Profile, "api.auth.profile"
+	case setting.Workspace.EnvKey():
+		return auth.Workspace, "api.auth.workspace"
+	case setting.ApiKeyClientId.EnvKey():
+		return auth.Key.ClientId, "api.auth.key.clientId"
+	case setting.ApiKeyClientSecret.EnvKey():
+		return auth.Key.ClientSecret, "api.auth.key.clientSecret"
+	case setting.ApiUsername.EnvKey():
+		return auth.Basic.Username, "api.auth.basic.username"
+	case setting.ApiPassword.EnvKey():
+		return auth.Basic.Password, "api.auth.basic.password"
+	}
+	return "", ""
 }

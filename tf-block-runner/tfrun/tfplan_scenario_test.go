@@ -10,7 +10,7 @@ import (
 	"slices"
 
 	"github.com/hashicorp/terraform-exec/tfexec"
-	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
+	"github.com/meshcloud/meshstack-cli/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -67,7 +67,7 @@ func (suite *WorkerTestSuite) Test_DetectSucceeded_UploadsArtifactViaEndpoint() 
 	assert.Equal(suite.T(), planBytes, uploadedBytes)
 
 	require.GreaterOrEqual(suite.T(), len(updateBodies), 1)
-	var lastUpdate meshapi.MeshRunnerRunStatusUpdate
+	var lastUpdate client.MeshRunnerRunStatusUpdate
 	require.NoError(suite.T(), json.Unmarshal(updateBodies[len(updateBodies)-1], &lastUpdate))
 	assert.Equal(suite.T(), SUCCEEDED.str(), *lastUpdate.Status)
 }
@@ -114,7 +114,7 @@ func (suite *WorkerTestSuite) Test_DetectSucceeded_UploadFailureFailsRun() {
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, err := io.ReadAll(lastUpdate.Body)
 	require.NoError(suite.T(), err)
-	var update meshapi.MeshRunnerRunStatusUpdate
+	var update client.MeshRunnerRunStatusUpdate
 	require.NoError(suite.T(), json.Unmarshal(data, &update))
 
 	assert.Equal(suite.T(), FAILED.str(), *update.Status, "a failed plan upload must fail the run")
@@ -168,7 +168,7 @@ func (suite *WorkerTestSuite) Test_DetectFailed_WhenNoUploadUrl() {
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, err := io.ReadAll(lastUpdate.Body)
 	require.NoError(suite.T(), err)
-	var update meshapi.MeshRunnerRunStatusUpdate
+	var update client.MeshRunnerRunStatusUpdate
 	require.NoError(suite.T(), json.Unmarshal(data, &update))
 
 	assert.Equal(suite.T(), FAILED.str(), *update.Status, "a missing upload URL must fail the run")
@@ -205,7 +205,7 @@ func (suite *WorkerTestSuite) Test_DetectSucceeded_NoChangesDetected() {
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, err := io.ReadAll(lastUpdate.Body)
 	require.NoError(suite.T(), err)
-	var update meshapi.MeshRunnerRunStatusUpdate
+	var update client.MeshRunnerRunStatusUpdate
 	require.NoError(suite.T(), json.Unmarshal(data, &update))
 
 	assert.Equal(suite.T(), SUCCEEDED.str(), *update.Status)
@@ -269,7 +269,7 @@ func (suite *WorkerTestSuite) Test_ApplyWithPlanArtifact_DownloadsAndAppliesSave
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, err := io.ReadAll(lastUpdate.Body)
 	require.NoError(suite.T(), err)
-	var update meshapi.MeshRunnerRunStatusUpdate
+	var update client.MeshRunnerRunStatusUpdate
 	require.NoError(suite.T(), json.Unmarshal(data, &update))
 	assert.Equal(suite.T(), SUCCEEDED.str(), *update.Status)
 }
@@ -310,7 +310,7 @@ func (suite *WorkerTestSuite) Test_ApplyWithoutPlanArtifact_PlainApply() {
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, err := io.ReadAll(lastUpdate.Body)
 	require.NoError(suite.T(), err)
-	var update meshapi.MeshRunnerRunStatusUpdate
+	var update client.MeshRunnerRunStatusUpdate
 	require.NoError(suite.T(), json.Unmarshal(data, &update))
 	assert.Equal(suite.T(), SUCCEEDED.str(), *update.Status)
 	assert.Nil(suite.T(), update.ChangesDetected, "APPLY runs must not report changesDetected")
@@ -358,7 +358,7 @@ func (suite *WorkerTestSuite) Test_ApplyWithPlanArtifact_DownloadFailureFailsRun
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, err := io.ReadAll(lastUpdate.Body)
 	require.NoError(suite.T(), err)
-	var update meshapi.MeshRunnerRunStatusUpdate
+	var update client.MeshRunnerRunStatusUpdate
 	require.NoError(suite.T(), json.Unmarshal(data, &update))
 
 	assert.Equal(suite.T(), FAILED.str(), *update.Status)
@@ -396,7 +396,7 @@ func (suite *WorkerTestSuite) Test_DetectFailed_WhenPlanFileNotWritten() {
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, err := io.ReadAll(lastUpdate.Body)
 	require.NoError(suite.T(), err)
-	var update meshapi.MeshRunnerRunStatusUpdate
+	var update client.MeshRunnerRunStatusUpdate
 	require.NoError(suite.T(), json.Unmarshal(data, &update))
 
 	assert.True(suite.T(), planFuncCalled, "expected DETECT behavior to invoke terraform plan")

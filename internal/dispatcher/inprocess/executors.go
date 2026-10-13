@@ -6,12 +6,13 @@ import (
 	"maps"
 	"slices"
 
+	"github.com/meshcloud/meshstack-cli/client"
+
 	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/internal/dispatcher"
-	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
 )
 
-type executeFunc func(ctx context.Context, run dispatcher.Run, api meshapi.MeshRunnerRunClient) error
+type executeFunc func(ctx context.Context, run dispatcher.Run, api client.MeshRunnerRunClient) error
 
 type executors map[config.RunnerType]executeFunc
 

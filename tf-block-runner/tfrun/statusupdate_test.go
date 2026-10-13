@@ -11,8 +11,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-
-	internalhttp "github.com/meshcloud/building-block-runner/internal/http"
 )
 
 var shortRetry = retrySchedule{initialDelay: time.Millisecond, maxDelay: 5 * time.Millisecond, attemptTimeout: 50 * time.Millisecond, giveUpAfter: 200 * time.Millisecond}
@@ -27,7 +25,7 @@ func runApiAnswering(t *testing.T, statuses ...int) (RunApi, *atomic.Int32) {
 	}))
 	t.Cleanup(server.Close)
 
-	return newTestRunApi(internalhttp.NewClient(testUserAgent), testRun(server.URL)), &calls
+	return newTestRunApi(t, testRun(server.URL)), &calls
 }
 
 func TestUpdateStateWithRetry_DeliversOnceMeshfedIsBackAfterATransientStatus(t *testing.T) {
@@ -93,7 +91,7 @@ func TestUpdateStateWithRetry_GivesUpWhileMeshfedStaysDown(t *testing.T) {
 func TestUpdateStateWithRetry_RetriesWhenMeshfedIsUnreachable(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	server.Close()
-	api := newTestRunApi(internalhttp.NewClient(testUserAgent), testRun(server.URL))
+	api := newTestRunApi(t, testRun(server.URL))
 
 	start := time.Now()
 	err := updateStateWithRetry(api, &RunStatus{RunId: "run", Status: FAILED}, shortRetry, log.New(io.Discard, "", 0))
@@ -112,7 +110,7 @@ func TestUpdateStateWithRetry_RetriesAnAttemptThatGetsNoAnswer(t *testing.T) {
 		w.Write([]byte("{}"))
 	}))
 	t.Cleanup(server.Close)
-	api := newTestRunApi(internalhttp.NewClient(testUserAgent), testRun(server.URL))
+	api := newTestRunApi(t, testRun(server.URL))
 
 	err := updateStateWithRetry(api, &RunStatus{RunId: "run", Status: FAILED}, shortRetry, log.New(io.Discard, "", 0))
 
@@ -127,7 +125,7 @@ func TestUpdateStateWithRetry_GivesUpInTimeWhenNoAttemptGetsAnAnswer(t *testing.
 		stallUntilTestEnds(t)
 	}))
 	t.Cleanup(server.Close)
-	api := newTestRunApi(internalhttp.NewClient(testUserAgent), testRun(server.URL))
+	api := newTestRunApi(t, testRun(server.URL))
 
 	start := time.Now()
 	err := updateStateWithRetry(api, &RunStatus{RunId: "run", Status: FAILED}, schedule, log.New(io.Discard, "", 0))

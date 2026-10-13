@@ -2,67 +2,77 @@ package dispatcher
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
 
-	"github.com/meshcloud/building-block-runner/internal/config"
-	"github.com/meshcloud/building-block-runner/internal/http"
-	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
-)
+	"github.com/meshcloud/meshstack-cli/client"
+	"github.com/meshcloud/meshstack-cli/pkg/auth"
+	"github.com/meshcloud/meshstack-cli/pkg/setting"
 
-const (
-	registrationTimeout       = 10 * time.Minute
-	registrationRetryInterval = 10 * time.Second
+	"github.com/meshcloud/building-block-runner/internal/config"
 )
 
 // Register updates the registration of a runner without workload identity.
-func Register(ctx context.Context, cfg config.Config, logger *log.Logger, userAgent http.UserAgent) error {
-	api, err := newRunnerClient(cfg, userAgent)
+func Register(ctx context.Context, cfg config.Config, logger *log.Logger) error {
+	settings := setting.SingleSource(cfg.Api)
+	meshStack, err := newClient(ctx, settings)
 	if err != nil {
 		return err
 	}
-	return register(ctx, cfg, logger, api, nil)
+	return register(ctx, cfg, logger, settings, meshStack.BuildingBlockRunner, nil)
 }
 
-func register(ctx context.Context, cfg config.Config, logger *log.Logger, api meshapi.MeshRunnerClient, dispatcher Dispatcher) error {
-	registration, err := newRegistration(cfg, dispatcher)
+func register(ctx context.Context, cfg config.Config, logger *log.Logger, settings setting.Sources, runners client.MeshBuildingBlockRunnerClient, dispatcher Dispatcher) error {
+	workspace, err := auth.ResolveWorkspace(ctx, clientOptions(settings))
 	if err != nil {
 		return err
 	}
-	return updateRegistration(ctx, logger, api, registration)
+	if workspace == "" {
+		return errors.New("dispatcher.register needs a workspace: set api.auth.workspace, MESHSTACK_WORKSPACE or the default workspace of the profile")
+	}
+	registration, err := newRegistration(cfg, workspace, dispatcher)
+	if err != nil {
+		return err
+	}
+	return updateRegistration(ctx, logger, runners, registration)
 }
 
 // updateRegistration retries, as meshfed-api may still be starting.
-func updateRegistration(ctx context.Context, logger *log.Logger, api meshapi.MeshRunnerClient, registration meshapi.MeshRunnerRegistration) error {
-	ctx, cancel := context.WithTimeoutCause(ctx, registrationTimeout, fmt.Errorf("gave up after %s", registrationTimeout))
+func updateRegistration(ctx context.Context, logger *log.Logger, runners client.MeshBuildingBlockRunnerClient, registration client.MeshBuildingBlockRunner) error {
+	ctx, cancel := context.WithTimeoutCause(ctx, meshfedStartTimeout, fmt.Errorf("gave up after %s", meshfedStartTimeout))
 	defer cancel()
-	runnerUuid := registration.Metadata.Uuid.String()
+	runnerUuid := *registration.Metadata.Uuid
 	for {
-		err := api.UpdateRegistration(ctx, registration)
+		_, err := runners.Update(ctx, registration)
 		if err == nil {
 			registrationSuccess.WithLabelValues(runnerUuid).Inc()
 			logger.Printf("Updated the registration of runner %s", runnerUuid)
 			return nil
 		}
+		if httpErr, ok := errors.AsType[client.HttpError](err); ok && httpErr.IsNotFound() {
+			// meshStack rejects a client-chosen uuid, so the runner cannot create itself.
+			err = fmt.Errorf("runner %s does not exist in meshStack, create it in the meshStack UI or API first: %w", runnerUuid, err)
+		}
 		registrationErrors.WithLabelValues(runnerUuid, errorTypeUpdate).Inc()
-		logger.Printf("Updating the registration failed, retrying in %s: %v", registrationRetryInterval, err)
+		logger.Printf("Updating the registration failed, retrying in %s: %v", meshfedStartRetryInterval, err)
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("update the registration of runner %s (%w): %w", runnerUuid, context.Cause(ctx), err)
-		case <-time.After(registrationRetryInterval):
+		case <-time.After(meshfedStartRetryInterval):
 		}
 	}
 }
 
-func newRegistration(cfg config.Config, dispatcher Dispatcher) (meshapi.MeshRunnerRegistration, error) {
+func newRegistration(cfg config.Config, workspace string, dispatcher Dispatcher) (client.MeshBuildingBlockRunner, error) {
 	publicKey, err := cfg.Crypto.FirstPublicKey()
 	if err != nil {
-		return meshapi.MeshRunnerRegistration{}, err
+		return client.MeshBuildingBlockRunner{}, err
 	}
-	registration := meshapi.MeshRunnerRegistration{
-		Metadata: meshapi.MeshRunnerRegistrationMetadata{Uuid: cfg.Uuid, OwnedByWorkspace: cfg.Api.Auth.Workspace},
-		Spec: meshapi.MeshRunnerRegistrationSpec{
+	registration := client.MeshBuildingBlockRunner{
+		Metadata: client.MeshBuildingBlockRunnerMetadata{Uuid: new(cfg.Uuid.String()), OwnedByWorkspace: workspace},
+		Spec: client.MeshBuildingBlockRunnerSpec{
 			DisplayName:        cfg.Dispatcher.Register.DisplayName,
 			PublicKey:          publicKey,
 			ImplementationType: cfg.Dispatcher.ForTypes[0].ForApi(),

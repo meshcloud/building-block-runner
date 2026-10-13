@@ -12,19 +12,19 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/meshcloud/meshstack-cli/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/internal/config/xtime"
-	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
 )
 
 var runnerUuid = uuid.MustParse("98520496-627d-43e6-82da-ce499179ff3f")
 
 func newManualRun(t *testing.T) Run {
 	t.Helper()
-	run := Run{Metadata: meshapi.MeshRunnerRunMetadata{Uuid: uuid.New()}}
+	run := Run{Metadata: client.MeshRunnerRunMetadata{Uuid: uuid.New()}}
 	run.Spec.RunToken = "token-" + run.Metadata.Uuid.String()
 	run.Spec.Definition.Spec.Implementation = []byte(`{"type":"MANUAL"}`)
 	return run
@@ -38,7 +38,7 @@ type fakeApi struct {
 	patchErr  error
 }
 
-func (a *fakeApi) ClaimRun(_ context.Context, forRunner uuid.UUID) (meshapi.MeshRunnerRun, error) {
+func (a *fakeApi) ClaimRun(_ context.Context, forRunner uuid.UUID) (client.MeshRunnerRun, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if forRunner != runnerUuid {
@@ -46,19 +46,15 @@ func (a *fakeApi) ClaimRun(_ context.Context, forRunner uuid.UUID) (meshapi.Mesh
 	}
 	a.claimSeen++
 	if len(a.queue) == 0 {
-		return Run{}, meshapi.ErrNoRunToClaim
+		return Run{}, client.ErrNoRunToClaim
 	}
 	run := a.queue[0]
 	a.queue = a.queue[1:]
 	return run, nil
 }
 
-func (a *fakeApi) ForRun(run meshapi.MeshRunnerRun) meshapi.MeshRunnerRunClient {
+func (a *fakeApi) ForRun(run client.MeshRunnerRun) client.MeshRunnerRunClient {
 	return fakeRunApi{a, run}
-}
-
-func (a *fakeApi) UpdateRegistration(context.Context, meshapi.MeshRunnerRegistration) error {
-	return nil
 }
 
 func (a *fakeApi) failures() map[string]string {
@@ -72,7 +68,7 @@ type fakeRunApi struct {
 	run Run
 }
 
-func (r fakeRunApi) RegisterSource(_ context.Context, registration meshapi.MeshRunnerRunSourceRegistration) error {
+func (r fakeRunApi) RegisterSource(_ context.Context, registration client.MeshRunnerRunSourceRegistration) error {
 	if registration.Source.Id != runnerUuid {
 		return errors.New("registered another source")
 	}
@@ -80,20 +76,20 @@ func (r fakeRunApi) RegisterSource(_ context.Context, registration meshapi.MeshR
 }
 
 // PatchStatus keys the summary by run token, as every request about a run must use its token.
-func (r fakeRunApi) PatchStatus(_ context.Context, sourceId uuid.UUID, update meshapi.MeshRunnerRunStatusUpdate) (meshapi.MeshRunnerRunStatusUpdateResult, error) {
+func (r fakeRunApi) PatchStatus(_ context.Context, sourceId uuid.UUID, update client.MeshRunnerRunStatusUpdate) (client.MeshRunnerRunStatusUpdateResult, error) {
 	if sourceId != runnerUuid || *update.Status != statusFailed {
-		return meshapi.MeshRunnerRunStatusUpdateResult{}, errors.New("unexpected status update")
+		return client.MeshRunnerRunStatusUpdateResult{}, errors.New("unexpected status update")
 	}
 	r.api.mu.Lock()
 	defer r.api.mu.Unlock()
 	if r.api.patchErr != nil {
-		return meshapi.MeshRunnerRunStatusUpdateResult{}, r.api.patchErr
+		return client.MeshRunnerRunStatusUpdateResult{}, r.api.patchErr
 	}
 	if r.api.failed == nil {
 		r.api.failed = map[string]string{}
 	}
 	r.api.failed[r.run.Spec.RunToken] = *update.Summary
-	return meshapi.MeshRunnerRunStatusUpdateResult{}, nil
+	return client.MeshRunnerRunStatusUpdateResult{}, nil
 }
 
 func (fakeRunApi) DownloadPlanArtifact(context.Context, io.Writer) error { return nil }

@@ -17,33 +17,14 @@ func (cfg Config) Validate() error {
 // ValidateDispatcher checks what claiming and dispatching runs needs on top of Validate.
 func (cfg Config) ValidateDispatcher() error {
 	var errs validationErrors
-	errs.require(cfg.Api.Url.URL != nil || cfg.Api.Auth.Profile != "", "api.url or api.auth.profile is required")
-	errs = append(errs, cfg.Api.Auth.validate())
 	errs = append(errs, cfg.Crypto.Validate())
 	errs.require(cfg.Dispatcher.PollingInterval.Duration > 0, "dispatcher.pollingInterval must be positive")
 	errs.require(cfg.Dispatcher.Timeout.Duration > 0, "dispatcher.timeout must be positive")
 	errs.require(cfg.Dispatcher.MaxConcurrentJobs != 0, "dispatcher.maxConcurrentJobs must not be 0, a negative value means unlimited")
 	if cfg.Dispatcher.Register != nil {
 		errs.require(cfg.Dispatcher.Register.DisplayName != "", "dispatcher.register.displayName is required")
-		errs.require(cfg.Api.Auth.Workspace != "" || cfg.Api.Auth.Profile != "", "dispatcher.register needs api.auth.workspace or api.auth.profile")
 	}
 	return errors.Join(errs...)
-}
-
-func (auth Auth) validate() error {
-	hasKey := auth.Key.ClientId != "" || auth.Key.ClientSecret != ""
-	hasBasic := auth.Basic.Username != "" || auth.Basic.Password != ""
-	switch {
-	case hasKey && (auth.Key.ClientId == "" || auth.Key.ClientSecret == ""):
-		return errors.New("api.auth.key needs both clientId and clientSecret")
-	case hasKey:
-		return nil
-	case hasBasic && (auth.Basic.Username == "" || auth.Basic.Password == ""):
-		return errors.New("api.auth.basic needs both username and password")
-	case hasBasic, auth.Profile != "":
-		return nil
-	}
-	return errors.New("api.auth needs either key, basic or profile")
 }
 
 // ValidateTf checks what the tf runner needs on top of Validate.

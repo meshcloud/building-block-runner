@@ -9,6 +9,7 @@ import (
 	"os"
 	"uuid"
 
+	"github.com/meshcloud/meshstack-cli/client"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -18,7 +19,6 @@ import (
 
 	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/internal/dispatcher"
-	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
 )
 
 type Dispatcher struct {
@@ -26,7 +26,7 @@ type Dispatcher struct {
 	clientset        kubernetes.Interface
 	logger           *log.Logger
 	tokens           workloadIdentityTokens
-	workloadIdentity *meshapi.MeshRunnerRegistrationWif
+	workloadIdentity *client.MeshRunnerWorkloadIdentityFed
 	status           chan dispatcher.RunStatus
 
 	// The informer's event handler alone uses running and reported, once start has returned.
@@ -34,7 +34,7 @@ type Dispatcher struct {
 	reported map[uuid.UUID]bool
 }
 
-func New(ctx context.Context, cfg config.Config, _ meshapi.MeshRunnerClient) (dispatcher.Dispatcher, error) {
+func New(ctx context.Context, cfg config.Config, _ client.MeshRunnerClient) (dispatcher.Dispatcher, error) {
 	if err := cfg.ValidateK8s(); err != nil {
 		return nil, err
 	}
@@ -70,7 +70,7 @@ func (d *Dispatcher) Status() <-chan dispatcher.RunStatus {
 	return d.status
 }
 
-func (d *Dispatcher) WorkloadIdentity() *meshapi.MeshRunnerRegistrationWif {
+func (d *Dispatcher) WorkloadIdentity() *client.MeshRunnerWorkloadIdentityFed {
 	return d.workloadIdentity
 }
 

@@ -7,18 +7,18 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
+	"github.com/meshcloud/meshstack-cli/client"
 )
 
 const EP_State = "%s/api/terraform/state/workspace/%s/buildingBlock/%s"
 
 type RunApi struct {
-	client   meshapi.MeshRunnerRunClient
+	client   client.MeshRunnerRunClient
 	runUuid  uuid.UUID
 	sourceId uuid.UUID
 }
 
-func NewRunApi(client meshapi.MeshRunnerRunClient, runUuid, sourceId uuid.UUID) RunApi {
+func NewRunApi(client client.MeshRunnerRunClient, runUuid, sourceId uuid.UUID) RunApi {
 	return RunApi{client: client, runUuid: runUuid, sourceId: sourceId}
 }
 
@@ -31,12 +31,12 @@ func (api RunApi) UploadArtifact(ctx context.Context, path string) error {
 }
 
 func (api RunApi) Register(ctx context.Context, runStatus *RunStatus) error {
-	steps := make([]meshapi.MeshRunnerRunStepRegistration, 0, len(runStatus.Steps))
+	steps := make([]client.MeshRunnerRunStepRegistration, 0, len(runStatus.Steps))
 	for _, s := range runStatus.Steps {
-		steps = append(steps, meshapi.MeshRunnerRunStepRegistration{Id: s.Name, DisplayName: s.DisplayName})
+		steps = append(steps, client.MeshRunnerRunStepRegistration{Id: s.Name, DisplayName: s.DisplayName})
 	}
-	err := api.client.RegisterSource(ctx, meshapi.MeshRunnerRunSourceRegistration{
-		Source: meshapi.MeshRunnerRunSource{Id: api.sourceId},
+	err := api.client.RegisterSource(ctx, client.MeshRunnerRunSourceRegistration{
+		Source: client.MeshRunnerRunSource{Id: api.sourceId},
 		Steps:  steps,
 	})
 	if err != nil {
@@ -52,14 +52,14 @@ func (api RunApi) UpdateState(ctx context.Context, status *RunStatus) (abort boo
 }
 
 // statusUpdate sends steps as null when there are none, which keeps the steps meshStack has.
-func (api RunApi) statusUpdate(status *RunStatus) meshapi.MeshRunnerRunStatusUpdate {
-	var steps []meshapi.MeshRunnerRunStepStatusUpdate
+func (api RunApi) statusUpdate(status *RunStatus) client.MeshRunnerRunStatusUpdate {
+	var steps []client.MeshRunnerRunStepStatusUpdate
 	for _, step := range status.Steps {
-		outputs := make(map[string]meshapi.MeshRunnerRunOutput, len(step.Outputs))
+		outputs := make(map[string]client.MeshRunnerRunOutput, len(step.Outputs))
 		for name, output := range step.Outputs {
-			outputs[name] = meshapi.MeshRunnerRunOutput{Value: output.Value, Type: string(output.Type), Sensitive: output.Sensitive}
+			outputs[name] = client.MeshRunnerRunOutput{Value: output.Value, Type: string(output.Type), Sensitive: output.Sensitive}
 		}
-		steps = append(steps, meshapi.MeshRunnerRunStepStatusUpdate{
+		steps = append(steps, client.MeshRunnerRunStepStatusUpdate{
 			Id:            step.Name,
 			DisplayName:   step.DisplayName,
 			Status:        new(step.Status.str()),
@@ -68,10 +68,10 @@ func (api RunApi) statusUpdate(status *RunStatus) meshapi.MeshRunnerRunStatusUpd
 			Outputs:       outputs,
 		})
 	}
-	return meshapi.MeshRunnerRunStatusUpdate{
+	return client.MeshRunnerRunStatusUpdate{
 		BlockRunId:      api.runUuid,
 		Source:          api.sourceId,
-		Type:            meshapi.MeshRunnerImplementationTypeTerraform,
+		Type:            client.MeshRunnerImplementationTypeTerraform,
 		Status:          new(status.Status.str()),
 		CreatedOn:       time.Now(),
 		Summary:         status.Summary,

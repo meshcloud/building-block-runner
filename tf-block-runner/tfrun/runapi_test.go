@@ -3,17 +3,16 @@ package tfrun
 import (
 	"encoding/json/v2"
 	"io"
-	gohttp "net/http"
+	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"testing"
 	"uuid"
 
+	"github.com/meshcloud/meshstack-cli/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/meshcloud/building-block-runner/internal/http"
-	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
+	"github.com/meshcloud/building-block-runner/internal/testmeshstack"
 )
 
 var (
@@ -31,7 +30,7 @@ type caughtRequest struct {
 func meshStackAnswering(t *testing.T, responseBody string) (RunApi, *[]caughtRequest) {
 	t.Helper()
 	var requests []caughtRequest
-	server := httptest.NewServer(gohttp.HandlerFunc(func(w gohttp.ResponseWriter, r *gohttp.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		data, err := io.ReadAll(r.Body)
 		require.NoError(t, err)
 		var body map[string]any
@@ -41,18 +40,17 @@ func meshStackAnswering(t *testing.T, responseBody string) (RunApi, *[]caughtReq
 		_, _ = w.Write([]byte(responseBody))
 	}))
 	t.Cleanup(server.Close)
-	return newTestRunApi(http.NewClient(testUserAgent), testRun(server.URL)), &requests
+	return newTestRunApi(t, testRun(server.URL)), &requests
 }
 
-var testUserAgent = http.UserAgent{GitHubRepo: "meshcloud/building-block-runner", Version: "test"}
-
-func newTestRunApi(client http.Client, run meshapi.MeshRunnerRun) RunApi {
-	runner := meshapi.NewMeshRunnerClient(client.WithAuthorization(http.BasicAuth{Username: "user", Password: "password"}), new(url.URL))
+func newTestRunApi(t *testing.T, run client.MeshRunnerRun) RunApi {
+	t.Helper()
+	runner := testmeshstack.Client(t, "http://localhost").Runner
 	return NewRunApi(runner.ForRun(run), run.Metadata.Uuid, testRunnerUuid)
 }
 
-func testRun(meshStackUrl string) meshapi.MeshRunnerRun {
-	var run meshapi.MeshRunnerRun
+func testRun(meshStackUrl string) client.MeshRunnerRun {
+	var run client.MeshRunnerRun
 	run.Metadata.Uuid = testRunUuid
 	run.Spec.RunToken = testRunToken
 	sourcePath := meshStackUrl + "/api/meshobjects/meshbuildingblockruns/" + testRunUuid.String() + "/status/source"
@@ -75,7 +73,7 @@ func Test_Register_RegistersTheRunnerWithTheStepsAndTheRunToken(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, *requests, 1)
 	request := (*requests)[0]
-	assert.Equal(t, gohttp.MethodPost, request.method)
+	assert.Equal(t, http.MethodPost, request.method)
 	assert.Equal(t, "/api/meshobjects/meshbuildingblockruns/"+testRunUuid.String()+"/status/source", request.path)
 	assert.Equal(t, "Bearer "+testRunToken, request.authorization)
 	assert.Equal(t, map[string]any{
@@ -113,7 +111,7 @@ func Test_UpdateState_SendsTheStatusWithItsStepsAndOutputs(t *testing.T) {
 	assert.True(t, abort)
 	require.Len(t, *requests, 1)
 	request := (*requests)[0]
-	assert.Equal(t, gohttp.MethodPatch, request.method)
+	assert.Equal(t, http.MethodPatch, request.method)
 	assert.Equal(t, "/api/meshobjects/meshbuildingblockruns/"+testRunUuid.String()+"/status/source/"+testRunnerUuid.String(), request.path)
 	assert.Equal(t, "Bearer "+testRunToken, request.authorization)
 	assert.Equal(t, map[string]any{

@@ -8,33 +8,33 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/meshcloud/meshstack-cli/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/internal/dispatcher"
-	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
 )
 
 func newRun(implementationType string) dispatcher.Run {
-	run := dispatcher.Run{Metadata: meshapi.MeshRunnerRunMetadata{Uuid: uuid.New()}}
+	run := dispatcher.Run{Metadata: client.MeshRunnerRunMetadata{Uuid: uuid.New()}}
 	run.Spec.RunToken = "a-run-token"
 	run.Spec.Definition.Spec.Implementation = []byte(`{"type":"` + implementationType + `"}`)
 	return run
 }
 
 type fakeRunnerClient struct {
-	meshapi.MeshRunnerClient
+	client.MeshRunnerClient
 }
 
-func (fakeRunnerClient) ForRun(run meshapi.MeshRunnerRun) meshapi.MeshRunnerRunClient {
+func (fakeRunnerClient) ForRun(run client.MeshRunnerRun) client.MeshRunnerRunClient {
 	return fakeRunClient{run: run}
 }
 
 type fakeRunClient struct {
-	meshapi.MeshRunnerRunClient
+	client.MeshRunnerRunClient
 
-	run meshapi.MeshRunnerRun
+	run client.MeshRunnerRun
 }
 
 func manualDispatcher(ctx context.Context, execute executeFunc) *Dispatcher {
@@ -42,7 +42,7 @@ func manualDispatcher(ctx context.Context, execute executeFunc) *Dispatcher {
 }
 
 func Test_Start_FailsForATypeWithoutExecutor(t *testing.T) {
-	d := manualDispatcher(t.Context(), func(context.Context, dispatcher.Run, meshapi.MeshRunnerRunClient) error { return nil })
+	d := manualDispatcher(t.Context(), func(context.Context, dispatcher.Run, client.MeshRunnerRunClient) error { return nil })
 
 	err := d.Start(t.Context(), newRun("GITHUB_WORKFLOW"))
 
@@ -52,10 +52,10 @@ func Test_Start_FailsForATypeWithoutExecutor(t *testing.T) {
 func Test_Start_PassesTheRunWithAClientForIt(t *testing.T) {
 	type execution struct {
 		run dispatcher.Run
-		api meshapi.MeshRunnerRunClient
+		api client.MeshRunnerRunClient
 	}
 	received := make(chan execution, 1)
-	d := manualDispatcher(t.Context(), func(_ context.Context, run dispatcher.Run, api meshapi.MeshRunnerRunClient) error {
+	d := manualDispatcher(t.Context(), func(_ context.Context, run dispatcher.Run, api client.MeshRunnerRunClient) error {
 		received <- execution{run, api}
 		return nil
 	})
@@ -70,11 +70,11 @@ func Test_Start_PassesTheRunWithAClientForIt(t *testing.T) {
 func Test_Run_EndsWithAnErrorWhenItFailsPanicsOrTimesOut(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		executors := map[string]executeFunc{
-			"tofu failed": func(context.Context, dispatcher.Run, meshapi.MeshRunnerRunClient) error {
+			"tofu failed": func(context.Context, dispatcher.Run, client.MeshRunnerRunClient) error {
 				return errors.New("tofu failed")
 			},
-			"the run panicked: boom": func(context.Context, dispatcher.Run, meshapi.MeshRunnerRunClient) error { panic("boom") },
-			"the run exceeded the timeout of 1h0m0s": func(ctx context.Context, _ dispatcher.Run, _ meshapi.MeshRunnerRunClient) error {
+			"the run panicked: boom": func(context.Context, dispatcher.Run, client.MeshRunnerRunClient) error { panic("boom") },
+			"the run exceeded the timeout of 1h0m0s": func(ctx context.Context, _ dispatcher.Run, _ client.MeshRunnerRunClient) error {
 				<-ctx.Done()
 				return nil
 			},
@@ -93,7 +93,7 @@ func Test_Run_EndsWithAnErrorWhenItFailsPanicsOrTimesOut(t *testing.T) {
 
 func Test_Run_HasNoDeadlineForATimeoutOf0(t *testing.T) {
 	hasDeadline := make(chan bool, 1)
-	d := newDispatcher(t.Context(), fakeRunnerClient{}, executors{config.RunnerTypeManual: func(ctx context.Context, _ dispatcher.Run, _ meshapi.MeshRunnerRunClient) error {
+	d := newDispatcher(t.Context(), fakeRunnerClient{}, executors{config.RunnerTypeManual: func(ctx context.Context, _ dispatcher.Run, _ client.MeshRunnerRunClient) error {
 		_, ok := ctx.Deadline()
 		hasDeadline <- ok
 		return nil
@@ -109,7 +109,7 @@ func Test_Status_ClosesAfterTheLastRunEnded(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		release := make(chan struct{})
-		d := manualDispatcher(ctx, func(ctx context.Context, _ dispatcher.Run, _ meshapi.MeshRunnerRunClient) error {
+		d := manualDispatcher(ctx, func(ctx context.Context, _ dispatcher.Run, _ client.MeshRunnerRunClient) error {
 			select {
 			case <-release:
 				return nil

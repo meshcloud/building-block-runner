@@ -5,16 +5,16 @@ import (
 	"encoding/json/v2"
 	"fmt"
 
-	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
+	"github.com/meshcloud/meshstack-cli/client"
 )
 
-func newRun(run meshapi.MeshRunnerRun, skipHostKeyValidation bool) (*Run, error) {
+func newRun(run client.MeshRunnerRun, skipHostKeyValidation bool) (*Run, error) {
 	behavior, err := DetermineBehavior(run.Spec.Behavior)
 	if err != nil {
 		return nil, err
 	}
 
-	var impl meshapi.MeshRunnerTerraformImplementation
+	var impl client.MeshRunnerTerraformImplementation
 	if err := json.Unmarshal(run.Spec.Definition.Spec.Implementation, &impl); err != nil {
 		return nil, fmt.Errorf("implementation: %w", err)
 	}
@@ -53,7 +53,7 @@ func newRun(run meshapi.MeshRunnerRun, skipHostKeyValidation bool) (*Run, error)
 	}, nil
 }
 
-func toVariables(inputs []meshapi.MeshRunnerRunInput) (map[string]*Variable, error) {
+func toVariables(inputs []client.MeshRunnerRunInput) (map[string]*Variable, error) {
 	vars := make(map[string]*Variable, len(inputs))
 	for _, input := range inputs {
 		var value any
@@ -65,7 +65,7 @@ func toVariables(inputs []meshapi.MeshRunnerRunInput) (map[string]*Variable, err
 	return vars, nil
 }
 
-func terraformImplToGitSource(impl meshapi.MeshRunnerTerraformImplementation, skipHostKeyValidation bool) *GitSource {
+func terraformImplToGitSource(impl client.MeshRunnerTerraformImplementation, skipHostKeyValidation bool) *GitSource {
 	var gitAuth auth = &NoAuth{}
 	if impl.SshPrivateKey != nil {
 		gitAuth = &SshAuth{certStr: *impl.SshPrivateKey, knownHostEntry: knownHostsToInternal(impl.KnownHost), skipHostKeyValidation: skipHostKeyValidation}
@@ -80,7 +80,7 @@ func terraformImplToGitSource(impl meshapi.MeshRunnerTerraformImplementation, sk
 	}
 }
 
-func knownHostsToInternal(knownHost *meshapi.MeshRunnerKnownHost) *KnownHost {
+func knownHostsToInternal(knownHost *client.MeshRunnerKnownHost) *KnownHost {
 	if knownHost == nil {
 		return nil
 	}

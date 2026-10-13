@@ -2,19 +2,18 @@ package manual
 
 import (
 	"encoding/json/v2"
-	gohttp "net/http"
+	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
 	"uuid"
 
+	"github.com/meshcloud/meshstack-cli/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/meshcloud/building-block-runner/internal/http"
-	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
+	"github.com/meshcloud/building-block-runner/internal/testmeshstack"
 )
 
 func Test_Outputs_EchoInputsWithOutputTypes(t *testing.T) {
@@ -44,7 +43,7 @@ func Test_Outputs_EchoInputsWithOutputTypes(t *testing.T) {
 
 func Test_Run_ReportsThroughItsSourceLinksWithTheRunToken(t *testing.T) {
 	var requests []string
-	meshStack := httptest.NewServer(gohttp.HandlerFunc(func(w gohttp.ResponseWriter, r *gohttp.Request) {
+	meshStack := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests = append(requests, r.Method+" "+r.URL.EscapedPath()+" "+r.Header.Get("Authorization"))
 		_, _ = w.Write([]byte("{}"))
 	}))
@@ -65,31 +64,23 @@ func Test_Run_ReportsThroughItsSourceLinksWithTheRunToken(t *testing.T) {
 
 func Test_RunWithoutRegisterSourceLink_FailsNamingTheLink(t *testing.T) {
 	run := testRun(t)
-	run.Links.RegisterSource = meshapi.MeshRunnerRunLink{}
+	run.Links.RegisterSource = client.MeshRunnerRunLink{}
 
 	err := Execute(t.Context(), run, runClient(t, "http://localhost", run), uuid.New())
 
 	assert.ErrorContains(t, err, "no registerSource link")
 }
 
-func runClient(t *testing.T, meshStackUrl string, run meshapi.MeshRunnerRun) meshapi.MeshRunnerRunClient {
+func runClient(t *testing.T, meshStackUrl string, run client.MeshRunnerRun) client.MeshRunnerRunClient {
 	t.Helper()
-	return runnerClient(t, meshStackUrl).ForRun(run)
+	return testmeshstack.Client(t, meshStackUrl).Runner.ForRun(run)
 }
 
-func runnerClient(t *testing.T, meshStackUrl string) meshapi.MeshRunnerClient {
-	t.Helper()
-	parsed, err := url.Parse(meshStackUrl)
-	require.NoError(t, err)
-	client := http.NewClient(http.UserAgent{GitHubRepo: "meshcloud/building-block-runner", Version: "test"})
-	return meshapi.NewMeshRunnerClient(client.WithAuthorization(http.BasicAuth{Username: "user", Password: "password"}), parsed)
-}
-
-func testRun(t *testing.T) meshapi.MeshRunnerRun {
+func testRun(t *testing.T) client.MeshRunnerRun {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join("testdata", "run.json"))
 	require.NoError(t, err)
-	var run meshapi.MeshRunnerRun
+	var run client.MeshRunnerRun
 	require.NoError(t, json.Unmarshal(data, &run))
 	return run
 }

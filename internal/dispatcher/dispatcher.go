@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"uuid"
 
+	"github.com/meshcloud/meshstack-cli/client"
+
 	"github.com/meshcloud/building-block-runner/internal/config"
-	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
 )
 
 // Run is a claimed run with its secrets decrypted.
-type Run = meshapi.MeshRunnerRun
+type Run = client.MeshRunnerRun
 
 type RunStatus struct {
 	RunUuid uuid.UUID
@@ -28,14 +29,14 @@ type Dispatcher interface {
 }
 
 // Current is set by the init of the dispatcher package that the build tags select.
-var Current func(ctx context.Context, cfg config.Config, api meshapi.MeshRunnerClient) (Dispatcher, error)
+var Current func(ctx context.Context, cfg config.Config, api client.MeshRunnerClient) (Dispatcher, error)
 
 // DefaultForTypes fills an empty dispatcher.forTypes when the selected dispatcher package sets it.
 var DefaultForTypes func() config.RunnerTypes
 
 type WorkloadIdentityProvider interface {
 	// WorkloadIdentity returns nil when the runs have no workload identity.
-	WorkloadIdentity() *meshapi.MeshRunnerRegistrationWif
+	WorkloadIdentity() *client.MeshRunnerWorkloadIdentityFed
 }
 
 // FailureReportConfirmer is implemented by a dispatcher that must not report a failure again once meshStack accepted it.
@@ -53,12 +54,12 @@ var ErrFailureReported = errors.New("the run reported its failure")
 
 var ErrRunTooLarge = errors.New("the run is too large, reduce the size of the building block inputs")
 
-var runnerTypes = map[meshapi.MeshRunnerImplementationType]config.RunnerType{
-	meshapi.MeshRunnerImplementationTypeTerraform:      config.RunnerTypeTf,
-	meshapi.MeshRunnerImplementationTypeManual:         config.RunnerTypeManual,
-	meshapi.MeshRunnerImplementationTypeGithubWorkflow: config.RunnerTypeGitHub,
-	meshapi.MeshRunnerImplementationTypeGitlabCiCd:     config.RunnerTypeGitLab,
-	meshapi.MeshRunnerImplementationTypeAzureDevops:    config.RunnerTypeAzureDevOps,
+var runnerTypes = map[client.MeshRunnerImplementationType]config.RunnerType{
+	client.MeshRunnerImplementationTypeTerraform:      config.RunnerTypeTf,
+	client.MeshRunnerImplementationTypeManual:         config.RunnerTypeManual,
+	client.MeshRunnerImplementationTypeGithubWorkflow: config.RunnerTypeGitHub,
+	client.MeshRunnerImplementationTypeGitlabCiCd:     config.RunnerTypeGitLab,
+	client.MeshRunnerImplementationTypeAzureDevops:    config.RunnerTypeAzureDevOps,
 }
 
 func RunnerTypeOf(run Run) (config.RunnerType, error) {

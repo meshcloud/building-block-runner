@@ -8,8 +8,9 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/meshcloud/meshstack-cli/client"
+
 	"github.com/meshcloud/building-block-runner/internal/config"
-	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
 )
 
 // maxClaimsPerCycleWhenUnlimited guards against an API that never runs out of runs.
@@ -24,13 +25,13 @@ const (
 type poller struct {
 	cfg        config.Config
 	logger     *log.Logger
-	api        meshapi.MeshRunnerClient
+	api        client.MeshRunnerClient
 	dispatcher Dispatcher
 	// active holds nil for a run that this process did not start.
 	active map[uuid.UUID]*Run
 }
 
-func newPoller(cfg config.Config, logger *log.Logger, api meshapi.MeshRunnerClient, dispatcher Dispatcher) *poller {
+func newPoller(cfg config.Config, logger *log.Logger, api client.MeshRunnerClient, dispatcher Dispatcher) *poller {
 	return &poller{cfg: cfg, logger: logger, api: api, dispatcher: dispatcher, active: map[uuid.UUID]*Run{}}
 }
 
@@ -92,7 +93,7 @@ func (p *poller) capacity() int {
 func (p *poller) claimAndStart(ctx context.Context) (claimed bool) {
 	run, err := p.claim(ctx)
 	switch {
-	case errors.Is(err, meshapi.ErrNoRunToClaim):
+	case errors.Is(err, client.ErrNoRunToClaim):
 		return false
 	case err != nil:
 		p.logger.Printf("Claiming a run failed: %v", err)
@@ -111,7 +112,7 @@ func (p *poller) claimAndStart(ctx context.Context) (claimed bool) {
 func (p *poller) claim(ctx context.Context) (Run, error) {
 	defer observeDuration(claimDuration.WithLabelValues(p.cfg.Uuid.String()), time.Now())
 	run, err := p.api.ClaimRun(ctx, p.cfg.Uuid)
-	if err != nil && !errors.Is(err, meshapi.ErrNoRunToClaim) {
+	if err != nil && !errors.Is(err, client.ErrNoRunToClaim) {
 		claimErrors.WithLabelValues(p.cfg.Uuid.String(), errorTypeApi).Inc()
 	}
 	return run, err
@@ -179,18 +180,18 @@ func (p *poller) readRun(ctx context.Context, runUuid uuid.UUID) (Run, error) {
 // reportFailure registers this runner as a source, as no other source may exist for the run.
 func (p *poller) reportFailure(ctx context.Context, run Run, message string) error {
 	p.logger.Printf("Run %s failed: %s", run.Metadata.Uuid, message)
-	client := p.api.ForRun(run)
-	err := client.RegisterSource(ctx, meshapi.MeshRunnerRunSourceRegistration{
-		Source: meshapi.MeshRunnerRunSource{Id: p.cfg.Uuid},
-		Steps:  []meshapi.MeshRunnerRunStepRegistration{{Id: failureStepId, DisplayName: failureStepDisplayName}},
+	runClient := p.api.ForRun(run)
+	err := runClient.RegisterSource(ctx, client.MeshRunnerRunSourceRegistration{
+		Source: client.MeshRunnerRunSource{Id: p.cfg.Uuid},
+		Steps:  []client.MeshRunnerRunStepRegistration{{Id: failureStepId, DisplayName: failureStepDisplayName}},
 	})
 	if err != nil {
 		return fmt.Errorf("register as source of run %s: %w", run.Metadata.Uuid, err)
 	}
-	_, err = client.PatchStatus(ctx, p.cfg.Uuid, meshapi.MeshRunnerRunStatusUpdate{
+	_, err = runClient.PatchStatus(ctx, p.cfg.Uuid, client.MeshRunnerRunStatusUpdate{
 		Status:  new(statusFailed),
 		Summary: &message,
-		Steps: []meshapi.MeshRunnerRunStepStatusUpdate{{
+		Steps: []client.MeshRunnerRunStepStatusUpdate{{
 			Id:            failureStepId,
 			DisplayName:   failureStepDisplayName,
 			Status:        new(statusFailed),

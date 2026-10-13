@@ -14,6 +14,7 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/meshcloud/meshstack-cli/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	batchv1 "k8s.io/api/batch/v1"
@@ -29,7 +30,6 @@ import (
 	"github.com/meshcloud/building-block-runner/internal/config/xtime"
 	"github.com/meshcloud/building-block-runner/internal/config/xurl"
 	"github.com/meshcloud/building-block-runner/internal/dispatcher"
-	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
 )
 
 const namespace = "runners"
@@ -53,7 +53,7 @@ func runnerTemplate(container corev1.Container, podSpec corev1.PodSpec) config.J
 }
 
 func newTfRun() dispatcher.Run {
-	run := dispatcher.Run{Metadata: meshapi.MeshRunnerRunMetadata{Uuid: uuid.New()}}
+	run := dispatcher.Run{Metadata: client.MeshRunnerRunMetadata{Uuid: uuid.New()}}
 	run.Spec.RunToken = "a-run-token"
 	run.Spec.Definition.Uuid = "f3228cf4-acde-4ff3-a0a5-1720b69d5bcd"
 	run.Spec.Definition.Spec.WorkspaceIdentifier = "my-workspace"
@@ -181,7 +181,7 @@ func Test_Start_FailsAtOnceOnAPermanentCreateError(t *testing.T) {
 func Test_Start_FailsForARunTooLargeForASecret(t *testing.T) {
 	d, _ := startTestDispatcher(t, t.Context(), testConfig(config.JobSpecTemplates{config.RunnerTypeAll: runnerTemplate(corev1.Container{Image: "runner"}, corev1.PodSpec{})}))
 	run := newTfRun()
-	run.Spec.BuildingBlock.Spec.Inputs = []meshapi.MeshRunnerRunInput{{Key: "large", Value: []byte(`"` + strings.Repeat("x", 1<<20) + `"`)}}
+	run.Spec.BuildingBlock.Spec.Inputs = []client.MeshRunnerRunInput{{Key: "large", Value: []byte(`"` + strings.Repeat("x", 1<<20) + `"`)}}
 
 	err := d.Start(t.Context(), run)
 
@@ -298,7 +298,7 @@ func Test_Status_ClosesWhenTheContextEnds(t *testing.T) {
 func Test_WorkloadIdentity_MatchesTheServiceAccountAndTokenMounts(t *testing.T) {
 	wif := newWorkloadIdentity(namespace, "https://issuer.example.com")
 
-	assert.Equal(t, "system:serviceaccount:runners:workspace.{{ workspaceIdentifier }}.buildingblockdefinition.{{ buildingBlockDefinitionUuid }}", wif.SubjectTemplate)
-	assert.Equal(t, &meshapi.MeshRunnerRegistrationWifProvider{Audience: "gcp-workload-identity-provider:runners", TokenPath: "/var/run/secrets/workload-identity/gcp/token"}, wif.Gcp)
+	assert.Equal(t, "system:serviceaccount:runners:workspace.{{ workspaceIdentifier }}.buildingblockdefinition.{{ buildingBlockDefinitionUuid }}", *wif.SubjectTemplate)
+	assert.Equal(t, &client.MeshRunnerWifProviderConfig{Audience: "gcp-workload-identity-provider:runners", TokenPath: "/var/run/secrets/workload-identity/gcp/token"}, wif.Gcp)
 	assert.Nil(t, newWorkloadIdentity(namespace, ""))
 }

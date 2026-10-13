@@ -6,27 +6,27 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
+	"github.com/meshcloud/meshstack-cli/client"
 )
 
-var implementationSecretKeys = map[meshapi.MeshRunnerImplementationType]string{
-	meshapi.MeshRunnerImplementationTypeTerraform:      "sshPrivateKey",
-	meshapi.MeshRunnerImplementationTypeGithubWorkflow: "appPem",
-	meshapi.MeshRunnerImplementationTypeGitlabCiCd:     "pipelineTriggerToken",
-	meshapi.MeshRunnerImplementationTypeAzureDevops:    "personalAccessToken",
+var implementationSecretKeys = map[client.MeshRunnerImplementationType]string{
+	client.MeshRunnerImplementationTypeTerraform:      "sshPrivateKey",
+	client.MeshRunnerImplementationTypeGithubWorkflow: "appPem",
+	client.MeshRunnerImplementationTypeGitlabCiCd:     "pipelineTriggerToken",
+	client.MeshRunnerImplementationTypeAzureDevops:    "personalAccessToken",
 }
 
 type secretMapper func(secret jsontext.Value) (jsontext.Value, error)
 
 // DecryptRun decrypts the sensitive inputs and the secret of the implementation.
-func (c Crypto) DecryptRun(run meshapi.MeshRunnerRun) (meshapi.MeshRunnerRun, error) {
+func (c Crypto) DecryptRun(run client.MeshRunnerRun) (client.MeshRunnerRun, error) {
 	return mapSecrets(run, c.decryptString)
 }
 
 var redacted = jsontext.Value(`"<redacted>"`)
 
 // RedactRun hides the run token and every value that DecryptRun decrypts.
-func RedactRun(run meshapi.MeshRunnerRun) (meshapi.MeshRunnerRun, error) {
+func RedactRun(run client.MeshRunnerRun) (client.MeshRunnerRun, error) {
 	if run.Spec.RunToken != "" {
 		run.Spec.RunToken = "<redacted>"
 	}
@@ -35,7 +35,7 @@ func RedactRun(run meshapi.MeshRunnerRun) (meshapi.MeshRunnerRun, error) {
 	})
 }
 
-func mapSecrets(run meshapi.MeshRunnerRun, mapSecret secretMapper) (meshapi.MeshRunnerRun, error) {
+func mapSecrets(run client.MeshRunnerRun, mapSecret secretMapper) (client.MeshRunnerRun, error) {
 	run.Spec.BuildingBlock.Spec.Inputs = slices.Clone(run.Spec.BuildingBlock.Spec.Inputs)
 	for i, input := range run.Spec.BuildingBlock.Spec.Inputs {
 		if !input.IsSensitive {
@@ -43,20 +43,20 @@ func mapSecrets(run meshapi.MeshRunnerRun, mapSecret secretMapper) (meshapi.Mesh
 		}
 		mapped, err := mapSecret(input.Value)
 		if err != nil {
-			return meshapi.MeshRunnerRun{}, fmt.Errorf("sensitive input %s: %w", input.Key, err)
+			return client.MeshRunnerRun{}, fmt.Errorf("sensitive input %s: %w", input.Key, err)
 		}
 		run.Spec.BuildingBlock.Spec.Inputs[i].Value = mapped
 	}
 
 	implementation, err := mapImplementationSecret(run.Spec.Definition.Spec, mapSecret)
 	if err != nil {
-		return meshapi.MeshRunnerRun{}, err
+		return client.MeshRunnerRun{}, err
 	}
 	run.Spec.Definition.Spec.Implementation = implementation
 	return run, nil
 }
 
-func mapImplementationSecret(definition meshapi.MeshRunnerRunDefinitionSpec, mapSecret secretMapper) (jsontext.Value, error) {
+func mapImplementationSecret(definition client.MeshRunnerRunDefinitionSpec, mapSecret secretMapper) (jsontext.Value, error) {
 	implementationType, err := definition.ImplementationType()
 	if err != nil {
 		return nil, err

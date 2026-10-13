@@ -10,14 +10,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/meshcloud/meshstack-cli/client"
+
 	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/internal/dispatcher"
-	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
 )
 
 type Dispatcher struct {
 	logger    *log.Logger
-	api       meshapi.MeshRunnerClient
+	api       client.MeshRunnerClient
 	executors executors
 	timeout   time.Duration
 	// runCtx outlives the context given to New, so that a shutdown waits for the runs.
@@ -29,7 +30,7 @@ type Dispatcher struct {
 	runs     sync.WaitGroup
 }
 
-func New(ctx context.Context, cfg config.Config, api meshapi.MeshRunnerClient) (dispatcher.Dispatcher, error) {
+func New(ctx context.Context, cfg config.Config, api client.MeshRunnerClient) (dispatcher.Dispatcher, error) {
 	executors, err := newExecutors(cfg)
 	if err != nil {
 		return nil, err
@@ -37,7 +38,7 @@ func New(ctx context.Context, cfg config.Config, api meshapi.MeshRunnerClient) (
 	return newDispatcher(ctx, api, executors, cfg.Dispatcher.Timeout.Duration), nil
 }
 
-func newDispatcher(ctx context.Context, api meshapi.MeshRunnerClient, executors executors, timeout time.Duration) *Dispatcher {
+func newDispatcher(ctx context.Context, api client.MeshRunnerClient, executors executors, timeout time.Duration) *Dispatcher {
 	d := &Dispatcher{
 		logger:    log.New(os.Stdout, "[IN-PROCESS] ", log.LstdFlags),
 		api:       api,

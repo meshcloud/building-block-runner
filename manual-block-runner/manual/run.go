@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"uuid"
 
-	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
+	"github.com/meshcloud/meshstack-cli/client"
 )
 
 const (
@@ -15,19 +15,19 @@ const (
 	succeeded       = "SUCCEEDED"
 )
 
-func Execute(ctx context.Context, run meshapi.MeshRunnerRun, api meshapi.MeshRunnerRunClient, sourceId uuid.UUID) error {
+func Execute(ctx context.Context, run client.MeshRunnerRun, api client.MeshRunnerRunClient, sourceId uuid.UUID) error {
 	runId := run.Metadata.Uuid
-	err := api.RegisterSource(ctx, meshapi.MeshRunnerRunSourceRegistration{
-		Source: meshapi.MeshRunnerRunSource{Id: sourceId},
-		Steps:  []meshapi.MeshRunnerRunStepRegistration{{Id: stepId, DisplayName: stepDisplayName}},
+	err := api.RegisterSource(ctx, client.MeshRunnerRunSourceRegistration{
+		Source: client.MeshRunnerRunSource{Id: sourceId},
+		Steps:  []client.MeshRunnerRunStepRegistration{{Id: stepId, DisplayName: stepDisplayName}},
 	})
 	if err != nil {
 		return fmt.Errorf("register as source of run %s: %w", runId, err)
 	}
 
-	_, err = api.PatchStatus(ctx, sourceId, meshapi.MeshRunnerRunStatusUpdate{
+	_, err = api.PatchStatus(ctx, sourceId, client.MeshRunnerRunStatusUpdate{
 		Status: new(succeeded),
-		Steps: []meshapi.MeshRunnerRunStepStatusUpdate{{
+		Steps: []client.MeshRunnerRunStepStatusUpdate{{
 			Id:          stepId,
 			DisplayName: stepDisplayName,
 			Status:      new(succeeded),
@@ -42,10 +42,10 @@ func Execute(ctx context.Context, run meshapi.MeshRunnerRun, api meshapi.MeshRun
 	return nil
 }
 
-func outputsFrom(inputs []meshapi.MeshRunnerRunInput) map[string]meshapi.MeshRunnerRunOutput {
-	outputs := make(map[string]meshapi.MeshRunnerRunOutput, len(inputs))
+func outputsFrom(inputs []client.MeshRunnerRunInput) map[string]client.MeshRunnerRunOutput {
+	outputs := make(map[string]client.MeshRunnerRunOutput, len(inputs))
 	for _, input := range inputs {
-		outputs[input.Key] = meshapi.MeshRunnerRunOutput{
+		outputs[input.Key] = client.MeshRunnerRunOutput{
 			Value:     input.Value,
 			Type:      outputType(input.Type),
 			Sensitive: input.IsSensitive,

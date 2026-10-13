@@ -8,7 +8,7 @@ import (
 	"path"
 
 	"github.com/hashicorp/terraform-exec/tfexec"
-	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
+	"github.com/meshcloud/meshstack-cli/client"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -37,8 +37,8 @@ func (suite *WorkerTestSuite) generatedBackendDuringInit() *string {
 	return backend
 }
 
-func meshBackendImplementation() meshapi.MeshRunnerTerraformImplementation {
-	return meshapi.MeshRunnerTerraformImplementation{
+func meshBackendImplementation() client.MeshRunnerTerraformImplementation {
+	return client.MeshRunnerTerraformImplementation{
 		TerraformVersion:           DEFAULT_TF_VER,
 		RepositoryUrl:              noopBlockRepo,
 		RepositoryPath:             new(noopBlockPath),
@@ -48,9 +48,9 @@ func meshBackendImplementation() meshapi.MeshRunnerTerraformImplementation {
 
 func (suite *WorkerTestSuite) Test_RunWithTfStateLockLink_GeneratesABackendThatLocks() {
 	lockHref := "http://localhost/api/terraform/state/workspace/ws/buildingBlock/block-uuid/lock"
-	suite.run = scenarioRun(APPLY.str(), meshBackendImplementation(), meshapi.MeshRunnerRunLinks{
-		MeshstackBaseUrl: meshapi.MeshRunnerRunLink{Href: "http://localhost"},
-		TfStateLock:      meshapi.MeshRunnerRunLink{Href: lockHref},
+	suite.run = scenarioRun(APPLY.str(), meshBackendImplementation(), client.MeshRunnerRunLinks{
+		MeshstackBaseUrl: client.MeshRunnerRunLink{Href: "http://localhost"},
+		TfStateLock:      client.MeshRunnerRunLink{Href: lockHref},
 	})
 	backend := suite.generatedBackendDuringInit()
 
@@ -63,8 +63,8 @@ func (suite *WorkerTestSuite) Test_RunWithTfStateLockLink_GeneratesABackendThatL
 }
 
 func (suite *WorkerTestSuite) Test_RunWithoutTfStateLockLink_GeneratesABackendThatDoesNotLock() {
-	suite.run = scenarioRun(APPLY.str(), meshBackendImplementation(), meshapi.MeshRunnerRunLinks{
-		MeshstackBaseUrl: meshapi.MeshRunnerRunLink{Href: "http://localhost"},
+	suite.run = scenarioRun(APPLY.str(), meshBackendImplementation(), client.MeshRunnerRunLinks{
+		MeshstackBaseUrl: client.MeshRunnerRunLink{Href: "http://localhost"},
 	})
 	backend := suite.generatedBackendDuringInit()
 

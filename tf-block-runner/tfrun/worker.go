@@ -10,8 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/meshcloud/meshstack-cli/client"
+
 	"github.com/meshcloud/building-block-runner/internal/config"
-	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
 )
 
 type Worker struct {
@@ -30,7 +31,7 @@ var runInfoContextKey = contextKey{}
 
 var ErrFailureReported = errors.New("the run reported its failure")
 
-func Execute(ctx context.Context, logger *log.Logger, cfg config.Config, run meshapi.MeshRunnerRun, api meshapi.MeshRunnerRunClient, tfBinaries *TfBinaries) error {
+func Execute(ctx context.Context, logger *log.Logger, cfg config.Config, run client.MeshRunnerRun, api client.MeshRunnerRunClient, tfBinaries *TfBinaries) error {
 	tfRun, err := newRun(run, cfg.Tf.SkipHostKeyValidation)
 	if err != nil {
 		return fmt.Errorf("convert run: %w", err)

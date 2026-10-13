@@ -13,11 +13,7 @@ import (
 	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/internal/config/xurl"
 	"github.com/meshcloud/building-block-runner/internal/dispatcher"
-	internalhttp "github.com/meshcloud/building-block-runner/internal/http"
-	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
 )
-
-var userAgent = internalhttp.UserAgent{GitHubRepo: "meshcloud/building-block-runner", Version: "0.0.0-testacc"}
 
 // One every local stack has: the dev dump's ALL runner belongs to it.
 const workspace = "admin-customer"
@@ -75,7 +71,7 @@ func (s localStack) createRunner(t *testing.T) config.Config {
 func registrationUpdatesTheRunner(s localStack, cfg config.Config) func(*testing.T) {
 	return func(t *testing.T) {
 		cfg.Dispatcher.Register = &config.Register{DisplayName: "building-block-runner TestAcc, registered"}
-		require.NoError(t, dispatcher.Register(t.Context(), cfg, log.New(t.Output(), "", 0), userAgent))
+		require.NoError(t, dispatcher.Register(t.Context(), cfg, log.New(t.Output(), "", 0)))
 
 		after, err := s.api.BuildingBlockRunner.Read(t.Context(), cfg.Uuid.String())
 		require.NoError(t, err)
@@ -86,11 +82,9 @@ func registrationUpdatesTheRunner(s localStack, cfg config.Config) func(*testing
 
 func claimWithoutWorkFindsNoRun(s localStack, cfg config.Config) func(*testing.T) {
 	return func(t *testing.T) {
-		client := internalhttp.NewClient(userAgent)
-		runnerAuth := internalhttp.NewApiKeyLogin(client, cfg.Api.Url.URL, s.runnerKey, s.runnerSecret)
-		_, err := meshapi.NewMeshRunnerClient(client.WithAuthorization(runnerAuth), cfg.Api.Url.URL).ClaimRun(t.Context(), cfg.Uuid)
+		_, err := s.api.Runner.ClaimRun(t.Context(), cfg.Uuid)
 
-		require.ErrorIs(t, err, meshapi.ErrNoRunToClaim)
+		require.ErrorIs(t, err, client.ErrNoRunToClaim)
 
 		runner, err := s.api.BuildingBlockRunner.Read(t.Context(), cfg.Uuid.String())
 		require.NoError(t, err)

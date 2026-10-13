@@ -7,11 +7,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
+	"github.com/meshcloud/meshstack-cli/client"
 )
 
-func runWith(implementation string, inputs ...meshapi.MeshRunnerRunInput) meshapi.MeshRunnerRun {
-	var run meshapi.MeshRunnerRun
+func runWith(implementation string, inputs ...client.MeshRunnerRunInput) client.MeshRunnerRun {
+	var run client.MeshRunnerRun
 	run.Spec.RunToken = "a-run-token"
 	run.Spec.BuildingBlock.Spec.Inputs = inputs
 	run.Spec.Definition.Spec.Implementation = jsontext.Value(implementation)
@@ -27,10 +27,10 @@ func TestDecryptRun(t *testing.T) {
 
 	t.Run("decrypts sensitive string inputs only", func(t *testing.T) {
 		run := runWith(`{"type":"MANUAL"}`,
-			meshapi.MeshRunnerRunInput{Key: "secret", Value: jsontext.Value(encrypted("plain")), IsSensitive: true},
-			meshapi.MeshRunnerRunInput{Key: "number", Value: jsontext.Value(`42`), IsSensitive: true},
-			meshapi.MeshRunnerRunInput{Key: "empty", Value: jsontext.Value(`""`), IsSensitive: true},
-			meshapi.MeshRunnerRunInput{Key: "public", Value: jsontext.Value(`"as is"`)},
+			client.MeshRunnerRunInput{Key: "secret", Value: jsontext.Value(encrypted("plain")), IsSensitive: true},
+			client.MeshRunnerRunInput{Key: "number", Value: jsontext.Value(`42`), IsSensitive: true},
+			client.MeshRunnerRunInput{Key: "empty", Value: jsontext.Value(`""`), IsSensitive: true},
+			client.MeshRunnerRunInput{Key: "public", Value: jsontext.Value(`"as is"`)},
 		)
 
 		decrypted, err := c.DecryptRun(run)
@@ -56,7 +56,7 @@ func TestDecryptRun(t *testing.T) {
 	}
 
 	t.Run("fails on a value for another key", func(t *testing.T) {
-		run := runWith(`{"type":"MANUAL"}`, meshapi.MeshRunnerRunInput{Key: "secret", Value: jsontext.Value(`"` + encryptLikeMeshStack(t, generateKey(t), "plain") + `"`), IsSensitive: true})
+		run := runWith(`{"type":"MANUAL"}`, client.MeshRunnerRunInput{Key: "secret", Value: jsontext.Value(`"` + encryptLikeMeshStack(t, generateKey(t), "plain") + `"`), IsSensitive: true})
 
 		_, err := c.DecryptRun(run)
 
@@ -66,8 +66,8 @@ func TestDecryptRun(t *testing.T) {
 
 func TestRedactRun(t *testing.T) {
 	run := runWith(`{"type":"TERRAFORM","sshPrivateKey":"key","repositoryUrl":"git@example.com"}`,
-		meshapi.MeshRunnerRunInput{Key: "secret", Value: jsontext.Value(`"plain"`), IsSensitive: true},
-		meshapi.MeshRunnerRunInput{Key: "public", Value: jsontext.Value(`"as is"`)},
+		client.MeshRunnerRunInput{Key: "secret", Value: jsontext.Value(`"plain"`), IsSensitive: true},
+		client.MeshRunnerRunInput{Key: "public", Value: jsontext.Value(`"as is"`)},
 	)
 
 	redacted, err := RedactRun(run)

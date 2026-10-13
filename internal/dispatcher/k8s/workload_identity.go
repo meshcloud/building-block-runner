@@ -11,7 +11,7 @@ import (
 
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
+	"github.com/meshcloud/meshstack-cli/client"
 )
 
 const (
@@ -32,8 +32,8 @@ func (t workloadIdentityToken) mountPath() string {
 	return workloadIdentityDir + t.provider
 }
 
-func (t workloadIdentityToken) registration() *meshapi.MeshRunnerRegistrationWifProvider {
-	return &meshapi.MeshRunnerRegistrationWifProvider{Audience: t.audience, TokenPath: t.mountPath() + "/token"}
+func (t workloadIdentityToken) registration() *client.MeshRunnerWifProviderConfig {
+	return &client.MeshRunnerWifProviderConfig{Audience: t.audience, TokenPath: t.mountPath() + "/token"}
 }
 
 type workloadIdentityTokens struct {
@@ -58,14 +58,14 @@ func serviceAccountName(workspace, definitionUuid string) string {
 }
 
 // newWorkloadIdentity renders a subject that matches the token's sub claim, which names the service account of the Job.
-func newWorkloadIdentity(namespace, oidcIssuer string) *meshapi.MeshRunnerRegistrationWif {
+func newWorkloadIdentity(namespace, oidcIssuer string) *client.MeshRunnerWorkloadIdentityFed {
 	if oidcIssuer == "" {
 		return nil
 	}
 	tokens := newWorkloadIdentityTokens(namespace)
-	return &meshapi.MeshRunnerRegistrationWif{
-		Issuer:          oidcIssuer,
-		SubjectTemplate: "system:serviceaccount:" + namespace + ":" + serviceAccountName("{{ workspaceIdentifier }}", "{{ buildingBlockDefinitionUuid }}"),
+	return &client.MeshRunnerWorkloadIdentityFed{
+		Issuer:          new(oidcIssuer),
+		SubjectTemplate: new("system:serviceaccount:" + namespace + ":" + serviceAccountName("{{ workspaceIdentifier }}", "{{ buildingBlockDefinitionUuid }}")),
 		Gcp:             tokens.gcp.registration(),
 		Aws:             tokens.aws.registration(),
 		Azure:           tokens.azure.registration(),

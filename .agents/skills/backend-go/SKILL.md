@@ -8,9 +8,10 @@ One Go module at the repository root builds one binary, `cmd/runner`.
 
 - `internal/config` loads `runner-config.yml` (the new layout and the legacy ones) and validates it per mode.
 - `internal/crypto` holds the private keys and decrypts the sensitive inputs of a run.
-- `internal/http` is the HTTP client; `internal/http/meshapi` holds the meshStack runner DTOs and client.
 - `internal/dispatcher` claims runs, or runs the one in `RUNNER_CLAIM_RUN_YML`, and hands them to the
-  dispatcher the build tags select: `inprocess` (default) or `k8s` (`-tags k8s`).
+  dispatcher the build tags select: `inprocess` (default) or `k8s` (`-tags k8s`). It builds the meshStack client
+  with meshstack-cli's `auth.ResolveClient` and `config.Api` as the setting source.
+- `internal/testmeshstack` points that client at a test server.
 - `internal/build` holds the version, set with `-ldflags -X`.
 - `tf-block-runner/tfrun` and `manual-block-runner/manual` are the executors of the in-process dispatcher. Each
   registers itself in `internal/dispatcher/inprocess/executor_<type>.go` behind its build tag; a build with neither

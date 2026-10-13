@@ -10,13 +10,12 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/meshcloud/building-block-runner/internal/config"
-	"github.com/meshcloud/building-block-runner/internal/http"
 )
 
 func Test_Serve_RefusesARunFileWithTheK8sTag(t *testing.T) {
 	t.Setenv(claimRunYmlEnv, "run.yml")
 
-	err := Serve(t.Context(), config.Config{}, log.New(io.Discard, "", 0), http.UserAgent{})
+	err := Serve(t.Context(), config.Config{}, log.New(io.Discard, "", 0))
 
 	assert.EqualError(t, err, "RUNNER_CLAIM_RUN_YML needs a binary built without -tags k8s")
 }

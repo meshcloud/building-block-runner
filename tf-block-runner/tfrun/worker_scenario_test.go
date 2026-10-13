@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"sync"
@@ -17,21 +19,20 @@ import (
 	"time"
 
 	"github.com/hashicorp/terraform-exec/tfexec"
+	"github.com/meshcloud/meshstack-cli/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/internal/config/xtime"
-	internalhttp "github.com/meshcloud/building-block-runner/internal/http"
-	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
 )
 
 type WorkerTestSuite struct {
 	suite.Suite
 	cfg    config.Config
 	w      *Worker
-	run    meshapi.MeshRunnerRun
+	run    client.MeshRunnerRun
 	calls  MockRunApiCalls
 	tfBin  *TfBinaries
 	tfMock *MockedTfFacade
@@ -126,8 +127,9 @@ func (suite *WorkerTestSuite) SetupTest() {
 }
 
 func (suite *WorkerTestSuite) runWorker() {
-	client := internalhttp.Client{Client: &http.Client{Transport: testRoundTripper(suite.scenarioClientBehavior)}, UserAgent: testUserAgent}
-	suite.w.runApi = newTestRunApi(client, suite.run)
+	meshStack := httptest.NewServer(scenarioHandler(suite.scenarioClientBehavior))
+	defer meshStack.Close()
+	suite.w.runApi = newTestRunApi(suite.T(), linkingTo(suite.run, meshStack.URL))
 	run, err := newRun(suite.run, false)
 	require.NoError(suite.T(), err)
 
@@ -138,7 +140,7 @@ func (suite *WorkerTestSuite) runWorker() {
 
 // findStep returns the step with the given ID from a status update.
 // It immediately fails the test if no matching step is found.
-func findStep(t testing.TB, update meshapi.MeshRunnerRunStatusUpdate, stepId string) meshapi.MeshRunnerRunStepStatusUpdate {
+func findStep(t testing.TB, update client.MeshRunnerRunStatusUpdate, stepId string) client.MeshRunnerRunStepStatusUpdate {
 	t.Helper()
 	if s := findStepOrNil(update, stepId); s != nil {
 		return *s
@@ -148,12 +150,12 @@ func findStep(t testing.TB, update meshapi.MeshRunnerRunStatusUpdate, stepId str
 		ids[i] = s.Id
 	}
 	t.Fatalf("step %q not found; available step IDs: %v", stepId, ids)
-	return meshapi.MeshRunnerRunStepStatusUpdate{}
+	return client.MeshRunnerRunStepStatusUpdate{}
 }
 
 // findStepOrNil returns the step with the given ID, or nil if not present.
 // Prefer findStep in tests that require the step to exist.
-func findStepOrNil(update meshapi.MeshRunnerRunStatusUpdate, stepId string) *meshapi.MeshRunnerRunStepStatusUpdate {
+func findStepOrNil(update client.MeshRunnerRunStatusUpdate, stepId string) *client.MeshRunnerRunStepStatusUpdate {
 	for i := range update.Steps {
 		if update.Steps[i].Id == stepId {
 			return &update.Steps[i]
@@ -178,7 +180,7 @@ func (suite *WorkerTestSuite) Test_MissingAuth() {
 	assert.Equal(suite.T(), 1, len(updateCalls))
 
 	data, _ := io.ReadAll(updateCalls[0].Body)
-	var update meshapi.MeshRunnerRunStatusUpdate
+	var update client.MeshRunnerRunStatusUpdate
 	json.Unmarshal(data, &update)
 
 	assert.Equal(suite.T(), FAILED.str(), *update.Status)
@@ -218,7 +220,7 @@ func (suite *WorkerTestSuite) Test_ApplySucceeded() {
 	// Check the final update call
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, _ := io.ReadAll(lastUpdate.Body)
-	var update meshapi.MeshRunnerRunStatusUpdate
+	var update client.MeshRunnerRunStatusUpdate
 	json.Unmarshal(data, &update)
 
 	assert.Equal(suite.T(), SUCCEEDED.str(), *update.Status)
@@ -259,7 +261,7 @@ func (suite *WorkerTestSuite) Test_RegistrationConflict_ContinuesExecution() {
 		// Restore body for later reads
 		req.Body = io.NopCloser(bytes.NewBuffer(data))
 
-		var update meshapi.MeshRunnerRunStatusUpdate
+		var update client.MeshRunnerRunStatusUpdate
 		json.Unmarshal(data, &update)
 
 		statusStr := ""
@@ -316,7 +318,7 @@ func (suite *WorkerTestSuite) abortOnceApplyStarted() (tofuExited *time.Time, re
 	}
 	suite.calls.update = func(req *http.Request) *http.Response {
 		data, _ := io.ReadAll(req.Body)
-		var update meshapi.MeshRunnerRunStatusUpdate
+		var update client.MeshRunnerRunStatusUpdate
 		json.Unmarshal(data, &update)
 		*receivedStatuses = append(*receivedStatuses, *update.Status)
 		switch {
@@ -398,7 +400,7 @@ func (suite *WorkerTestSuite) Test_ApplyTfFailure() {
 	// Check the final update call
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, _ := io.ReadAll(lastUpdate.Body)
-	var update meshapi.MeshRunnerRunStatusUpdate
+	var update client.MeshRunnerRunStatusUpdate
 	json.Unmarshal(data, &update)
 
 	assert.Equal(suite.T(), FAILED.str(), *update.Status)
@@ -453,7 +455,7 @@ func (suite *WorkerTestSuite) Test_DestroySucceeded() {
 	// Check the final update call
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, _ := io.ReadAll(lastUpdate.Body)
-	var update meshapi.MeshRunnerRunStatusUpdate
+	var update client.MeshRunnerRunStatusUpdate
 	json.Unmarshal(data, &update)
 
 	assert.Equal(suite.T(), SUCCEEDED.str(), *update.Status)
@@ -494,7 +496,7 @@ func (suite *WorkerTestSuite) Test_DestroyTfFailure() {
 	// Check the final update call
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, _ := io.ReadAll(lastUpdate.Body)
-	var update meshapi.MeshRunnerRunStatusUpdate
+	var update client.MeshRunnerRunStatusUpdate
 	json.Unmarshal(data, &update)
 
 	assert.Equal(suite.T(), FAILED.str(), *update.Status)
@@ -529,7 +531,7 @@ func (suite *WorkerTestSuite) Test_FinalStatusIsSentWhenAHeartbeatGetsNoAnswer()
 	var workDone, finalStatusSent time.Time
 	suite.calls.update = func(req *http.Request) *http.Response {
 		data, _ := io.ReadAll(req.Body)
-		var update meshapi.MeshRunnerRunStatusUpdate
+		var update client.MeshRunnerRunStatusUpdate
 		json.Unmarshal(data, &update)
 		if *update.Status == FAILED.str() {
 			finalStatusSent = time.Now()
@@ -564,7 +566,7 @@ func (suite *WorkerTestSuite) Test_FinalStatusIsRetriedWhileMeshfedAnswers503() 
 	finalStatusAttempts := 0
 	suite.calls.update = func(req *http.Request) *http.Response {
 		data, _ := io.ReadAll(req.Body)
-		var update meshapi.MeshRunnerRunStatusUpdate
+		var update client.MeshRunnerRunStatusUpdate
 		json.Unmarshal(data, &update)
 		status := http.StatusOK
 		if *update.Status == FAILED.str() {
@@ -625,7 +627,7 @@ func (suite *WorkerTestSuite) Test_UpdatesStatusWithLiveLogs() {
 		found := false
 		for _, update := range updateCalls {
 			data, _ := io.ReadAll(update.Body)
-			var update meshapi.MeshRunnerRunStatusUpdate
+			var update client.MeshRunnerRunStatusUpdate
 			json.Unmarshal(data, &update)
 			if step := findStepOrNil(update, StepExecuteTf); step != nil && step.SystemMessage != nil && *step.SystemMessage == expected {
 				found = true
@@ -638,7 +640,7 @@ func (suite *WorkerTestSuite) Test_UpdatesStatusWithLiveLogs() {
 
 func mockUpdateCallWithAbortResponse() func(_ *http.Request) *http.Response {
 	return func(_ *http.Request) *http.Response {
-		body, _ := json.Marshal(meshapi.MeshRunnerRunStatusUpdateResult{Abort: true})
+		body, _ := json.Marshal(client.MeshRunnerRunStatusUpdateResult{Abort: true})
 		return &http.Response{
 			StatusCode: 200,
 			Body:       io.NopCloser(bytes.NewBuffer(body)),
@@ -649,64 +651,78 @@ func mockUpdateCallWithAbortResponse() func(_ *http.Request) *http.Response {
 
 const scenarioRunUrl = "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid"
 
-func validRun(behavior, repo, path string) meshapi.MeshRunnerRun {
-	impl := meshapi.MeshRunnerTerraformImplementation{
+func validRun(behavior, repo, path string) client.MeshRunnerRun {
+	impl := client.MeshRunnerTerraformImplementation{
 		TerraformVersion: DEFAULT_TF_VER,
 		RepositoryUrl:    repo,
 		RepositoryPath:   new(path),
 	}
-	var links meshapi.MeshRunnerRunLinks
+	var links client.MeshRunnerRunLinks
 	if behavior == DETECT.str() {
 		links.ArtifactUpload.Href = scenarioRunUrl + "/plan-artifact"
 	}
 	return scenarioRun(behavior, impl, links)
 }
 
-func applyRunWithPlanArtifact(repo, repoPath, planArtifactHref string) meshapi.MeshRunnerRun {
-	impl := meshapi.MeshRunnerTerraformImplementation{TerraformVersion: DEFAULT_TF_VER, RepositoryUrl: repo, RepositoryPath: new(repoPath)}
-	return scenarioRun(APPLY.str(), impl, meshapi.MeshRunnerRunLinks{PlanArtifact: meshapi.MeshRunnerRunLink{Href: planArtifactHref}})
+func applyRunWithPlanArtifact(repo, repoPath, planArtifactHref string) client.MeshRunnerRun {
+	impl := client.MeshRunnerTerraformImplementation{TerraformVersion: DEFAULT_TF_VER, RepositoryUrl: repo, RepositoryPath: new(repoPath)}
+	return scenarioRun(APPLY.str(), impl, client.MeshRunnerRunLinks{PlanArtifact: client.MeshRunnerRunLink{Href: planArtifactHref}})
 }
 
-func detectRunWithUploadLink(repo, repoPath, artifactUploadHref string) meshapi.MeshRunnerRun {
-	impl := meshapi.MeshRunnerTerraformImplementation{TerraformVersion: DEFAULT_TF_VER, RepositoryUrl: repo, RepositoryPath: new(repoPath)}
-	return scenarioRun(DETECT.str(), impl, meshapi.MeshRunnerRunLinks{ArtifactUpload: meshapi.MeshRunnerRunLink{Href: artifactUploadHref}})
+func detectRunWithUploadLink(repo, repoPath, artifactUploadHref string) client.MeshRunnerRun {
+	impl := client.MeshRunnerTerraformImplementation{TerraformVersion: DEFAULT_TF_VER, RepositoryUrl: repo, RepositoryPath: new(repoPath)}
+	return scenarioRun(DETECT.str(), impl, client.MeshRunnerRunLinks{ArtifactUpload: client.MeshRunnerRunLink{Href: artifactUploadHref}})
 }
 
-func detectRunWithoutUploadLink(repo, repoPath string) meshapi.MeshRunnerRun {
-	impl := meshapi.MeshRunnerTerraformImplementation{TerraformVersion: DEFAULT_TF_VER, RepositoryUrl: repo, RepositoryPath: new(repoPath)}
-	return scenarioRun(DETECT.str(), impl, meshapi.MeshRunnerRunLinks{})
+func detectRunWithoutUploadLink(repo, repoPath string) client.MeshRunnerRun {
+	impl := client.MeshRunnerTerraformImplementation{TerraformVersion: DEFAULT_TF_VER, RepositoryUrl: repo, RepositoryPath: new(repoPath)}
+	return scenarioRun(DETECT.str(), impl, client.MeshRunnerRunLinks{})
 }
 
-func scenarioRun(behavior string, impl meshapi.MeshRunnerTerraformImplementation, links meshapi.MeshRunnerRunLinks) meshapi.MeshRunnerRun {
+func scenarioRun(behavior string, impl client.MeshRunnerTerraformImplementation, links client.MeshRunnerRunLinks) client.MeshRunnerRun {
 	implJson, err := json.Marshal(impl)
 	if err != nil {
 		panic(err)
 	}
 	links.RegisterSource.Href = scenarioRunUrl + "/status/source"
 	links.UpdateSource.Href = scenarioRunUrl + "/status/source/{sourceId}"
-	return meshapi.MeshRunnerRun{
+	return client.MeshRunnerRun{
 		ApiVersion: "v1",
 		Kind:       "meshBuildingBlockRun",
-		Metadata:   meshapi.MeshRunnerRunMetadata{Uuid: testRunUuid},
-		Spec: meshapi.MeshRunnerRunSpec{
+		Metadata:   client.MeshRunnerRunMetadata{Uuid: testRunUuid},
+		Spec: client.MeshRunnerRunSpec{
 			RunNumber: 1,
 			Behavior:  behavior,
 			RunToken:  testRunToken,
-			BuildingBlock: meshapi.MeshRunnerRunBuildingBlock{
+			BuildingBlock: client.MeshRunnerRunBuildingBlock{
 				Uuid: "block-uuid",
-				Spec: meshapi.MeshRunnerRunBuildingBlockSpec{DisplayName: "Test-BuildingBlock", Inputs: []meshapi.MeshRunnerRunInput{}},
+				Spec: client.MeshRunnerRunBuildingBlockSpec{DisplayName: "Test-BuildingBlock", Inputs: []client.MeshRunnerRunInput{}},
 			},
-			Definition: meshapi.MeshRunnerRunDefinition{
+			Definition: client.MeshRunnerRunDefinition{
 				Uuid: "definition-uuid",
-				Spec: meshapi.MeshRunnerRunDefinitionSpec{Version: 1, Implementation: implJson},
+				Spec: client.MeshRunnerRunDefinitionSpec{Version: 1, Implementation: implJson},
 			},
 		},
 		Links: links,
 	}
 }
 
-type testRoundTripper func(req *http.Request) *http.Response
+// scenarioHandler serves the scenario runs, which link to http://localhost.
+func scenarioHandler(behavior func(*http.Request) *http.Response) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		r.URL.Scheme, r.URL.Host = "http", "localhost"
+		resp := behavior(r)
+		maps.Copy(w.Header(), resp.Header)
+		w.WriteHeader(resp.StatusCode)
+		if resp.Body != nil {
+			_, _ = io.Copy(w, resp.Body)
+		}
+	}
+}
 
-func (t testRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	return t(req), nil
+func linkingTo(run client.MeshRunnerRun, meshStackUrl string) client.MeshRunnerRun {
+	for _, link := range []*client.MeshRunnerRunLink{&run.Links.RegisterSource, &run.Links.UpdateSource, &run.Links.PlanArtifact, &run.Links.ArtifactUpload} {
+		link.Href = strings.Replace(link.Href, "http://localhost", meshStackUrl, 1)
+	}
+	return run
 }

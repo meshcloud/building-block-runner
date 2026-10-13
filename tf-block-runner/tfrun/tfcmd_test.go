@@ -16,6 +16,8 @@ import (
 	"github.com/sebdah/goldie/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/meshcloud/building-block-runner/internal/config/xurl"
 )
 
 //go:embed testdata/custom_meshStack_run_vars.tf
@@ -652,11 +654,8 @@ func Test_buildTfEnv_WithoutMeshBackendFallback_DoesNotSetTfHttpBasicAuthEnv(t *
 }
 
 func Test_createMeshStackHttpBackendFile_MissingRunToken_ReturnsError(t *testing.T) {
-	originalConfig := AppConfig
-	AppConfig = TfRunnerConfig{ApiUrl: "http://localhost:8080"}
-	t.Cleanup(func() { AppConfig = originalConfig })
-
 	uut := makeTestGenericTfCmd(t)
+	uut.params.cfg.Api.Url = xurl.MustParse("http://localhost:8080")
 	uut.runContextInfo.bbId = "test-bb-id"
 	uut.runContextInfo.workspaceIdentifier = "test-workspace"
 	// runToken deliberately left empty — simulates missing token from server
@@ -682,11 +681,8 @@ func Test_createMeshStackHttpBackendFile_MissingRunToken_ReturnsError(t *testing
 // buildTfEnv), so nothing secret is baked into a saved plan.
 // It also verifies that meshstackBaseUrl from the run links is used as the backend base URL.
 func Test_createMeshStackHttpBackendFile_WithRunToken(t *testing.T) {
-	originalConfig := AppConfig
-	AppConfig = TfRunnerConfig{ApiUrl: "http://fallback-url-should-not-be-used:8080"}
-	t.Cleanup(func() { AppConfig = originalConfig })
-
 	uut := makeTestGenericTfCmd(t)
+	uut.params.cfg.Api.Url = xurl.MustParse("http://fallback-url-should-not-be-used:8080")
 	uut.runContextInfo.bbId = "test-bb-id"
 	uut.runContextInfo.workspaceIdentifier = "test-workspace"
 	uut.runContextInfo.runToken = "ephemeral-run-token"

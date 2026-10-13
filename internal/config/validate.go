@@ -5,12 +5,10 @@ import (
 	"uuid"
 )
 
-// Validate checks what every runner needs, also when it runs as a k8s job.
+// Validate checks what every runner needs, also one that runs a run file with the run token.
 func (cfg Config) Validate() error {
 	var errs validationErrors
 	errs.require(cfg.Uuid != uuid.UUID{}, "uuid is required")
-	errs.require(cfg.Api.Url.URL != nil || cfg.Api.Auth.Profile != "", "api.url or api.auth.profile is required")
-	errs = append(errs, cfg.Api.Auth.validate())
 	// meshStack registers a runner for a single runner type, which ALL also is
 	errs.require(len(cfg.Dispatcher.ForTypes) == 1, "dispatcher.forTypes needs exactly one runner type")
 	return errors.Join(errs...)
@@ -19,6 +17,8 @@ func (cfg Config) Validate() error {
 // ValidateDispatcher checks what claiming and dispatching runs needs on top of Validate.
 func (cfg Config) ValidateDispatcher() error {
 	var errs validationErrors
+	errs.require(cfg.Api.Url.URL != nil || cfg.Api.Auth.Profile != "", "api.url or api.auth.profile is required")
+	errs = append(errs, cfg.Api.Auth.validate())
 	errs = append(errs, cfg.Crypto.Validate())
 	errs.require(cfg.Dispatcher.PollingInterval.Duration > 0, "dispatcher.pollingInterval must be positive")
 	errs.require(cfg.Dispatcher.Timeout.Duration > 0, "dispatcher.timeout must be positive")

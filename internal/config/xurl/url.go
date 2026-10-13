@@ -43,3 +43,10 @@ func (u URL) MarshalText() ([]byte, error) {
 	}
 	return []byte(u.String()), nil
 }
+
+func (u URL) String() string {
+	if u.URL == nil {
+		return ""
+	}
+	return u.URL.String()
+}

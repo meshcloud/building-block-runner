@@ -32,7 +32,7 @@ func TestAccRunner(t *testing.T) {
 		name string
 		step func(*testing.T)
 	}{
-		{"run-controller's registration updates the runner", registrationUpdatesTheRunner(stack, runner)},
+		{"the registration updates the runner", registrationUpdatesTheRunner(stack, runner)},
 		{"a claim without work finds no run and marks the runner as seen", claimWithoutWorkFindsNoRun(stack, runner)},
 	}
 	for _, s := range steps {

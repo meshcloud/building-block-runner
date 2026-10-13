@@ -2,9 +2,7 @@
 .kotlin/
 
 build/
-!tf-block-runner/build/
-!manual-block-runner/build/
-!run-controller/build/
+!internal/build/
 
 out/
 .DS_Store

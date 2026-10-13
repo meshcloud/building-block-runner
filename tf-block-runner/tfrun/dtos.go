@@ -8,7 +8,7 @@ import (
 	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
 )
 
-func newRun(run meshapi.MeshRunnerRun) (*Run, error) {
+func newRun(run meshapi.MeshRunnerRun, skipHostKeyValidation bool) (*Run, error) {
 	behavior, err := DetermineBehavior(run.Spec.Behavior)
 	if err != nil {
 		return nil, err
@@ -44,7 +44,7 @@ func newRun(run meshapi.MeshRunnerRun) (*Run, error) {
 		IsAsync:                impl.Async,
 		Vars:                   vars,
 		RunJsonBase64:          base64.StdEncoding.EncodeToString(runJson),
-		Source:                 terraformImplToGitSource(impl),
+		Source:                 terraformImplToGitSource(impl, skipHostKeyValidation),
 		UseMeshBackendFallback: impl.UseMeshHttpBackendFallback,
 		PreRunScript:           impl.PreRunScript,
 		PlanArtifactUrl:        run.Links.PlanArtifact.Href,
@@ -65,17 +65,18 @@ func toVariables(inputs []meshapi.MeshRunnerRunInput) (map[string]*Variable, err
 	return vars, nil
 }
 
-func terraformImplToGitSource(impl meshapi.MeshRunnerTerraformImplementation) *GitSource {
+func terraformImplToGitSource(impl meshapi.MeshRunnerTerraformImplementation, skipHostKeyValidation bool) *GitSource {
 	var gitAuth auth = &NoAuth{}
 	if impl.SshPrivateKey != nil {
-		gitAuth = &SshAuth{certStr: *impl.SshPrivateKey, knownHostEntry: knownHostsToInternal(impl.KnownHost)}
+		gitAuth = &SshAuth{certStr: *impl.SshPrivateKey, knownHostEntry: knownHostsToInternal(impl.KnownHost), skipHostKeyValidation: skipHostKeyValidation}
 	}
 	return &GitSource{
-		url:       impl.RepositoryUrl,
-		path:      impl.RepositoryPath,
-		auth:      gitAuth,
-		refName:   impl.RefName,
-		gitFacade: &Git{},
+		url:                   impl.RepositoryUrl,
+		path:                  impl.RepositoryPath,
+		auth:                  gitAuth,
+		refName:               impl.RefName,
+		gitFacade:             &Git{},
+		skipHostKeyValidation: skipHostKeyValidation,
 	}
 }
 

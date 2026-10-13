@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
-	"path/filepath"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -279,27 +277,4 @@ func Test_Poll_ReportsRunsThatEndAfterShutdown(t *testing.T) {
 		require.NoError(t, stop(RunStatus{RunUuid: run.Metadata.Uuid, Ended: true, Err: errors.New("panic")}))
 		assert.Equal(t, map[string]string{run.Spec.RunToken: "panic"}, api.failures())
 	})
-}
-
-func Test_RunFile_StartsTheRunAndReportsItsFailure(t *testing.T) {
-	run := newManualRun(t)
-	path := filepath.Join(t.TempDir(), "run.yml")
-	encoded, err := EncodeRunYaml(run)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(path, encoded, 0o600))
-	api := &fakeApi{}
-	dispatcher := newFakeDispatcher()
-	p := newPoller(testConfig(1), log.New(io.Discard, "", 0), api, dispatcher)
-
-	err = p.runFile(t.Context(), path, func() {
-		go func() {
-			dispatcher.status <- RunStatus{RunUuid: run.Metadata.Uuid, Ended: true, Err: errors.New("tofu failed")}
-			close(dispatcher.status)
-		}()
-	})
-
-	require.NoError(t, err)
-	assert.Equal(t, []uuid.UUID{run.Metadata.Uuid}, dispatcher.startedUuids())
-	assert.Equal(t, map[string]string{run.Spec.RunToken: "tofu failed"}, api.failures())
-	assert.Zero(t, api.claimSeen)
 }

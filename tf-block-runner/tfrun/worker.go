@@ -10,12 +10,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
 )
 
 type Worker struct {
-	workerDir            string
-	timeout              time.Duration
+	cfg                  config.Config
 	runApi               RunApi
 	tfBinaries           *TfBinaries
 	log                  *log.Logger
@@ -30,15 +30,14 @@ var runInfoContextKey = contextKey{}
 
 var ErrFailureReported = errors.New("the run reported its failure")
 
-func Execute(ctx context.Context, logger *log.Logger, run meshapi.MeshRunnerRun, api meshapi.MeshRunnerRunClient, tfBinaries *TfBinaries) error {
-	tfRun, err := newRun(run)
+func Execute(ctx context.Context, logger *log.Logger, cfg config.Config, run meshapi.MeshRunnerRun, api meshapi.MeshRunnerRunClient, tfBinaries *TfBinaries) error {
+	tfRun, err := newRun(run, cfg.Tf.SkipHostKeyValidation)
 	if err != nil {
 		return fmt.Errorf("convert run: %w", err)
 	}
 	worker := &Worker{
-		workerDir:            AppConfig.TfParentWorkingDir,
-		timeout:              time.Minute * time.Duration(AppConfig.TfCommandTimeoutMins),
-		runApi:               NewRunApi(api, run.Metadata.Uuid, AppConfig.RunnerUuid),
+		cfg:                  cfg,
+		runApi:               NewRunApi(api, run.Metadata.Uuid, cfg.Uuid),
 		tfBinaries:           tfBinaries,
 		log:                  logger,
 		statusUpdateInterval: time.Second * 10,
@@ -52,11 +51,11 @@ func (w *Worker) ExecuteRun(ctx context.Context, run *Run) error {
 	w.log.Printf("Start execution of run %s: %s %s\n", run.Id, run.Behavior.str(), run.BuildingBlockName)
 
 	// os.MkdirTemp needs the parent directory.
-	if err := os.MkdirAll(w.workerDir, 0777); err != nil {
+	if err := os.MkdirAll(w.cfg.Tf.TfParentWorkingDir, 0777); err != nil {
 		return fmt.Errorf("failed to create working directory: %w", err)
 	}
 
-	cmdDir, err := os.MkdirTemp(w.workerDir, fmt.Sprintf("block-%s-*", run.BuildingBlockId))
+	cmdDir, err := os.MkdirTemp(w.cfg.Tf.TfParentWorkingDir, fmt.Sprintf("block-%s-*", run.BuildingBlockId))
 	if err != nil {
 		w.sendInitFail(run)
 		return fmt.Errorf("failed to create temp directory: %w: %w", err, ErrFailureReported)
@@ -74,9 +73,7 @@ func (w *Worker) ExecuteRun(ctx context.Context, run *Run) error {
 	run.Source.setLog(runContextInfo.logwrap)
 	defer runContextInfo.logwrap.Close()
 
-	parentCtx, cancel := context.WithTimeout(ctx, w.timeout)
-	defer cancel()
-	workCtx, workCancel := context.WithCancel(context.WithValue(parentCtx, runInfoContextKey, runContextInfo))
+	workCtx, workCancel := context.WithCancel(context.WithValue(ctx, runInfoContextKey, runContextInfo))
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -98,7 +95,8 @@ func (w *Worker) workRoutine(ctx context.Context, run *Run, wg *sync.WaitGroup, 
 
 	runContextInfo := ctx.Value(runInfoContextKey).(*RunContextInfo)
 	params := &TfCmdParams{
-		dir:                w.workerDir,
+		cfg:                w.cfg,
+		dir:                w.cfg.Tf.TfParentWorkingDir,
 		buildingBlockId:    run.BuildingBlockId,
 		tfVersion:          run.TerraformVersion,
 		useWorkspaces:      true,
@@ -130,7 +128,7 @@ func (w *Worker) workRoutine(ctx context.Context, run *Run, wg *sync.WaitGroup, 
 		// The observer sends the final status, which would stay IN_PROGRESS until meshStack times the run out.
 		runContextInfo.reportFailed()
 	} else {
-		runContextInfo.logwrap.PrintlnToLocalLogs(fmt.Sprintf("Registered '%s' as a source for runId: %s", AppConfig.RunnerUuid, runContextInfo.runId))
+		runContextInfo.logwrap.PrintlnToLocalLogs(fmt.Sprintf("Registered '%s' as a source for runId: %s", w.cfg.Uuid, runContextInfo.runId))
 		tfCommand.execute()
 	}
 }

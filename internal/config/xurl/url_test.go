@@ -13,6 +13,7 @@ func TestUnmarshalText(t *testing.T) {
 		require.NoError(t, u.UnmarshalText([]byte(valid)), valid)
 	}
 	assert.Equal(t, "http://host.example.com", MustParse("http://HOST.example.com/").String())
+	assert.Empty(t, URL{}.String())
 
 	for _, invalid := range []string{"", "host.example.com", "/relative", "ftp://host.example.com", "http://"} {
 		var u URL

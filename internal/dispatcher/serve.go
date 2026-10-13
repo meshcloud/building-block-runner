@@ -15,8 +15,17 @@ const claimRunYmlEnv = "RUNNER_CLAIM_RUN_YML"
 
 // Serve claims runs until ctx ends, or runs only the run in the file that RUNNER_CLAIM_RUN_YML names.
 func Serve(ctx context.Context, cfg config.Config, logger *log.Logger, userAgent http.UserAgent) error {
-	runYml := os.Getenv(claimRunYmlEnv)
-	if err := validate(cfg, runYml); err != nil {
+	if path := os.Getenv(claimRunYmlEnv); path != "" {
+		if builtWithK8sTag {
+			return errors.New(claimRunYmlEnv + " needs a binary built without -tags k8s")
+		}
+		return serveRunFile(ctx, cfg, logger, http.NewClient(userAgent), path)
+	}
+	return servePolling(ctx, cfg, logger, userAgent)
+}
+
+func servePolling(ctx context.Context, cfg config.Config, logger *log.Logger, userAgent http.UserAgent) error {
+	if err := errors.Join(cfg.Validate(), cfg.ValidateDispatcher()); err != nil {
 		return err
 	}
 	api, err := newRunnerClient(cfg, userAgent)
@@ -30,25 +39,38 @@ func Serve(ctx context.Context, cfg config.Config, logger *log.Logger, userAgent
 	if err != nil {
 		return err
 	}
-	p := newPoller(cfg, logger, api, dispatcher)
-	if runYml != "" {
-		return p.runFile(ctx, runYml, stopDispatcher)
-	}
-
 	if cfg.Dispatcher.Register != nil {
 		if err := register(ctx, cfg, logger, api, dispatcher); err != nil {
 			return err
 		}
 	}
 	logger.Printf("Claiming runs every %s", cfg.Dispatcher.PollingInterval)
-	return p.poll(ctx)
+	return newPoller(cfg, logger, api, dispatcher).poll(ctx)
 }
 
-func validate(cfg config.Config, runYml string) error {
-	if runYml != "" {
-		return cfg.Validate()
+func serveRunFile(ctx context.Context, cfg config.Config, logger *log.Logger, client http.Client, path string) error {
+	if err := cfg.Validate(); err != nil {
+		return err
 	}
-	return errors.Join(cfg.Validate(), cfg.ValidateDispatcher())
+	run, err := ReadRunYaml(path)
+	if err != nil {
+		return err
+	}
+	api := meshapi.NewMeshRunnerClient(client.WithAuthorization(http.BearerToken(run.Spec.RunToken)), cfg.Api.Url.URL)
+	// Whoever wrote the file owns the deadline, as a k8s job does with activeDeadlineSeconds.
+	cfg.Dispatcher.Timeout.Duration = 0
+
+	dispatcherCtx, stopDispatcher := context.WithCancel(ctx)
+	defer stopDispatcher()
+	dispatcher, err := Current(dispatcherCtx, cfg, api)
+	if err != nil {
+		return err
+	}
+	logger.Printf("Running the run in %s:\n%s", path, RedactedRunYaml(run))
+	p := newPoller(cfg, logger, api, dispatcher)
+	startErr := p.start(ctx, run)
+	stopDispatcher()
+	return errors.Join(startErr, p.drainStatus(ctx))
 }
 
 func newRunnerClient(cfg config.Config, userAgent http.UserAgent) (meshapi.MeshRunnerClient, error) {
@@ -58,15 +80,4 @@ func newRunnerClient(cfg config.Config, userAgent http.UserAgent) (meshapi.MeshR
 		return nil, err
 	}
 	return meshapi.NewMeshRunnerClient(client.WithAuthorization(auth), cfg.Api.Url.URL), nil
-}
-
-func (p *poller) runFile(ctx context.Context, path string, stopDispatcher context.CancelFunc) error {
-	run, err := ReadRunYaml(path)
-	if err != nil {
-		return err
-	}
-	p.logger.Printf("Running the run in %s:\n%s", path, RedactedRunYaml(run))
-	startErr := p.start(ctx, run)
-	stopDispatcher()
-	return errors.Join(startErr, p.drainStatus(ctx))
 }

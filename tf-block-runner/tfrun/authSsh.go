@@ -30,9 +30,10 @@ var ErrResolveGeneric = errors.New("ssh_error_generic")
 var ErrResolveNoExtraKnownHost = errors.New("ssh_error_no_extra_known_host")
 
 type SshAuth struct {
-	knownHostEntry *KnownHost
-	certStr        string
-	prepDir        string
+	knownHostEntry        *KnownHost
+	certStr               string
+	prepDir               string
+	skipHostKeyValidation bool
 }
 
 type KnownHost struct {
@@ -95,7 +96,7 @@ func (sshAuth *SshAuth) toTransport(url string, log *logwrap) (transport.AuthMet
 		return nil, err
 	}
 
-	key.HostKeyCallbackHelper = sshAuth.knownHostsKeyCallback(sshAuth.prepDir, AppConfig.SkipHostKeyValidation, log)
+	key.HostKeyCallbackHelper = sshAuth.knownHostsKeyCallback(sshAuth.prepDir, sshAuth.skipHostKeyValidation, log)
 
 	// Configure SSH client to request the specific key type from known_hosts
 	// This tells the server which host key algorithm to use during handshake

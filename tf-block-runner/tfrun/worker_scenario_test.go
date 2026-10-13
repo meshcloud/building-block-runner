@@ -21,12 +21,15 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/meshcloud/building-block-runner/internal/config"
+	"github.com/meshcloud/building-block-runner/internal/config/xtime"
 	internalhttp "github.com/meshcloud/building-block-runner/internal/http"
 	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
 )
 
 type WorkerTestSuite struct {
 	suite.Suite
+	cfg    config.Config
 	w      *Worker
 	run    meshapi.MeshRunnerRun
 	calls  MockRunApiCalls
@@ -84,14 +87,10 @@ func (suite *WorkerTestSuite) SetupSuite() {
 		panic(err)
 	}
 
-	AppConfig = TfRunnerConfig{
-		RunnerUuid:            testRunnerUuid,
-		SkipHostKeyValidation: false,
-		InitTimeoutMins:       10,
-		WsTimeoutMins:         10,
-		TfCommandTimeoutMins:  10,
-		TfParentWorkingDir:    tmpWd,
-	}
+	suite.cfg.Uuid = testRunnerUuid
+	suite.cfg.Tf.TfParentWorkingDir = tmpWd
+	suite.cfg.Tf.InitTimeout = xtime.Minutes(10)
+	suite.cfg.Tf.WsTimeout = xtime.Minutes(10)
 
 	suite.tfMock = &MockedTfFacade{}
 	suite.tfMock.initMockFuncs()
@@ -103,7 +102,7 @@ func (suite *WorkerTestSuite) SetupSuite() {
 
 func (suite *WorkerTestSuite) TearDownSuite() {
 	os.RemoveAll(suite.tfBin.dir)
-	os.RemoveAll(AppConfig.TfParentWorkingDir)
+	os.RemoveAll(suite.cfg.Tf.TfParentWorkingDir)
 }
 
 func (suite *WorkerTestSuite) SetupTest() {
@@ -117,10 +116,9 @@ func (suite *WorkerTestSuite) SetupTest() {
 	suite.tfMock.initMockFuncs()
 
 	suite.w = &Worker{
-		workerDir:            AppConfig.TfParentWorkingDir,
+		cfg:                  suite.cfg,
 		tfBinaries:           suite.tfBin,
 		log:                  log.New(io.Discard, "", log.LstdFlags),
-		timeout:              30 * time.Second,
 		statusUpdateInterval: time.Second * 10,
 		statusRequestTimeout: time.Second,
 		finalStatusRetry:     retrySchedule{initialDelay: time.Millisecond, maxDelay: time.Millisecond, attemptTimeout: time.Second, giveUpAfter: time.Second},
@@ -130,10 +128,12 @@ func (suite *WorkerTestSuite) SetupTest() {
 func (suite *WorkerTestSuite) runWorker() {
 	client := internalhttp.Client{Client: &http.Client{Transport: testRoundTripper(suite.scenarioClientBehavior)}, UserAgent: testUserAgent}
 	suite.w.runApi = newTestRunApi(client, suite.run)
-	run, err := newRun(suite.run)
+	run, err := newRun(suite.run, false)
 	require.NoError(suite.T(), err)
 
-	require.NoError(suite.T(), suite.w.ExecuteRun(context.Background(), run))
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	require.NoError(suite.T(), suite.w.ExecuteRun(ctx, run))
 }
 
 // findStep returns the step with the given ID from a status update.

@@ -85,7 +85,7 @@ func (d *Dispatcher) Start(_ context.Context, run dispatcher.Run) error {
 }
 
 func (d *Dispatcher) execute(execute executeFunc, run dispatcher.Run) (err error) {
-	ctx, cancel := context.WithTimeoutCause(d.runCtx, d.timeout, fmt.Errorf("the run exceeded the timeout of %s", d.timeout))
+	ctx, cancel := d.withTimeout()
 	defer cancel()
 	defer func() {
 		if r := recover(); r != nil {
@@ -98,4 +98,11 @@ func (d *Dispatcher) execute(execute executeFunc, run dispatcher.Run) (err error
 		err = context.Cause(ctx)
 	}
 	return
+}
+
+func (d *Dispatcher) withTimeout() (context.Context, context.CancelFunc) {
+	if d.timeout == 0 {
+		return context.WithCancel(d.runCtx)
+	}
+	return context.WithTimeoutCause(d.runCtx, d.timeout, fmt.Errorf("the run exceeded the timeout of %s", d.timeout))
 }

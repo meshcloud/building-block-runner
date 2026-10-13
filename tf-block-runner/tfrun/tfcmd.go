@@ -1,6 +1,7 @@
 package tfrun
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -18,6 +19,7 @@ import (
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclwrite"
 	"github.com/hashicorp/terraform-exec/tfexec"
+	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/tf-block-runner/util"
 	"github.com/zclconf/go-cty/cty"
 )
@@ -43,6 +45,7 @@ func stateLockTimeout() *tfexec.LockTimeoutOption {
 }
 
 type TfCmdParams struct {
+	cfg                config.Config
 	dir                string
 	buildingBlockId    string
 	tfVersion          string
@@ -121,7 +124,7 @@ func (tfcmd *GenericTfCmd) failWithUserMsg(err error, overrideUserMsg *string) {
 		tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(msgText)
 
 		if errors.Is(tfcmd.ctx.Err(), context.DeadlineExceeded) {
-			msgText = fmt.Sprintf("execution step stopped, because it exceeded the configured timeout of %d minutes", AppConfig.TfCommandTimeoutMins)
+			msgText = fmt.Sprintf("execution step stopped: %s", context.Cause(tfcmd.ctx).Error())
 			tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(msgText)
 		} else if errors.Is(tfcmd.ctx.Err(), context.Canceled) {
 			msgText = fmt.Sprintf("execution step cancelled: %s", context.Cause(tfcmd.ctx).Error())
@@ -154,7 +157,7 @@ func (tfcmd *GenericTfCmd) createFreshCommandWd() error {
 
 func (tfcmd *GenericTfCmd) init(tf TfFacade) error {
 	tfcmd.Println("Calling tf init")
-	initCtx, cancel := context.WithTimeout(tfcmd.ctx, time.Duration(AppConfig.InitTimeoutMins)*time.Minute)
+	initCtx, cancel := context.WithTimeout(tfcmd.ctx, tfcmd.params.cfg.Tf.InitTimeout.Duration)
 	defer cancel()
 
 	if tfcmd.runContextInfo.useMeshBackendFallback {
@@ -208,7 +211,7 @@ func (tfcmd *GenericTfCmd) useWorkspaceIfNeeded(tf TfFacade) error {
 	}
 
 	// if expected workspace does not exits, create it
-	wsCtx, cancel := context.WithTimeout(tfcmd.ctx, time.Duration(AppConfig.WsTimeoutMins)*time.Minute)
+	wsCtx, cancel := context.WithTimeout(tfcmd.ctx, tfcmd.params.cfg.Tf.WsTimeout.Duration)
 	defer cancel()
 
 	tfcmd.Printfln("Workspace does not exist. Creating it with suggested name: %s.", tfcmd.params.suggestedWorkspace)
@@ -218,7 +221,7 @@ func (tfcmd *GenericTfCmd) useWorkspaceIfNeeded(tf TfFacade) error {
 func (tfcmd *GenericTfCmd) selectWorkspace(tf TfFacade) (string, error) {
 	tfcmd.Printfln("Selecting workspace: %s", tfcmd.params.suggestedWorkspace)
 
-	wsCtx, cancelList := context.WithTimeout(tfcmd.ctx, time.Duration(AppConfig.WsTimeoutMins)*time.Minute)
+	wsCtx, cancelList := context.WithTimeout(tfcmd.ctx, tfcmd.params.cfg.Tf.WsTimeout.Duration)
 	defer cancelList()
 
 	available, current, err := tf.WorkspaceList(wsCtx)
@@ -253,7 +256,7 @@ func (tfcmd *GenericTfCmd) deleteWorkspaceIfNeeded(tf TfFacade) {
 		return
 	}
 
-	wsCtx, cancel := context.WithTimeout(tfcmd.ctx, time.Duration(AppConfig.WsTimeoutMins)*time.Minute)
+	wsCtx, cancel := context.WithTimeout(tfcmd.ctx, tfcmd.params.cfg.Tf.WsTimeout.Duration)
 	defer cancel()
 
 	// This is primarly using the somewhat complex workspace naming logic to detect the workspace
@@ -302,10 +305,7 @@ func (tfcmd *GenericTfCmd) createMeshStackHttpBackendFile() error {
 		return fmt.Errorf("a file with the name '%s' already exists in the working directory", backendFileName)
 	}
 
-	baseUrl := tfcmd.runContextInfo.meshstackBaseUrl
-	if baseUrl == "" {
-		baseUrl = AppConfig.ApiUrl
-	}
+	baseUrl := cmp.Or(tfcmd.runContextInfo.meshstackBaseUrl, tfcmd.params.cfg.Api.Url.String())
 	url := fmt.Sprintf(EP_State, baseUrl, tfcmd.runContextInfo.workspaceIdentifier, tfcmd.runContextInfo.bbId)
 
 	f := hclwrite.NewEmptyFile()
@@ -472,7 +472,7 @@ func (tfcmd *GenericTfCmd) buildTfEnv() (map[string]string, error) {
 	// Set GIT_SSH_COMMAND if SSH authentication is configured
 	if tfcmd.params.source != nil && tfcmd.params.source.auth.name() == AUTH_TYPE_SSH {
 		gitSshCommandEnv := fmt.Sprintf("ssh -i '%s'", path.Join(tfcmd.runContextInfo.workingDirectory, TMP_FILE_SSH_CERT))
-		if AppConfig.SkipHostKeyValidation {
+		if tfcmd.params.cfg.Tf.SkipHostKeyValidation {
 			gitSshCommandEnv += " -o StrictHostKeyChecking=no"
 		}
 		tfcmd.Println(fmt.Sprintf("Setting GIT_SSH_COMMAND=%s", gitSshCommandEnv))

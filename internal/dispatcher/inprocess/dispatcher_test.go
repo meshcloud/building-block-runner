@@ -91,6 +91,20 @@ func Test_Run_EndsWithAnErrorWhenItFailsPanicsOrTimesOut(t *testing.T) {
 	})
 }
 
+func Test_Run_HasNoDeadlineForATimeoutOf0(t *testing.T) {
+	hasDeadline := make(chan bool, 1)
+	d := newDispatcher(t.Context(), fakeRunnerClient{}, executors{config.RunnerTypeManual: func(ctx context.Context, _ dispatcher.Run, _ meshapi.MeshRunnerRunClient) error {
+		_, ok := ctx.Deadline()
+		hasDeadline <- ok
+		return nil
+	}}, 0)
+
+	require.NoError(t, d.Start(t.Context(), newRun("MANUAL")))
+
+	assert.NoError(t, (<-d.Status()).Err)
+	assert.False(t, <-hasDeadline)
+}
+
 func Test_Status_ClosesAfterTheLastRunEnded(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())

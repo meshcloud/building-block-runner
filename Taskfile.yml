@@ -43,5 +43,5 @@ tasks:
     vars:
       COVER_ARGS: '{{if .GOCOVERDIR}}-cover -coverpkg=./...{{end}}'
     cmds:
-      - go build {{.COVER_ARGS}} -o bin/run-controller ./run-controller
-      - bin/run-controller {{.CLI_ARGS}}
+      - go build {{.COVER_ARGS}} -o bin/runner ./cmd/runner
+      - bin/runner {{.CLI_ARGS}}

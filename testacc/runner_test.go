@@ -6,13 +6,17 @@ import (
 	"log"
 	"net/http"
 	"testing"
+	"uuid"
 
 	"github.com/meshcloud/meshstack-cli/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
-	"github.com/meshcloud/building-block-runner/run-controller/controller"
+	"github.com/meshcloud/building-block-runner/internal/config"
+	"github.com/meshcloud/building-block-runner/internal/config/xurl"
+	"github.com/meshcloud/building-block-runner/internal/dispatcher"
+	internalhttp "github.com/meshcloud/building-block-runner/internal/http"
 )
 
 // One every local stack has: the dev dump's ALL runner belongs to it.
@@ -29,7 +33,7 @@ func TestAccRunner(t *testing.T) {
 		step func(*testing.T)
 	}{
 		{"run-controller's registration updates the runner", registrationUpdatesTheRunner(stack, runner)},
-		{"a claim without work finds no run and marks the runner as seen", claimWithoutWorkFindsNoRun(stack, runner)},
+		{"a claim without work finds no run and marks the runner as seen", claimWithoutWorkFindsNoRun(stack, runner.Uuid.String())},
 	}
 	for _, s := range steps {
 		if !t.Run(s.name, s.step) {
@@ -38,18 +42,19 @@ func TestAccRunner(t *testing.T) {
 	}
 }
 
-func (s localStack) createRunner(t *testing.T) string {
+func (s localStack) createRunner(t *testing.T) config.Config {
 	t.Helper()
-	// The certificate the dev dump holds for the ALL runner, rather than an invented key meshStack
-	// may reject.
-	runControllerConfig, err := controller.ReadInYmlConfig("../run-controller/runner-config.yml")
+	// meshStack accepts the key that the dev dump holds for the ALL runner.
+	cfg, err := config.LoadFile("../run-controller/runner-config.yml", log.New(t.Output(), "", 0))
+	require.NoError(t, err)
+	publicKey, err := cfg.Crypto.FirstPublicKey()
 	require.NoError(t, err)
 
 	created, err := s.api.BuildingBlockRunner.Create(t.Context(), client.MeshBuildingBlockRunner{
 		Metadata: client.MeshBuildingBlockRunnerMetadata{OwnedByWorkspace: workspace},
 		Spec: client.MeshBuildingBlockRunnerSpec{
 			DisplayName:        "building-block-runner TestAcc",
-			PublicKey:          runControllerConfig.Crypto.PublicKey,
+			PublicKey:          publicKey,
 			ImplementationType: string(client.MeshBuildingBlockRunnerImplementationTypeAll),
 			Restriction:        new("PRIVATE"),
 		},
@@ -59,26 +64,21 @@ func (s localStack) createRunner(t *testing.T) string {
 	t.Cleanup(func() {
 		assert.NoError(t, s.api.BuildingBlockRunner.Delete(context.Background(), runnerUuid))
 	})
-	return runnerUuid
+
+	cfg.Uuid = uuid.MustParse(runnerUuid)
+	cfg.Api.Url = xurl.MustParse(s.endpoint)
+	cfg.Api.Auth.Workspace = workspace
+	cfg.Api.Auth.Key.ClientId, cfg.Api.Auth.Key.ClientSecret = s.runnerKey, s.runnerSecret
+	return cfg
 }
 
-func registrationUpdatesTheRunner(s localStack, runnerUuid string) func(*testing.T) {
+func registrationUpdatesTheRunner(s localStack, cfg config.Config) func(*testing.T) {
 	return func(t *testing.T) {
-		before, err := s.api.BuildingBlockRunner.Read(t.Context(), runnerUuid)
-		require.NoError(t, err)
+		cfg.Dispatcher.Register = &config.Register{DisplayName: "building-block-runner TestAcc, registered"}
+		userAgent := internalhttp.UserAgent{GitHubRepo: "meshcloud/building-block-runner", Version: "0.0.0-testacc"}
+		require.NoError(t, dispatcher.Register(t.Context(), cfg, log.New(t.Output(), "", 0), userAgent))
 
-		previous := controller.AppConfig
-		t.Cleanup(func() { controller.AppConfig = previous })
-		controller.AppConfig = &controller.ControllerConfig{
-			Uuid:             runnerUuid,
-			OwnedByWorkspace: workspace,
-			DisplayName:      "building-block-runner TestAcc, registered",
-			Crypto:           controller.CryptoConfig{PublicKey: before.Spec.PublicKey},
-			Api:              controller.ApiConfig{Url: s.endpoint, ClientId: s.runnerKey, ClientSecret: s.runnerSecret},
-		}
-		require.NoError(t, controller.RegisterController(log.New(t.Output(), "", 0)))
-
-		after, err := s.api.BuildingBlockRunner.Read(t.Context(), runnerUuid)
+		after, err := s.api.BuildingBlockRunner.Read(t.Context(), cfg.Uuid.String())
 		require.NoError(t, err)
 		assert.Equal(t, "building-block-runner TestAcc, registered", after.Spec.DisplayName)
 		assert.Equal(t, string(client.MeshBuildingBlockRunnerImplementationTypeAll), after.Spec.ImplementationType)

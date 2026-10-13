@@ -25,7 +25,7 @@ type Config struct {
 	Crypto     crypto.Crypto `yaml:"crypto" envPrefix:"CRYPTO_"`
 	Dispatcher Dispatcher    `yaml:"dispatcher" envPrefix:"DISPATCHER_"`
 
-	K8s *K8s `yaml:"k8s" envPrefix:"K8S_"` // if nil, inprocess dispatcher is used. as we currently have just two dispatchers (inprocess, k8s), we save us some config for that selecting one
+	K8s *K8s `yaml:"k8s" envPrefix:"K8S_"`
 
 	Tf Tf `yaml:"tf" envPrefix:"TF_"`
 }

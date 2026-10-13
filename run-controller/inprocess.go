@@ -1,5 +1,5 @@
-//go:build inprocess
+//go:build !k8s
 
 package main
 
-import _ "github.com/meshcloud/building-block-runner/run-controller/inprocess"
+import _ "github.com/meshcloud/building-block-runner/internal/dispatcher/inprocess"

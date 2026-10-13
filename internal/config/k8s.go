@@ -113,15 +113,23 @@ func (cfg Config) ValidateK8s() error {
 	if cfg.K8s.Namespace == "" {
 		errs = append(errs, errors.New("k8s.namespace is required"))
 	}
+	forAll := slices.Contains(cfg.Dispatcher.ForTypes, RunnerTypeAll)
+	runnable := 0
 	for _, runnerType := range cfg.Dispatcher.ForTypes.Expand() {
 		template, err := cfg.K8s.JobSpecTemplates.GetFor(runnerType)
-		if err != nil {
+		switch {
+		case err == nil && hasRunnerImage(template):
+			runnable++
+		case forAll:
+			// a run of this type fails when it starts
+		case err != nil:
 			errs = append(errs, err)
-			continue
-		}
-		if !hasRunnerImage(template) {
+		default:
 			errs = append(errs, fmt.Errorf("job spec template for runner type %s needs a container %s with an image", runnerType, runnerContainerName))
 		}
+	}
+	if forAll && runnable == 0 {
+		errs = append(errs, fmt.Errorf("a job spec template needs a container %s with an image", runnerContainerName))
 	}
 	return errors.Join(errs...)
 }

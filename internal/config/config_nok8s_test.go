@@ -11,11 +11,11 @@ import (
 )
 
 func TestLoadWithoutK8sSupport(t *testing.T) {
-	t.Run("runner-config-old-k8s.yml registers the runner types for the in-process dispatcher", func(t *testing.T) {
+	t.Run("runner-config-old-k8s.yml registers for ALL", func(t *testing.T) {
 		unsetRunnerEnv(t)
 		cfg := load(t, "runner-config-old-k8s.yml")
 		assert.Nil(t, cfg.K8s)
-		assert.Equal(t, RunnerTypes{RunnerTypeTf, RunnerTypeManual, RunnerTypeGitHub, RunnerTypeGitLab, RunnerTypeAzureDevOps}, cfg.Dispatcher.ForTypes)
+		assert.Equal(t, RunnerTypes{RunnerTypeAll}, cfg.Dispatcher.ForTypes)
 	})
 
 	t.Run("a k8s section fails", func(t *testing.T) {

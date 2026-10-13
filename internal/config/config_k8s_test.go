@@ -65,7 +65,7 @@ func TestLoadK8s(t *testing.T) {
 			Api:    newApiWithWorkspace("http://host.minikube.internal:8080", "admin-customer"),
 			Crypto: crypto.Crypto{PrivateKeys: crypto.PrivateKeys{parsedPrivateKey(t)}},
 			Dispatcher: Dispatcher{
-				ForTypes:          RunnerTypes{RunnerTypeTf, RunnerTypeManual, RunnerTypeGitHub, RunnerTypeGitLab, RunnerTypeAzureDevOps},
+				ForTypes:          RunnerTypes{RunnerTypeAll},
 				Register:          &Register{DisplayName: "meshcloud-hosted Runner"},
 				PollingInterval:   xtime.Seconds(10),
 				MaxConcurrentJobs: 20,
@@ -188,14 +188,25 @@ func TestValidateK8s(t *testing.T) {
 		assert.EqualError(t, cfg.ValidateK8s(), "k8s.namespace is required\nno job spec template for runner type tf")
 	})
 
-	t.Run("fails without image for all types", func(t *testing.T) {
+	t.Run("accepts ALL with an image for one type", func(t *testing.T) {
 		cfg := valid()
 		cfg.Dispatcher.ForTypes = RunnerTypes{RunnerTypeAll}
 		cfg.K8s.JobSpecTemplates[RunnerTypeAll] = runnerContainerTemplate("")
-		err := cfg.ValidateK8s()
-		assert.ErrorContains(t, err, "job spec template for runner type tf needs a container runner with an image")
-		assert.ErrorContains(t, err, "job spec template for runner type azureDevOps needs a container runner with an image")
-		assert.NotContains(t, err.Error(), "type manual")
+		assert.NoError(t, cfg.ValidateK8s())
+	})
+
+	t.Run("fails for ALL without any image", func(t *testing.T) {
+		cfg := valid()
+		cfg.Dispatcher.ForTypes = RunnerTypes{RunnerTypeAll}
+		cfg.K8s.JobSpecTemplates = JobSpecTemplates{RunnerTypeAll: runnerContainerTemplate("")}
+		assert.EqualError(t, cfg.ValidateK8s(), "a job spec template needs a container runner with an image")
+	})
+
+	t.Run("fails without image for a single type", func(t *testing.T) {
+		cfg := valid()
+		cfg.Dispatcher.ForTypes = RunnerTypes{RunnerTypeTf}
+		cfg.K8s.JobSpecTemplates[RunnerTypeAll] = runnerContainerTemplate("")
+		assert.EqualError(t, cfg.ValidateK8s(), "job spec template for runner type tf needs a container runner with an image")
 	})
 }
 

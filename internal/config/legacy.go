@@ -3,7 +3,6 @@ package config
 import (
 	"cmp"
 	"fmt"
-	"slices"
 	"uuid"
 
 	"github.com/meshcloud/building-block-runner/internal/config/internal/legacy"
@@ -63,18 +62,14 @@ func (cfg *Config) applyLegacy(l legacy.Config) (err error) {
 		cfg.Tf.InitTimeout = cmp.Or(xtime.Minutes(l.InitTimeoutMins), cfg.Tf.InitTimeout)
 	}
 
-	implementationTypes := RunnerTypes{}
 	for implementationType := range l.Implementations {
-		runnerType, err := ParseRunnerType(implementationType)
-		if err != nil {
+		if _, err := ParseRunnerType(implementationType); err != nil {
 			return fmt.Errorf("legacy implementation: %w", err)
 		}
-		implementationTypes = append(implementationTypes, runnerType)
 	}
-	for _, runnerType := range allRunnerTypes {
-		if slices.Contains(implementationTypes, runnerType) {
-			cfg.Dispatcher.ForTypes = append(cfg.Dispatcher.ForTypes, runnerType)
-		}
+	// The legacy run-controller layout registers for ALL; a type without implementation fails at start.
+	if len(l.Implementations) > 0 {
+		cfg.Dispatcher.ForTypes = append(cfg.Dispatcher.ForTypes, RunnerTypeAll)
 	}
 
 	legacyK8s, err := k8sFromLegacy(l.RunController)

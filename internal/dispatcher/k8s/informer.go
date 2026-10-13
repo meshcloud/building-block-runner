@@ -83,7 +83,6 @@ func (d *Dispatcher) observe(ctx context.Context, obj any) {
 		delete(d.running, runUuid)
 		if d.send(ctx, dispatcher.RunStatus{RunUuid: runUuid, Ended: true, Err: failure}) {
 			d.reported[runUuid] = true
-			d.markFailureReported(ctx, job)
 		}
 	case isFinished(job) && d.running[runUuid]:
 		delete(d.running, runUuid)
@@ -119,11 +118,12 @@ func (d *Dispatcher) send(ctx context.Context, status dispatcher.RunStatus) bool
 	}
 }
 
-func (d *Dispatcher) markFailureReported(ctx context.Context, job *batchv1.Job) {
+func (d *Dispatcher) FailureReported(ctx context.Context, runUuid uuid.UUID) {
+	name := jobName(runUuid.String())
 	patch := fmt.Appendf(nil, `{"metadata":{"annotations":{%q:"true"}}}`, annotationFailureReported)
-	_, err := d.clientset.BatchV1().Jobs(job.Namespace).Patch(context.WithoutCancel(ctx), job.Name, types.MergePatchType, patch, metav1.PatchOptions{})
+	_, err := d.clientset.BatchV1().Jobs(d.cfg.K8s.Namespace).Patch(ctx, name, types.MergePatchType, patch, metav1.PatchOptions{})
 	if err != nil {
-		d.logger.Printf("A later process may report job %s again, annotating it failed: %v", job.Name, err)
+		d.logger.Printf("A later process may report job %s again, annotating it failed: %v", name, err)
 	}
 }
 

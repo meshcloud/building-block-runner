@@ -98,7 +98,11 @@ func (d *Dispatcher) Start(ctx context.Context, run dispatcher.Run) error {
 	if err := d.createSecret(ctx, objects.secret); err != nil {
 		return err
 	}
-	job, err := jobs.Create(ctx, objects.job, metav1.CreateOptions{})
+	job, err := createRetrying(ctx, jobs.Create, objects.job)
+	// The create that failed transiently may have gone through.
+	if apierrors.IsAlreadyExists(err) {
+		job, err = jobs.Get(ctx, objects.job.Name, metav1.GetOptions{})
+	}
 	if err != nil {
 		_ = d.clientset.CoreV1().Secrets(d.cfg.K8s.Namespace).Delete(ctx, objects.secret.Name, metav1.DeleteOptions{})
 		return fmt.Errorf("create job %s: %w", objects.job.Name, err)
@@ -112,7 +116,7 @@ func (d *Dispatcher) Start(ctx context.Context, run dispatcher.Run) error {
 
 // createServiceAccount keeps an existing account, as all runs of a building block definition share it.
 func (d *Dispatcher) createServiceAccount(ctx context.Context, serviceAccount *corev1.ServiceAccount) error {
-	_, err := d.clientset.CoreV1().ServiceAccounts(d.cfg.K8s.Namespace).Create(ctx, serviceAccount, metav1.CreateOptions{})
+	_, err := createRetrying(ctx, d.clientset.CoreV1().ServiceAccounts(d.cfg.K8s.Namespace).Create, serviceAccount)
 	if err != nil && !apierrors.IsAlreadyExists(err) {
 		serviceAccountErrors.WithLabelValues(d.cfg.Uuid.String(), errorTypeServiceAccountCreation).Inc()
 		return fmt.Errorf("create service account %s: %w", serviceAccount.Name, err)
@@ -124,7 +128,7 @@ func (d *Dispatcher) createServiceAccount(ctx context.Context, serviceAccount *c
 }
 
 func (d *Dispatcher) createSecret(ctx context.Context, secret *corev1.Secret) error {
-	_, err := d.clientset.CoreV1().Secrets(d.cfg.K8s.Namespace).Create(ctx, secret, metav1.CreateOptions{})
+	_, err := createRetrying(ctx, d.clientset.CoreV1().Secrets(d.cfg.K8s.Namespace).Create, secret)
 	if err != nil && !apierrors.IsAlreadyExists(err) {
 		return fmt.Errorf("create secret %s: %w", secret.Name, err)
 	}

@@ -35,7 +35,6 @@ func TestLoadK8s(t *testing.T) {
 				Namespace: "default",
 				JobSpecTemplates: JobSpecTemplates{
 					RunnerTypeAll: {Spec: batchv1.JobSpec{
-						BackoffLimit: new(int32(1)),
 						Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{
 							Tolerations:  []corev1.Toleration{spotToleration},
 							NodeSelector: map[string]string{"spot": "true"},

@@ -151,14 +151,21 @@ func (p *poller) track(ctx context.Context, status RunStatus) error {
 		p.logger.Printf("Run %s ended: %v", status.RunUuid, status.Err)
 		return nil
 	}
+	ctx = context.WithoutCancel(ctx)
 	if run == nil {
-		read, err := p.readRun(context.WithoutCancel(ctx), status.RunUuid)
+		read, err := p.readRun(ctx, status.RunUuid)
 		if err != nil {
 			return fmt.Errorf("cannot report that run %s failed (%w): %w", status.RunUuid, status.Err, err)
 		}
 		run = &read
 	}
-	return p.reportFailure(context.WithoutCancel(ctx), *run, status.Err.Error())
+	if err := p.reportFailure(ctx, *run, status.Err.Error()); err != nil {
+		return err
+	}
+	if confirmer, ok := p.dispatcher.(FailureReportConfirmer); ok {
+		confirmer.FailureReported(ctx, status.RunUuid)
+	}
+	return nil
 }
 
 func (p *poller) readRun(ctx context.Context, runUuid uuid.UUID) (Run, error) {

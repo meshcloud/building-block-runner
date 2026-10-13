@@ -28,7 +28,6 @@ k8s:
   jobSpecTemplates:
     ALL: # or '*'
       spec:
-        backoffLimit: 1
         template:
           spec:
             tolerations:

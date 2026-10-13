@@ -35,6 +35,7 @@ type fakeApi struct {
 	queue     []Run
 	failed    map[string]string
 	claimSeen int
+	patchErr  error
 }
 
 func (a *fakeApi) ClaimRun(_ context.Context, forRunner uuid.UUID) (meshapi.MeshRunnerRun, error) {
@@ -85,6 +86,9 @@ func (r fakeRunApi) PatchStatus(_ context.Context, sourceId uuid.UUID, update me
 	}
 	r.api.mu.Lock()
 	defer r.api.mu.Unlock()
+	if r.api.patchErr != nil {
+		return meshapi.MeshRunnerRunStatusUpdateResult{}, r.api.patchErr
+	}
 	if r.api.failed == nil {
 		r.api.failed = map[string]string{}
 	}
@@ -137,6 +141,15 @@ type fakeReadingDispatcher struct {
 
 func (d fakeReadingDispatcher) ReadRun(_ context.Context, runUuid uuid.UUID) (Run, error) {
 	return d.runs[runUuid], nil
+}
+
+type fakeConfirmingDispatcher struct {
+	*fakeDispatcher
+	confirmed []uuid.UUID
+}
+
+func (d *fakeConfirmingDispatcher) FailureReported(_ context.Context, runUuid uuid.UUID) {
+	d.confirmed = append(d.confirmed, runUuid)
 }
 
 func testConfig(maxConcurrentJobs int) config.Config {
@@ -276,5 +289,27 @@ func Test_Poll_ReportsRunsThatEndAfterShutdown(t *testing.T) {
 
 		require.NoError(t, stop(RunStatus{RunUuid: run.Metadata.Uuid, Ended: true, Err: errors.New("panic")}))
 		assert.Equal(t, map[string]string{run.Spec.RunToken: "panic"}, api.failures())
+	})
+}
+
+func Test_Poll_ConfirmsOnlyAFailureReportThatMeshStackAccepted(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		rejected, accepted := newManualRun(t), newManualRun(t)
+		api := &fakeApi{queue: []Run{rejected, accepted}, patchErr: errors.New("http error 503")}
+		dispatcher := &fakeConfirmingDispatcher{fakeDispatcher: newFakeDispatcher()}
+		stop := startPolling(t, testConfig(2), api, dispatcher, dispatcher.status)
+		time.Sleep(10 * time.Second)
+		synctest.Wait()
+
+		dispatcher.status <- RunStatus{RunUuid: rejected.Metadata.Uuid, Ended: true, Err: errors.New("OOMKilled")}
+		synctest.Wait()
+		api.mu.Lock()
+		api.patchErr = nil
+		api.mu.Unlock()
+		dispatcher.status <- RunStatus{RunUuid: accepted.Metadata.Uuid, Ended: true, Err: errors.New("OOMKilled")}
+		synctest.Wait()
+
+		require.NoError(t, stop())
+		assert.Equal(t, []uuid.UUID{accepted.Metadata.Uuid}, dispatcher.confirmed)
 	})
 }

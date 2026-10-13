@@ -4,6 +4,7 @@ package k8s
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log"
 	"maps"
@@ -17,9 +18,12 @@ import (
 	"github.com/stretchr/testify/require"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/internal/config/xtime"
@@ -93,7 +97,7 @@ func Test_Start_MergesTheJobSkeletonOverTheTemplate(t *testing.T) {
 	assert.Equal(t, "platform", job.Labels["team"])
 	assert.Equal(t, "TERRAFORM", job.Labels[labelRunnerType])
 	assert.Equal(t, int64(45*60), *job.Spec.ActiveDeadlineSeconds)
-	assert.Equal(t, int32(3), *job.Spec.BackoffLimit)
+	assert.Equal(t, int32(0), *job.Spec.BackoffLimit)
 	assert.Equal(t, int32(defaultTtlSeconds), *job.Spec.TTLSecondsAfterFinished)
 
 	pod := job.Spec.Template.Spec
@@ -131,6 +135,47 @@ func Test_Start_StoresTheRunInTheSecretOfTheJob(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, run.Metadata.Uuid, read.Metadata.Uuid)
 	assert.Equal(t, "a-run-token", read.Spec.RunToken)
+}
+
+func Test_Start_RetriesATransientCreateErrorAndTakesAnAlreadyExistsForSuccess(t *testing.T) {
+	d, clientset := startTestDispatcher(t, t.Context(), testConfig(config.JobSpecTemplates{config.RunnerTypeAll: runnerTemplate(corev1.Container{Image: "runner"}, corev1.PodSpec{})}))
+	var secretCreates, jobCreates int
+	clientset.PrependReactor("create", "secrets", func(k8stesting.Action) (bool, runtime.Object, error) {
+		secretCreates++
+		return secretCreates == 1, nil, apierrors.NewTooManyRequests("slow down", 0)
+	})
+	clientset.PrependReactor("create", "jobs", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		jobCreates++
+		if jobCreates > 1 {
+			return false, nil, nil
+		}
+		create := action.(k8stesting.CreateAction)
+		require.NoError(t, clientset.Tracker().Create(create.GetResource(), create.GetObject(), create.GetNamespace()))
+		return true, nil, apierrors.NewServiceUnavailable("timed out after the create")
+	})
+	run := newTfRun()
+
+	require.NoError(t, d.Start(t.Context(), run))
+
+	assert.Equal(t, 2, secretCreates)
+	assert.Equal(t, 2, jobCreates)
+	secret, err := clientset.CoreV1().Secrets(namespace).Get(t.Context(), "run-json-"+run.Metadata.Uuid.String(), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "runner-"+run.Metadata.Uuid.String(), secret.OwnerReferences[0].Name)
+}
+
+func Test_Start_FailsAtOnceOnAPermanentCreateError(t *testing.T) {
+	d, clientset := startTestDispatcher(t, t.Context(), testConfig(config.JobSpecTemplates{config.RunnerTypeAll: runnerTemplate(corev1.Container{Image: "runner"}, corev1.PodSpec{})}))
+	var jobCreates int
+	clientset.PrependReactor("create", "jobs", func(k8stesting.Action) (bool, runtime.Object, error) {
+		jobCreates++
+		return true, nil, apierrors.NewForbidden(batchv1.Resource("jobs"), "runner", errors.New("quota exceeded"))
+	})
+
+	err := d.Start(t.Context(), newTfRun())
+
+	assert.ErrorContains(t, err, "quota exceeded")
+	assert.Equal(t, 1, jobCreates)
 }
 
 func Test_Start_FailsForARunTooLargeForASecret(t *testing.T) {
@@ -189,7 +234,7 @@ func Test_Status_ReportsTheRunningJobsFirstAndFailedJobsOfAPreviousProcess(t *te
 	running, failed, reported, succeeded := uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	reportedJob := withCondition(runningJob(reported), batchv1.JobFailed, "BackoffLimitExceeded")
 	reportedJob.Annotations = map[string]string{annotationFailureReported: "true"}
-	d, clientset := startTestDispatcher(t, t.Context(), testConfig(nil),
+	d, _ := startTestDispatcher(t, t.Context(), testConfig(nil),
 		runningJob(running),
 		withCondition(runningJob(failed), batchv1.JobFailed, "DeadlineExceeded"),
 		reportedJob,
@@ -202,11 +247,23 @@ func Test_Status_ReportsTheRunningJobsFirstAndFailedJobsOfAPreviousProcess(t *te
 	assert.True(t, failure.Ended)
 	assert.EqualError(t, failure.Err, "the Kubernetes Job runner-"+failed.String()+" failed: DeadlineExceeded: details")
 	assertNoStatus(t, d)
+}
 
-	assert.Eventually(t, func() bool {
+func Test_FailureReported_AnnotatesTheJobOnlyOnConfirmation(t *testing.T) {
+	failed := uuid.New()
+	d, clientset := startTestDispatcher(t, t.Context(), testConfig(nil), withCondition(runningJob(failed), batchv1.JobFailed, "DeadlineExceeded"))
+	annotations := func() map[string]string {
 		job, err := clientset.BatchV1().Jobs(namespace).Get(t.Context(), "runner-"+failed.String(), metav1.GetOptions{})
-		return err == nil && job.Annotations[annotationFailureReported] == "true"
-	}, 5*time.Second, 10*time.Millisecond)
+		require.NoError(t, err)
+		return job.Annotations
+	}
+	receive(t, d)
+	assertNoStatus(t, d)
+	assert.Empty(t, annotations())
+
+	d.FailureReported(t.Context(), failed)
+
+	assert.Equal(t, map[string]string{annotationFailureReported: "true"}, annotations())
 }
 
 func Test_Status_ReportsAJobThatEnds(t *testing.T) {

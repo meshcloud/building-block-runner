@@ -38,6 +38,11 @@ type WorkloadIdentityProvider interface {
 	WorkloadIdentity() *meshapi.MeshRunnerRegistrationWif
 }
 
+// FailureReportConfirmer is implemented by a dispatcher that must not report a failure again once meshStack accepted it.
+type FailureReportConfirmer interface {
+	FailureReported(ctx context.Context, runUuid uuid.UUID)
+}
+
 // RunReader is implemented by a dispatcher whose runs outlive the process that started them.
 type RunReader interface {
 	ReadRun(ctx context.Context, runUuid uuid.UUID) (Run, error)

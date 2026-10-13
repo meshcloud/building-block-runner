@@ -30,6 +30,9 @@ type Dispatcher interface {
 // Current is set by the init of the dispatcher package that the build tags select.
 var Current func(ctx context.Context, cfg config.Config, api meshapi.MeshRunnerClient) (Dispatcher, error)
 
+// DefaultForTypes fills an empty dispatcher.forTypes when the selected dispatcher package sets it.
+var DefaultForTypes func() config.RunnerTypes
+
 type WorkloadIdentityProvider interface {
 	// WorkloadIdentity returns nil when the runs have no workload identity.
 	WorkloadIdentity() *meshapi.MeshRunnerRegistrationWif

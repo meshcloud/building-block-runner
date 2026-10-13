@@ -12,9 +12,13 @@ One Go module at the repository root builds one binary, `cmd/runner`.
 - `internal/dispatcher` claims runs, or runs the one in `RUNNER_CLAIM_RUN_YML`, and hands them to the
   dispatcher the build tags select: `inprocess` (default) or `k8s` (`-tags k8s`).
 - `internal/build` holds the version, set with `-ldflags -X`.
-- `tf-block-runner/tfrun` and `manual-block-runner/manual` are the executors of the in-process dispatcher.
+- `tf-block-runner/tfrun` and `manual-block-runner/manual` are the executors of the in-process dispatcher. Each
+  registers itself in `internal/dispatcher/inprocess/executor_<type>.go` behind its build tag; a build with neither
+  `tf` nor `manual` links both.
 
-The run-controller, tf and manual images all build `./cmd/runner`; only run-controller uses `-tags k8s`.
+All images build `./cmd/runner`: run-controller with `-tags k8s` (no executor), tf with `-tags tf`, manual with
+`-tags manual`. A binary that links one executor defaults `dispatcher.forTypes` to its runner type.
+`cmd/runner/deps_test.go` pins what each build links.
 
 ## Companion Files
 
@@ -28,4 +32,4 @@ task lint
 task test
 ```
 
-`task lint` and `task test` run with and without `-tags k8s`. Never skip formatting or tests. Fix all failures before finishing.
+`task lint` and `task test` run once per build tag an image uses: none, `k8s`, `tf` and `manual`. Never skip formatting or tests. Fix all failures before finishing.

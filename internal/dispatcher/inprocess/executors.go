@@ -2,27 +2,21 @@ package inprocess
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"log"
-	"os"
+	"maps"
 	"slices"
 
 	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/internal/dispatcher"
 	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
-	"github.com/meshcloud/building-block-runner/manual-block-runner/manual"
-	"github.com/meshcloud/building-block-runner/tf-block-runner/tfrun"
 )
 
 type executeFunc func(ctx context.Context, run dispatcher.Run, api meshapi.MeshRunnerRunClient) error
 
 type executors map[config.RunnerType]executeFunc
 
-var executorFactories = map[config.RunnerType]func(cfg config.Config) (executeFunc, error){
-	config.RunnerTypeTf:     newTfExecutor,
-	config.RunnerTypeManual: newManualExecutor,
-}
+// Filled by the executor files the build tags select.
+var executorFactories = map[config.RunnerType]func(cfg config.Config) (executeFunc, error){}
 
 // For ALL, a runner type without executor fails its runs when they start.
 func newExecutors(cfg config.Config) (executors, error) {
@@ -45,26 +39,10 @@ func newExecutors(cfg config.Config) (executors, error) {
 	return executors, nil
 }
 
-func newTfExecutor(cfg config.Config) (executeFunc, error) {
-	if err := cfg.ValidateTf(); err != nil {
-		return nil, err
+// A binary that links a single executor runs only its runner type.
+func defaultForTypes() config.RunnerTypes {
+	if len(executorFactories) != 1 {
+		return nil
 	}
-	tfBinaries, err := tfrun.NewTfBin(cfg.Tf.TfInstallDir, os.Stdout)
-	if err != nil {
-		return nil, err
-	}
-	logger := log.New(os.Stdout, "[TF RUNNER] ", log.LstdFlags)
-	return func(ctx context.Context, run dispatcher.Run, api meshapi.MeshRunnerRunClient) error {
-		err := tfrun.Execute(ctx, logger, cfg, run, api, tfBinaries)
-		if errors.Is(err, tfrun.ErrFailureReported) {
-			return fmt.Errorf("%w: %w", err, dispatcher.ErrFailureReported)
-		}
-		return err
-	}, nil
-}
-
-func newManualExecutor(cfg config.Config) (executeFunc, error) {
-	return func(ctx context.Context, run dispatcher.Run, api meshapi.MeshRunnerRunClient) error {
-		return manual.Execute(ctx, run, api, cfg.Uuid)
-	}, nil
+	return slices.Collect(maps.Keys(executorFactories))
 }

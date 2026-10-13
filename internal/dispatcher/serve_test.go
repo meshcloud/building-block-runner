@@ -74,3 +74,15 @@ func Test_ServeRunFile_ReportsTheFailureWithTheRunTokenAndWithoutApiConfig(t *te
 	assert.Equal(t, map[string]string{gohttp.MethodPost: bearer, gohttp.MethodPatch: bearer}, authorizations)
 	assert.Zero(t, dispatched.Dispatcher.Timeout.Duration, "the writer of the run file owns the deadline")
 }
+
+func Test_Serve_ValidatesTheDefaultForTypes(t *testing.T) {
+	t.Setenv(claimRunYmlEnv, "")
+	previous := DefaultForTypes
+	t.Cleanup(func() { DefaultForTypes = previous })
+	DefaultForTypes = func() config.RunnerTypes { return config.RunnerTypes{config.RunnerTypeTf} }
+
+	err := Serve(t.Context(), config.Config{}, log.New(io.Discard, "", 0), http.UserAgent{})
+
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "dispatcher.forTypes")
+}

@@ -16,7 +16,7 @@
 ## Running Tests
 
 ```bash
-# All tests, with and without -tags k8s
+# All tests, once per build tag an image uses
 task test
 
 # Specific package with verbose output

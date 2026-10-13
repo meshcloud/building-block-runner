@@ -1,5 +1,3 @@
-//go:build !k8s
-
 package main
 
 import (
@@ -11,11 +9,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_BuildWithoutK8sTag_LinksNoKubernetesModule(t *testing.T) {
-	out, err := exec.CommandContext(t.Context(), "go", "list", "-deps", ".").Output()
-	require.NoError(t, err)
+const module = "github.com/meshcloud/building-block-runner/"
 
-	for pkg := range strings.Lines(string(out)) {
-		assert.NotContains(t, pkg, "k8s.io/")
+func Test_EachImageBuild_LinksOnlyWhatItRuns(t *testing.T) {
+	forbiddenByTags := map[string][]string{
+		"":       {"k8s.io/"},
+		"tf":     {"k8s.io/", module + "manual-block-runner/"},
+		"manual": {"k8s.io/", module + "tf-block-runner/"},
+		"k8s":    {module + "internal/dispatcher/inprocess", module + "manual-block-runner/", module + "tf-block-runner/"},
+	}
+	for tags, forbidden := range forbiddenByTags {
+		t.Run("tags="+tags, func(t *testing.T) {
+			t.Parallel()
+			out, err := exec.CommandContext(t.Context(), "go", "list", "-deps", "-tags", tags, ".").Output()
+			require.NoError(t, err)
+
+			for pkg := range strings.Lines(string(out)) {
+				for _, prefix := range forbidden {
+					assert.False(t, strings.HasPrefix(pkg, prefix), "links %s", strings.TrimSpace(pkg))
+				}
+			}
+		})
 	}
 }

@@ -151,8 +151,9 @@ jobs:
 
       - name: Build
         run: |
-          go build ./...
-          go build -tags k8s ./...
+          for tags in '' k8s tf manual; do
+            go build -tags "$tags" ./...
+          done
 
       # Built here rather than downloaded by the action below: golangci-lint's formatters use the
       # go/format compiled into the binary, so the formatting they enforce comes from the Go release
@@ -173,14 +174,27 @@ jobs:
           install-mode: none
           args: --build-tags k8s
 
+      - name: Lint with the tf tag
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          install-mode: none
+          args: --build-tags tf
+
+      - name: Lint with the manual tag
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          install-mode: none
+          args: --build-tags manual
+
       # Binary coverage data (GOCOVERDIR format) rather than a text profile, because only the binary
       # form merges with the acceptance run's coverage. `-coverpkg=./...` matches what meshfed-release
       # instruments, so both figures share one denominator.
       - name: Test
         run: |
           mkdir -p covdata/unit
-          go test -race -coverpkg=./... ./... -args -test.gocoverdir="$PWD/covdata/unit"
-          go test -race -tags k8s -coverpkg=./... ./... -args -test.gocoverdir="$PWD/covdata/unit"
+          for tags in '' k8s tf manual; do
+            go test -race -tags "$tags" -coverpkg=./... ./... -args -test.gocoverdir="$PWD/covdata/unit"
+          done
         env:
           CGO_ENABLED: "1" # the race detector needs cgo
 

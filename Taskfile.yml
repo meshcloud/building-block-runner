@@ -2,6 +2,7 @@ version: '3'
 
 vars:
   PACKAGES: ./...
+  BUILD_TAGS: ['', k8s, tf, manual]
 
 env:
   CGO_ENABLED: "0" # like the images, so building needs no C compiler
@@ -12,18 +13,18 @@ tasks:
       - task --list
 
   test:
-    desc: Run the Go tests with and without the k8s tag. Set PACKAGES to test fewer.
+    desc: Run the Go tests for each build tag an image or `start:runner` uses. Set PACKAGES to test fewer.
     env:
       CGO_ENABLED: "1" # the race detector needs cgo
     cmds:
-      - go test -race {{.CLI_ARGS}} {{.PACKAGES}}
-      - go test -race -tags k8s {{.CLI_ARGS}} {{.PACKAGES}}
+      - for: { var: BUILD_TAGS }
+        cmd: go test -race -tags '{{.ITEM}}' {{.CLI_ARGS}} {{.PACKAGES}}
 
   lint:
-    desc: Run golangci-lint with and without the k8s tag. Set PACKAGES to lint fewer, `-- --fix` to fix.
+    desc: Run golangci-lint for each build tag an image or `start:runner` uses. Set PACKAGES to lint fewer, `-- --fix` to fix.
     cmds:
-      - 'go tool golangci-lint run {{.CLI_ARGS}} {{.PACKAGES}}'
-      - 'go tool golangci-lint run --build-tags k8s {{.CLI_ARGS}} {{.PACKAGES}}'
+      - for: { var: BUILD_TAGS }
+        cmd: go tool golangci-lint run --build-tags '{{.ITEM}}' {{.CLI_ARGS}} {{.PACKAGES}}
 
   fmt:
     desc: Format the Go code

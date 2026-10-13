@@ -721,3 +721,22 @@ func readGeneratedBackendFile(t *testing.T, workingDirectory string) []byte {
 	require.NoError(t, err)
 	return content
 }
+
+func Test_RunnerCredentialsInTheProcessEnvironment_ReachNeitherTofuNorThePreRunScript(t *testing.T) {
+	credentials := []string{
+		"MESHSTACK_API_KEY", "MESHSTACK_API_SECRET", "MESHSTACK_API_TOKEN", "MESHSTACK_API_USERNAME", "MESHSTACK_API_PASSWORD",
+		"MESHSTACK_PROFILE", "MESHSTACK_WORKSPACE", "MESHSTACK_CONFIG_DIR", "RUNNER_API_CLIENT_SECRET", "RUNNER_API_PASSWORD",
+	}
+	for _, key := range credentials {
+		t.Setenv(key, "secret")
+	}
+
+	tfEnv, err := makeTestGenericTfCmd(t).buildTfEnv()
+	require.NoError(t, err)
+	scriptEnv := buildScriptEnvironmentVariables("/tf/bin", "/user-message.txt", tfEnv)
+
+	for _, key := range credentials {
+		assert.NotContains(t, tfEnv, key)
+		assert.NotContains(t, scriptEnv, key+"=secret")
+	}
+}

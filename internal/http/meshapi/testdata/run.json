@@ -1,0 +1,55 @@
+{
+  "apiVersion": "v1",
+  "kind": "meshBuildingBlockRun",
+  "metadata": {
+    "uuid": "c662eb0d-2ee2-4dc3-92df-d0b8bd41df44"
+  },
+  "spec": {
+    "runNumber": 1,
+    "behavior": "APPLY",
+    "buildingBlock": {
+      "uuid": "23cf7c1b-f0ba-4139-a98c-b8cea37e83cf",
+      "spec": {
+        "displayName": "my-block",
+        "workspaceIdentifier": "managed-customer",
+        "inputs": [
+          { "key": "count", "value": 12345678901234567890, "type": "INTEGER", "isSensitive": false, "isEnvironment": false },
+          { "key": "ratio", "value": 0.5, "type": "NUMBER", "isSensitive": false, "isEnvironment": false },
+          { "key": "config", "value": { "nested": [1, 2] }, "type": "CODE", "isSensitive": false, "isEnvironment": false },
+          { "key": "password", "value": "ZW5jcnlwdGVk", "type": "STRING", "isSensitive": true, "isEnvironment": true }
+        ],
+        "parentBuildingBlocks": [
+          { "buildingBlockUuid": "5d1b8a2e-7c1f-4a51-9d0e-6f1f4b7c2a10", "definitionUuid": "0b6d1b5e-3c0f-4a51-9d0e-6f1f4b7c2a10" }
+        ]
+      }
+    },
+    "buildingBlockDefinition": {
+      "uuid": "f3228cf4-acde-4ff3-a0a5-1720b69d5bcd",
+      "spec": {
+        "workspaceIdentifier": "test-workspace",
+        "version": 1,
+        "implementation": {
+          "type": "TERRAFORM",
+          "terraformVersion": "1.9.0",
+          "repositoryUrl": "git@github.com:meshcloud/modules.git",
+          "sshPrivateKey": "ZW5jcnlwdGVkLWtleQ==",
+          "async": false,
+          "useMeshHttpBackendFallback": true
+        }
+      }
+    },
+    "runToken": "a-run-token",
+    "trigger": {
+      "reason": "MANUAL_EXECUTION",
+      "author": { "identifier": "jane", "type": "User", "displayName": "Jane", "username": "jane", "email": null, "euid": null }
+    }
+  },
+  "status": "IN_PROGRESS",
+  "_links": {
+    "self": { "href": "http://localhost:8080/api/meshobjects/meshbuildingblockruns/c662eb0d-2ee2-4dc3-92df-d0b8bd41df44" },
+    "registerSource": { "href": "http://localhost:8080/api/meshobjects/meshbuildingblockruns/c662eb0d-2ee2-4dc3-92df-d0b8bd41df44/status/source" },
+    "updateSource": { "href": "http://localhost:8080/api/meshobjects/meshbuildingblockruns/c662eb0d-2ee2-4dc3-92df-d0b8bd41df44/status/source/{sourceId}", "templated": true },
+    "meshstackBaseUrl": { "href": "http://localhost:8080" },
+    "planArtifact": { "href": "http://localhost:8080/api/meshobjects/meshbuildingblockruns/a1b2c3d4-0000-4000-8000-000000000000/artifact" }
+  }
+}

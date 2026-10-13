@@ -4,86 +4,36 @@ import (
 	"context"
 	"log"
 	"net"
-	"net/http"
+	gohttp "net/http"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 
-	meshcrypto "github.com/meshcloud/building-block-runner/go-meshapi-client/crypto"
-	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
+	"github.com/meshcloud/building-block-runner/internal/config"
+	"github.com/meshcloud/building-block-runner/internal/dispatcher"
+	_ "github.com/meshcloud/building-block-runner/internal/dispatcher/inprocess"
+	"github.com/meshcloud/building-block-runner/internal/http"
 	"github.com/meshcloud/building-block-runner/tf-block-runner/build"
-	"github.com/meshcloud/building-block-runner/tf-block-runner/tfrun"
-)
-
-const (
-	ENV_RUN_JSON_FILE_PATH = "RUN_JSON_FILE_PATH"
-	ENV_EXECUTION_MODE     = "EXECUTION_MODE"
 )
 
 func main() {
 	logger := log.New(os.Stdout, "[TF RUNNER] ", log.LstdFlags)
-	meshapi.SetClientMetadata("tf-block-runner", build.Version)
 	logger.Printf("Build metadata: version=%s", build.Version)
 
-	if err := tfrun.ReadConfig(logger); err != nil {
-		logger.Fatalf("cannot read config: %s", err.Error())
-	}
-
-	// Check if running in single-run mode
-	singleRunMode := isSingleRunMode()
-
-	// init crypto only when NOT in single-run mode
-	// In single-run mode, decryption is handled by the controller
-	if !singleRunMode && tfrun.AppConfig.PrivateKey != "" {
-		var cryptoErr error
-		meshcrypto.Crypto, cryptoErr = meshcrypto.NewCertBasedDecryptor(tfrun.AppConfig.PrivateKey)
-		if cryptoErr != nil {
-			logger.Fatalf("failed to initialize crypto: private key could not be loaded: %s", cryptoErr.Error())
-		}
-		logger.Println("Crypto initialized for polling mode")
-	} else if singleRunMode {
-		logger.Println("Single-run mode: skipping crypto initialization (controller handles decryption)")
-	}
-
-	// define tf binary provider
-	tfBinaryProvider, err := tfrun.NewTfBin(tfrun.AppConfig.TfInstallDir, os.Stdout)
+	cfg, err := config.LoadFile(config.FileFromEnv(), logger)
 	if err != nil {
-		panic(err)
+		logger.Fatal(err)
 	}
-
-	// Check if running in single-run mode
-	if singleRunMode {
-		logger.Println("Running in single-run mode")
-		executeSingleRun(logger, tfBinaryProvider)
-		return
-	}
-
-	// Standard polling mode
-	logger.Println("Running in polling mode")
 	startHealthServer(logger)
-	var wg sync.WaitGroup
-	wg.Add(1)
 
-	// start run manager with workers
-	runManager := tfrun.NewManager(tfBinaryProvider)
-	runManager.Start(&wg)
+	ctx, stopOnSignal := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	// A second signal ends the process without waiting for the runs.
+	context.AfterFunc(ctx, stopOnSignal)
 
-	// listen for os signals to be able to shutdown gracefully
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-signalChan
-		runManager.Stop()
-	}()
-
-	wg.Wait()
-	os.Exit(0)
-}
-
-func isSingleRunMode() bool {
-	mode := os.Getenv(ENV_EXECUTION_MODE)
-	return mode == "single-run"
+	userAgent := http.UserAgent{GitHubRepo: "meshcloud/building-block-runner", Version: build.Version}
+	if err := dispatcher.Serve(ctx, cfg, logger, userAgent); err != nil {
+		logger.Fatal(err)
+	}
 }
 
 func startHealthServer(logger *log.Logger) {
@@ -92,9 +42,9 @@ func startHealthServer(logger *log.Logger) {
 		port = "8100"
 	}
 	addr := ":" + port
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
+	mux := gohttp.NewServeMux()
+	mux.HandleFunc("/healthz", func(w gohttp.ResponseWriter, r *gohttp.Request) {
+		w.WriteHeader(gohttp.StatusOK)
 		w.Write([]byte("OK"))
 	})
 	ln, err := net.Listen("tcp", addr)
@@ -103,25 +53,8 @@ func startHealthServer(logger *log.Logger) {
 	}
 	logger.Printf("Health server listening on %s", addr)
 	go func() {
-		if err := http.Serve(ln, mux); err != nil {
+		if err := gohttp.Serve(ln, mux); err != nil {
 			logger.Fatalf("Health server error: %v", err)
 		}
 	}()
-}
-
-func executeSingleRun(logger *log.Logger, tfBinaryProvider *tfrun.TfBinaries) {
-	runJsonFilePath := os.Getenv(ENV_RUN_JSON_FILE_PATH)
-	if runJsonFilePath == "" {
-		logger.Fatalf("RUN_JSON_FILE_PATH environment variable is required in single-run mode")
-	}
-	runJson, err := os.ReadFile(runJsonFilePath)
-	if err != nil {
-		logger.Fatalf("Failed to read run JSON file from %s: %v", runJsonFilePath, err)
-	}
-
-	// Kubernetes retries a failed job, which would execute the run a second time.
-	if err := tfrun.ExecuteDecryptedRun(context.Background(), logger, runJson, tfBinaryProvider); err != nil {
-		logger.Printf("Run execution failed: %v", err)
-	}
-	logger.Println("Single run completed")
 }

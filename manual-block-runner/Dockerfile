@@ -5,7 +5,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-COPY go-meshapi-client/ ./go-meshapi-client/
+COPY internal/ ./internal/
 COPY manual-block-runner/ ./manual-block-runner/
 
 WORKDIR /app/manual-block-runner

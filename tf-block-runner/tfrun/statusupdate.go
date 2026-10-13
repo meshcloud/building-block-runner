@@ -5,14 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net/http"
+	gohttp "net/http"
 	"net/url"
 	"slices"
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
 
-	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
+	"github.com/meshcloud/building-block-runner/internal/http"
 )
 
 const statusRequestTimeout = 30 * time.Second
@@ -80,14 +80,14 @@ func updateStateWithin(ctx context.Context, api RunApi, status *RunStatus, timeo
 // it is unlikely to pass on a retry, and a retry holds one of the few runners for ten minutes, so a run that always
 // fails with 500 could keep every runner from starting other runs.
 func isTransient(err error) bool {
-	if statusErr, ok := errors.AsType[*meshapi.StatusError](err); ok {
-		return slices.Contains([]int{http.StatusLocked, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout}, statusErr.Status)
+	if httpErr, ok := errors.AsType[http.Error](err); ok {
+		return slices.Contains([]int{gohttp.StatusLocked, gohttp.StatusBadGateway, gohttp.StatusServiceUnavailable, gohttp.StatusGatewayTimeout}, httpErr.StatusCode)
 	}
 	_, isTransportErr := errors.AsType[*url.Error](err)
 	return isTransportErr
 }
 
 func isClientError(err error) bool {
-	statusErr, ok := errors.AsType[*meshapi.StatusError](err)
-	return ok && statusErr.Status >= 400 && statusErr.Status < 500
+	httpErr, ok := errors.AsType[http.Error](err)
+	return ok && httpErr.StatusCode >= 400 && httpErr.StatusCode < 500
 }

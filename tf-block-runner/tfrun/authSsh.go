@@ -11,7 +11,6 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	gogitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
-	meshcrypto "github.com/meshcloud/building-block-runner/go-meshapi-client/crypto"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
@@ -42,16 +41,6 @@ type KnownHost struct {
 	value string
 }
 
-func (sshAuth *SshAuth) unwrapCert() (string, error) {
-	// If crypto is not initialized (single-run mode), the cert is already decrypted
-	if meshcrypto.Crypto == nil {
-		return sshAuth.certStr, nil
-	}
-	// Otherwise, decrypt it (polling mode)
-	r, e := meshcrypto.Crypto.DecryptMeshCertBased(sshAuth.certStr)
-	return r, e
-}
-
 func (sshAuth *SshAuth) name() AuthType {
 	return AUTH_TYPE_SSH
 }
@@ -61,19 +50,14 @@ func (sshAuth *SshAuth) prepare(dir string, log *logwrap) error {
 
 	sshAuth.prepDir = dir
 	certPath := path.Join(dir, TMP_FILE_SSH_CERT)
-	cert, err := sshAuth.unwrapCert()
-	if err != nil {
-		return err
-	}
-
-	// ensure trailing newline
+	cert := sshAuth.certStr
 	if !strings.HasSuffix(cert, "\n") {
 		cert += "\n"
 	}
 
 	// persisting cert file
 	log.PrintlnToLocalLogs(fmt.Sprintf("writing cert file to %s\n", certPath))
-	err = os.WriteFile(certPath, []byte(cert), 0600)
+	err := os.WriteFile(certPath, []byte(cert), 0600)
 	if err != nil {
 		log.PrintlnToLocalLogs("unable to write cert file.")
 		log.PrintlnToUpdateLogs(ERR_MSG_PREPARE)

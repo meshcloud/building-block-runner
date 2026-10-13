@@ -3,7 +3,6 @@ package tfrun
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,21 +18,24 @@ import (
 
 	"github.com/hashicorp/terraform-exec/tfexec"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
-	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
+	internalhttp "github.com/meshcloud/building-block-runner/internal/http"
+	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
 )
 
 type WorkerTestSuite struct {
 	suite.Suite
 	w      *Worker
+	run    meshapi.MeshRunnerRun
 	calls  MockRunApiCalls
 	tfBin  *TfBinaries
 	tfMock *MockedTfFacade
 }
 
 type MockRunApiCalls struct {
-	fetch, register, update, download, upload func(*http.Request) *http.Response
+	register, update, download, upload func(*http.Request) *http.Response
 }
 
 func noopCall(req *http.Request) *http.Response {
@@ -44,25 +46,17 @@ func noopCall(req *http.Request) *http.Response {
 
 func (suite *WorkerTestSuite) scenarioClientBehavior(req *http.Request) *http.Response {
 	switch {
-	// this is the predecessor plan-artifact download call
 	case req.Method == http.MethodGet && strings.Contains(req.URL.Path, "/plan-artifact"):
 		return suite.calls.download(req)
-
-	// this is the plan-artifact upload call
 	case req.Method == http.MethodPut && strings.Contains(req.URL.Path, "/plan-artifact"):
 		return suite.calls.upload(req)
-
-	// this is the "status update" call
 	case req.Method == http.MethodPatch && strings.Contains(req.URL.Path, "/status/source"):
 		return suite.calls.update(req)
-
-	// this is the "registration" call
 	case req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/status/source"):
 		return suite.calls.register(req)
-
-	// this is the "get run" call
 	default:
-		return suite.calls.fetch(req)
+		suite.Failf("unexpected request", "%s %s", req.Method, req.URL)
+		return &http.Response{StatusCode: http.StatusNotFound}
 	}
 }
 
@@ -79,10 +73,7 @@ func TestAccWorkerSuite(t *testing.T) {
 	suite.Run(t, new(WorkerTestSuite))
 }
 
-// run once before suite runs,
-// setup worker and tfBinaries, use temp directories
 func (suite *WorkerTestSuite) SetupSuite() {
-
 	testTfInstallDir, err := os.MkdirTemp(os.TempDir(), "workerScenario-tf-")
 	if err != nil {
 		panic(err)
@@ -93,9 +84,8 @@ func (suite *WorkerTestSuite) SetupSuite() {
 		panic(err)
 	}
 
-	// setup statically referenced app config
 	AppConfig = TfRunnerConfig{
-		RunnerUuid:            "scenario-runner",
+		RunnerUuid:            testRunnerUuid,
 		SkipHostKeyValidation: false,
 		InitTimeoutMins:       10,
 		WsTimeoutMins:         10,
@@ -111,42 +101,24 @@ func (suite *WorkerTestSuite) SetupSuite() {
 	}
 }
 
-// clean up temp directory after test suite ran
 func (suite *WorkerTestSuite) TearDownSuite() {
 	os.RemoveAll(suite.tfBin.dir)
 	os.RemoveAll(AppConfig.TfParentWorkingDir)
 }
 
-// for each test setup new channels
 func (suite *WorkerTestSuite) SetupTest() {
 	suite.calls = MockRunApiCalls{
-		fetch:    noopCall,
 		register: noopCall,
 		update:   noopCall,
 		download: noopCall,
 		upload:   noopCall,
 	}
 
-	suite.tfMock.initMockFuncs() // reset to default mock behavior
-
-	// Create basic auth for test API client
-	basicAuth := base64.StdEncoding.EncodeToString([]byte("test-user:test-pass"))
-	_ = basicAuth // retained for clarity; credentials encoded in BasicAuth below
-	scenarioAuth := &runApiAuth{baseAuth: meshapi.BasicAuth{Username: "test-user", Password: "test-pass"}}
-	mockHC := &http.Client{Transport: testRoundTripper(suite.scenarioClientBehavior)}
+	suite.tfMock.initMockFuncs()
 
 	suite.w = &Worker{
-		workerNumber: 1,
-		tfBinaries:   suite.tfBin,
-		workerIn:     make(chan workerToken, 2),
-		workerOut:    make(chan workerToken, 2),
-		runApi: &RunApiClient{
-			rid:        "scenario-runner",
-			baseURL:    "http://localhost",
-			auth:       scenarioAuth,
-			client:     meshapi.NewClientWithHTTP("http://localhost", "scenario-runner", scenarioAuth, mockHC),
-			httpClient: mockHC,
-		},
+		workerDir:            AppConfig.TfParentWorkingDir,
+		tfBinaries:           suite.tfBin,
 		log:                  log.New(io.Discard, "", log.LstdFlags),
 		timeout:              30 * time.Second,
 		statusUpdateInterval: time.Second * 10,
@@ -155,29 +127,18 @@ func (suite *WorkerTestSuite) SetupTest() {
 	}
 }
 
-// clean up after test
-func (suite *WorkerTestSuite) TearDownTest() {
-	close(suite.w.workerIn)
-	close(suite.w.workerOut)
-}
-
 func (suite *WorkerTestSuite) runWorker() {
-	var wg sync.WaitGroup
+	client := internalhttp.Client{Client: &http.Client{Transport: testRoundTripper(suite.scenarioClientBehavior)}, UserAgent: testUserAgent}
+	suite.w.runApi = newTestRunApi(client, suite.run)
+	run, err := newRun(suite.run)
+	require.NoError(suite.T(), err)
 
-	wg.Go(func() {
-		suite.w.work()
-	})
-
-	// simulate manager interaction
-	suite.w.workerIn <- work
-	suite.w.workerIn <- stop
-
-	wg.Wait()
+	require.NoError(suite.T(), suite.w.ExecuteRun(context.Background(), run))
 }
 
 // findStep returns the step with the given ID from a status update.
 // It immediately fails the test if no matching step is found.
-func findStep(t testing.TB, update meshapi.RunStatusUpdateDTO, stepId string) meshapi.StepStatusUpdateDTO {
+func findStep(t testing.TB, update meshapi.MeshRunnerRunStatusUpdate, stepId string) meshapi.MeshRunnerRunStepStatusUpdate {
 	t.Helper()
 	if s := findStepOrNil(update, stepId); s != nil {
 		return *s
@@ -187,12 +148,12 @@ func findStep(t testing.TB, update meshapi.RunStatusUpdateDTO, stepId string) me
 		ids[i] = s.Id
 	}
 	t.Fatalf("step %q not found; available step IDs: %v", stepId, ids)
-	return meshapi.StepStatusUpdateDTO{}
+	return meshapi.MeshRunnerRunStepStatusUpdate{}
 }
 
 // findStepOrNil returns the step with the given ID, or nil if not present.
 // Prefer findStep in tests that require the step to exist.
-func findStepOrNil(update meshapi.RunStatusUpdateDTO, stepId string) *meshapi.StepStatusUpdateDTO {
+func findStepOrNil(update meshapi.MeshRunnerRunStatusUpdate, stepId string) *meshapi.MeshRunnerRunStepStatusUpdate {
 	for i := range update.Steps {
 		if update.Steps[i].Id == stepId {
 			return &update.Steps[i]
@@ -202,7 +163,7 @@ func findStepOrNil(update meshapi.RunStatusUpdateDTO, stepId string) *meshapi.St
 }
 
 func (suite *WorkerTestSuite) Test_MissingAuth() {
-	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), "https://github.com/meshcloud/does-not-exist.git", "")
+	suite.run = validRun(APPLY.str(), "https://github.com/meshcloud/does-not-exist.git", "")
 
 	updateCalls := make([]http.Request, 0)
 	suite.calls.update = func(req *http.Request) *http.Response {
@@ -217,7 +178,7 @@ func (suite *WorkerTestSuite) Test_MissingAuth() {
 	assert.Equal(suite.T(), 1, len(updateCalls))
 
 	data, _ := io.ReadAll(updateCalls[0].Body)
-	var update meshapi.RunStatusUpdateDTO
+	var update meshapi.MeshRunnerRunStatusUpdate
 	json.Unmarshal(data, &update)
 
 	assert.Equal(suite.T(), FAILED.str(), *update.Status)
@@ -236,7 +197,7 @@ func (suite *WorkerTestSuite) Test_MissingAuth() {
 }
 
 func (suite *WorkerTestSuite) Test_ApplySucceeded() {
-	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	suite.run = validRun(APPLY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
 
 	updateCalls := make([]http.Request, 0)
 	suite.calls.update = func(req *http.Request) *http.Response {
@@ -257,7 +218,7 @@ func (suite *WorkerTestSuite) Test_ApplySucceeded() {
 	// Check the final update call
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, _ := io.ReadAll(lastUpdate.Body)
-	var update meshapi.RunStatusUpdateDTO
+	var update meshapi.MeshRunnerRunStatusUpdate
 	json.Unmarshal(data, &update)
 
 	assert.Equal(suite.T(), SUCCEEDED.str(), *update.Status)
@@ -275,7 +236,7 @@ func (suite *WorkerTestSuite) Test_RegistrationConflict_ContinuesExecution() {
 	// The runner must treat 409 as idempotent and continue executing — it must NEVER report
 	// PENDING status to the API (which would cause a 500 from the coordinator's state machine).
 
-	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	suite.run = validRun(APPLY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
 
 	// Simulate a 409 from the registration endpoint (source already registered by previous pod)
 	suite.calls.register = func(_ *http.Request) *http.Response {
@@ -298,7 +259,7 @@ func (suite *WorkerTestSuite) Test_RegistrationConflict_ContinuesExecution() {
 		// Restore body for later reads
 		req.Body = io.NopCloser(bytes.NewBuffer(data))
 
-		var update meshapi.RunStatusUpdateDTO
+		var update meshapi.MeshRunnerRunStatusUpdate
 		json.Unmarshal(data, &update)
 
 		statusStr := ""
@@ -355,7 +316,7 @@ func (suite *WorkerTestSuite) abortOnceApplyStarted() (tofuExited *time.Time, re
 	}
 	suite.calls.update = func(req *http.Request) *http.Response {
 		data, _ := io.ReadAll(req.Body)
-		var update meshapi.RunStatusUpdateDTO
+		var update meshapi.MeshRunnerRunStatusUpdate
 		json.Unmarshal(data, &update)
 		*receivedStatuses = append(*receivedStatuses, *update.Status)
 		switch {
@@ -373,7 +334,7 @@ func (suite *WorkerTestSuite) abortOnceApplyStarted() (tofuExited *time.Time, re
 
 func (suite *WorkerTestSuite) Test_AbortedApply_SendsABORTEDOnceTofuHasExited() {
 	suite.w.statusUpdateInterval = 10 * time.Millisecond
-	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	suite.run = validRun(APPLY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
 	tofuExited, receivedStatuses, _ := suite.abortOnceApplyStarted()
 
 	suite.runWorker()
@@ -387,7 +348,7 @@ func (suite *WorkerTestSuite) Test_AbortedApplyOnMeshStackThatEndedTheRunItself_
 	suite.w.statusUpdateInterval = 10 * time.Millisecond
 	var workerLog bytes.Buffer
 	suite.w.log = log.New(&workerLog, "", 0)
-	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	suite.run = validRun(APPLY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
 	_, receivedStatuses, finalStatusAnswer := suite.abortOnceApplyStarted()
 	*finalStatusAnswer = http.StatusUnauthorized
 
@@ -409,7 +370,7 @@ func countOf(values []string, value string) int {
 }
 
 func (suite *WorkerTestSuite) Test_ApplyTfFailure() {
-	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	suite.run = validRun(APPLY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
 
 	updateCalls := make([]http.Request, 0)
 	suite.calls.update = func(req *http.Request) *http.Response {
@@ -437,7 +398,7 @@ func (suite *WorkerTestSuite) Test_ApplyTfFailure() {
 	// Check the final update call
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, _ := io.ReadAll(lastUpdate.Body)
-	var update meshapi.RunStatusUpdateDTO
+	var update meshapi.MeshRunnerRunStatusUpdate
 	json.Unmarshal(data, &update)
 
 	assert.Equal(suite.T(), FAILED.str(), *update.Status)
@@ -465,7 +426,7 @@ func (suite *WorkerTestSuite) Test_ApplyTfFailure() {
 }
 
 func (suite *WorkerTestSuite) Test_DestroySucceeded() {
-	suite.calls.fetch = mockValidRunDetailsFetchCall(DESTROY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	suite.run = validRun(DESTROY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
 
 	var destroyOpts []tfexec.DestroyOption
 	suite.tfMock.destroyFunc = func(ctx context.Context, opts ...tfexec.DestroyOption) error {
@@ -492,7 +453,7 @@ func (suite *WorkerTestSuite) Test_DestroySucceeded() {
 	// Check the final update call
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, _ := io.ReadAll(lastUpdate.Body)
-	var update meshapi.RunStatusUpdateDTO
+	var update meshapi.MeshRunnerRunStatusUpdate
 	json.Unmarshal(data, &update)
 
 	assert.Equal(suite.T(), SUCCEEDED.str(), *update.Status)
@@ -505,7 +466,7 @@ func (suite *WorkerTestSuite) Test_DestroySucceeded() {
 }
 
 func (suite *WorkerTestSuite) Test_DestroyTfFailure() {
-	suite.calls.fetch = mockValidRunDetailsFetchCall(DESTROY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	suite.run = validRun(DESTROY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
 
 	updateCalls := make([]http.Request, 0)
 	suite.calls.update = func(req *http.Request) *http.Response {
@@ -533,7 +494,7 @@ func (suite *WorkerTestSuite) Test_DestroyTfFailure() {
 	// Check the final update call
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, _ := io.ReadAll(lastUpdate.Body)
-	var update meshapi.RunStatusUpdateDTO
+	var update meshapi.MeshRunnerRunStatusUpdate
 	json.Unmarshal(data, &update)
 
 	assert.Equal(suite.T(), FAILED.str(), *update.Status)
@@ -563,12 +524,12 @@ func (suite *WorkerTestSuite) Test_DestroyTfFailure() {
 func (suite *WorkerTestSuite) Test_FinalStatusIsSentWhenAHeartbeatGetsNoAnswer() {
 	suite.w.statusUpdateInterval = 5 * time.Millisecond
 	suite.w.statusRequestTimeout = 50 * time.Millisecond
-	suite.calls.fetch = mockValidRunDetailsFetchCall(DESTROY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	suite.run = validRun(DESTROY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
 
 	var workDone, finalStatusSent time.Time
 	suite.calls.update = func(req *http.Request) *http.Response {
 		data, _ := io.ReadAll(req.Body)
-		var update meshapi.RunStatusUpdateDTO
+		var update meshapi.MeshRunnerRunStatusUpdate
 		json.Unmarshal(data, &update)
 		if *update.Status == FAILED.str() {
 			finalStatusSent = time.Now()
@@ -598,12 +559,12 @@ func (suite *WorkerTestSuite) Test_FinalStatusIsSentWhenAHeartbeatGetsNoAnswer()
 }
 
 func (suite *WorkerTestSuite) Test_FinalStatusIsRetriedWhileMeshfedAnswers503() {
-	suite.calls.fetch = mockValidRunDetailsFetchCall(DESTROY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	suite.run = validRun(DESTROY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
 
 	finalStatusAttempts := 0
 	suite.calls.update = func(req *http.Request) *http.Response {
 		data, _ := io.ReadAll(req.Body)
-		var update meshapi.RunStatusUpdateDTO
+		var update meshapi.MeshRunnerRunStatusUpdate
 		json.Unmarshal(data, &update)
 		status := http.StatusOK
 		if *update.Status == FAILED.str() {
@@ -640,7 +601,7 @@ func (suite *WorkerTestSuite) Test_UpdatesStatusWithLiveLogs() {
 		return nil
 	}
 
-	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	suite.run = validRun(APPLY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
 
 	updateCalls := make([]http.Request, 0)
 	suite.calls.update = func(req *http.Request) *http.Response {
@@ -664,7 +625,7 @@ func (suite *WorkerTestSuite) Test_UpdatesStatusWithLiveLogs() {
 		found := false
 		for _, update := range updateCalls {
 			data, _ := io.ReadAll(update.Body)
-			var update meshapi.RunStatusUpdateDTO
+			var update meshapi.MeshRunnerRunStatusUpdate
 			json.Unmarshal(data, &update)
 			if step := findStepOrNil(update, StepExecuteTf); step != nil && step.SystemMessage != nil && *step.SystemMessage == expected {
 				found = true
@@ -677,11 +638,7 @@ func (suite *WorkerTestSuite) Test_UpdatesStatusWithLiveLogs() {
 
 func mockUpdateCallWithAbortResponse() func(_ *http.Request) *http.Response {
 	return func(_ *http.Request) *http.Response {
-		body, _ := json.Marshal(
-			&meshapi.RunUpdateResponseDTO{
-				Abort: true,
-			},
-		)
+		body, _ := json.Marshal(meshapi.MeshRunnerRunStatusUpdateResult{Abort: true})
 		return &http.Response{
 			StatusCode: 200,
 			Body:       io.NopCloser(bytes.NewBuffer(body)),
@@ -690,216 +647,62 @@ func mockUpdateCallWithAbortResponse() func(_ *http.Request) *http.Response {
 	}
 }
 
-func mockValidRunDetailsFetchCall(behavior, repo, path string) func(_ *http.Request) *http.Response {
-	impl := meshapi.TerraformImplementation{
+const scenarioRunUrl = "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid"
+
+func validRun(behavior, repo, path string) meshapi.MeshRunnerRun {
+	impl := meshapi.MeshRunnerTerraformImplementation{
 		TerraformVersion: DEFAULT_TF_VER,
 		RepositoryUrl:    repo,
 		RepositoryPath:   new(path),
 	}
-	// A DETECT run uploads the plan it produces to the dedicated endpoint, so the backend always
-	// hands out an artifactUpload link for it.
-	var links meshapi.LinksDTO
+	var links meshapi.MeshRunnerRunLinks
 	if behavior == DETECT.str() {
-		links.ArtifactUpload = meshapi.LinkDTO{Href: "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/plan-artifact"}
+		links.ArtifactUpload.Href = scenarioRunUrl + "/plan-artifact"
 	}
-	return mockRunDetailsFetchCall(behavior, impl, links)
+	return scenarioRun(behavior, impl, links)
 }
 
-func mockRunDetailsFetchCall(behavior string, impl meshapi.TerraformImplementation, links meshapi.LinksDTO) func(_ *http.Request) *http.Response {
-	return func(_ *http.Request) *http.Response {
-		implJSON, _ := json.Marshal(impl)
-		body, _ := json.Marshal(
-			&meshapi.RunDetailsDTO{
-				ApiVersion: "v1",
-				Kind:       "MeshBuildingBlockRun",
-				Metadata: meshapi.RunMetaDTO{
-					Uuid: "run-uuid",
-				},
-				Spec: meshapi.RunSpecDTO{
-					RunNumber: 1,
-					Behavior:  behavior,
-					RunToken:  "test-mock-run-token-12345",
-					BuildingBlock: meshapi.BuildingBlockSpecDTO{
-						Uuid: "block-uuid",
-						Spec: meshapi.BuildingBlockDetailsSpecDTO{
-							DisplayName: "Test-BuildingBlock",
-							Inputs:      make([]meshapi.BuildingBlockInputSpecDTO, 0),
-						},
-					},
-					Definition: meshapi.DefinitionSpecDTO{
-						Uuid: "definition-uuid",
-						Spec: meshapi.DefinitionDetailsSpecDTO{
-							Version:        1,
-							Implementation: implJSON,
-						},
-					},
-				},
-				Links: links,
+func applyRunWithPlanArtifact(repo, repoPath, planArtifactHref string) meshapi.MeshRunnerRun {
+	impl := meshapi.MeshRunnerTerraformImplementation{TerraformVersion: DEFAULT_TF_VER, RepositoryUrl: repo, RepositoryPath: new(repoPath)}
+	return scenarioRun(APPLY.str(), impl, meshapi.MeshRunnerRunLinks{PlanArtifact: meshapi.MeshRunnerRunLink{Href: planArtifactHref}})
+}
+
+func detectRunWithUploadLink(repo, repoPath, artifactUploadHref string) meshapi.MeshRunnerRun {
+	impl := meshapi.MeshRunnerTerraformImplementation{TerraformVersion: DEFAULT_TF_VER, RepositoryUrl: repo, RepositoryPath: new(repoPath)}
+	return scenarioRun(DETECT.str(), impl, meshapi.MeshRunnerRunLinks{ArtifactUpload: meshapi.MeshRunnerRunLink{Href: artifactUploadHref}})
+}
+
+func detectRunWithoutUploadLink(repo, repoPath string) meshapi.MeshRunnerRun {
+	impl := meshapi.MeshRunnerTerraformImplementation{TerraformVersion: DEFAULT_TF_VER, RepositoryUrl: repo, RepositoryPath: new(repoPath)}
+	return scenarioRun(DETECT.str(), impl, meshapi.MeshRunnerRunLinks{})
+}
+
+func scenarioRun(behavior string, impl meshapi.MeshRunnerTerraformImplementation, links meshapi.MeshRunnerRunLinks) meshapi.MeshRunnerRun {
+	implJson, err := json.Marshal(impl)
+	if err != nil {
+		panic(err)
+	}
+	links.RegisterSource.Href = scenarioRunUrl + "/status/source"
+	links.UpdateSource.Href = scenarioRunUrl + "/status/source/{sourceId}"
+	return meshapi.MeshRunnerRun{
+		ApiVersion: "v1",
+		Kind:       "meshBuildingBlockRun",
+		Metadata:   meshapi.MeshRunnerRunMetadata{Uuid: testRunUuid},
+		Spec: meshapi.MeshRunnerRunSpec{
+			RunNumber: 1,
+			Behavior:  behavior,
+			RunToken:  testRunToken,
+			BuildingBlock: meshapi.MeshRunnerRunBuildingBlock{
+				Uuid: "block-uuid",
+				Spec: meshapi.MeshRunnerRunBuildingBlockSpec{DisplayName: "Test-BuildingBlock", Inputs: []meshapi.MeshRunnerRunInput{}},
 			},
-		)
-		header := make(http.Header)
-		header.Add("Content-Type", meshapi.BlockRunMediaTypeV1)
-
-		return &http.Response{
-			StatusCode: 200,
-			Body:       io.NopCloser(bytes.NewBuffer(body)),
-			Header:     header,
-		}
-	}
-}
-
-func mockApplyRunWithPlanArtifactFetchCall(repo, repoPath, planArtifactHref string) func(_ *http.Request) *http.Response {
-	return func(_ *http.Request) *http.Response {
-		implDTO := meshapi.TerraformImplementation{
-			TerraformVersion: DEFAULT_TF_VER,
-			RepositoryUrl:    repo,
-			RepositoryPath:   new(repoPath),
-			Async:            false,
-		}
-		implJSON, _ := json.Marshal(implDTO)
-		body, _ := json.Marshal(
-			&meshapi.RunDetailsDTO{
-				ApiVersion: "v1",
-				Kind:       "MeshBuildingBlockRun",
-				Metadata:   meshapi.RunMetaDTO{Uuid: "run-uuid"},
-				Spec: meshapi.RunSpecDTO{
-					RunNumber: 1,
-					Behavior:  APPLY.str(),
-					RunToken:  "test-mock-run-token-12345",
-					BuildingBlock: meshapi.BuildingBlockSpecDTO{
-						Uuid: "block-uuid",
-						Spec: meshapi.BuildingBlockDetailsSpecDTO{
-							DisplayName: "Test-BuildingBlock",
-							Inputs:      make([]meshapi.BuildingBlockInputSpecDTO, 0),
-						},
-					},
-					Definition: meshapi.DefinitionSpecDTO{
-						Uuid: "definition-uuid",
-						Spec: meshapi.DefinitionDetailsSpecDTO{
-							Version:        1,
-							Implementation: implJSON,
-						},
-					},
-				},
-				Links: meshapi.LinksDTO{
-					PlanArtifact: meshapi.LinkDTO{Href: planArtifactHref},
-				},
+			Definition: meshapi.MeshRunnerRunDefinition{
+				Uuid: "definition-uuid",
+				Spec: meshapi.MeshRunnerRunDefinitionSpec{Version: 1, Implementation: implJson},
 			},
-		)
-		header := make(http.Header)
-		header.Add("Content-Type", meshapi.BlockRunMediaTypeV1)
-
-		return &http.Response{
-			StatusCode: 200,
-			Body:       io.NopCloser(bytes.NewBuffer(body)),
-			Header:     header,
-		}
+		},
+		Links: links,
 	}
-}
-
-func mockDetectRunWithUploadLinkFetchCall(repo, repoPath, artifactUploadHref string) func(_ *http.Request) *http.Response {
-	return func(_ *http.Request) *http.Response {
-		implDTO := meshapi.TerraformImplementation{
-			TerraformVersion: DEFAULT_TF_VER,
-			RepositoryUrl:    repo,
-			RepositoryPath:   new(repoPath),
-			Async:            false,
-		}
-		implJSON, _ := json.Marshal(implDTO)
-		body, _ := json.Marshal(
-			&meshapi.RunDetailsDTO{
-				ApiVersion: "v1",
-				Kind:       "MeshBuildingBlockRun",
-				Metadata:   meshapi.RunMetaDTO{Uuid: "run-uuid"},
-				Spec: meshapi.RunSpecDTO{
-					RunNumber: 1,
-					Behavior:  DETECT.str(),
-					RunToken:  "test-mock-run-token-12345",
-					BuildingBlock: meshapi.BuildingBlockSpecDTO{
-						Uuid: "block-uuid",
-						Spec: meshapi.BuildingBlockDetailsSpecDTO{
-							DisplayName: "Test-BuildingBlock",
-							Inputs:      make([]meshapi.BuildingBlockInputSpecDTO, 0),
-						},
-					},
-					Definition: meshapi.DefinitionSpecDTO{
-						Uuid: "definition-uuid",
-						Spec: meshapi.DefinitionDetailsSpecDTO{
-							Version:        1,
-							Implementation: implJSON,
-						},
-					},
-				},
-				Links: meshapi.LinksDTO{
-					ArtifactUpload: meshapi.LinkDTO{Href: artifactUploadHref},
-				},
-			},
-		)
-		header := make(http.Header)
-		header.Add("Content-Type", meshapi.BlockRunMediaTypeV1)
-
-		return &http.Response{
-			StatusCode: 200,
-			Body:       io.NopCloser(bytes.NewBuffer(body)),
-			Header:     header,
-		}
-	}
-}
-
-// mockDetectRunWithoutUploadLinkFetchCall returns a DETECT run whose _links carry NO artifactUpload
-// href, simulating a backend that fails to hand out the upload link (e.g. version skew or a bug).
-func mockDetectRunWithoutUploadLinkFetchCall(repo, repoPath string) func(_ *http.Request) *http.Response {
-	return func(_ *http.Request) *http.Response {
-		implDTO := meshapi.TerraformImplementation{
-			TerraformVersion: DEFAULT_TF_VER,
-			RepositoryUrl:    repo,
-			RepositoryPath:   new(repoPath),
-			Async:            false,
-		}
-		implJSON, _ := json.Marshal(implDTO)
-		body, _ := json.Marshal(
-			&meshapi.RunDetailsDTO{
-				ApiVersion: "v1",
-				Kind:       "MeshBuildingBlockRun",
-				Metadata:   meshapi.RunMetaDTO{Uuid: "run-uuid"},
-				Spec: meshapi.RunSpecDTO{
-					RunNumber: 1,
-					Behavior:  DETECT.str(),
-					RunToken:  "test-mock-run-token-12345",
-					BuildingBlock: meshapi.BuildingBlockSpecDTO{
-						Uuid: "block-uuid",
-						Spec: meshapi.BuildingBlockDetailsSpecDTO{
-							DisplayName: "Test-BuildingBlock",
-							Inputs:      make([]meshapi.BuildingBlockInputSpecDTO, 0),
-						},
-					},
-					Definition: meshapi.DefinitionSpecDTO{
-						Uuid: "definition-uuid",
-						Spec: meshapi.DefinitionDetailsSpecDTO{
-							Version:        1,
-							Implementation: implJSON,
-						},
-					},
-				},
-				Links: meshapi.LinksDTO{},
-			},
-		)
-		header := make(http.Header)
-		header.Add("Content-Type", meshapi.BlockRunMediaTypeV1)
-
-		return &http.Response{
-			StatusCode: 200,
-			Body:       io.NopCloser(bytes.NewBuffer(body)),
-			Header:     header,
-		}
-	}
-}
-
-// returns pointer of given value to be able to inline value without var usage
-//
-//go:fix inline
-func p[T any](v T) *T {
-	return new(v)
 }
 
 type testRoundTripper func(req *http.Request) *http.Response

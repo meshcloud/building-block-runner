@@ -8,7 +8,7 @@ import (
 	"path"
 
 	"github.com/hashicorp/terraform-exec/tfexec"
-	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
+	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -37,8 +37,8 @@ func (suite *WorkerTestSuite) generatedBackendDuringInit() *string {
 	return backend
 }
 
-func meshBackendImplementation() meshapi.TerraformImplementation {
-	return meshapi.TerraformImplementation{
+func meshBackendImplementation() meshapi.MeshRunnerTerraformImplementation {
+	return meshapi.MeshRunnerTerraformImplementation{
 		TerraformVersion:           DEFAULT_TF_VER,
 		RepositoryUrl:              noopBlockRepo,
 		RepositoryPath:             new(noopBlockPath),
@@ -48,9 +48,9 @@ func meshBackendImplementation() meshapi.TerraformImplementation {
 
 func (suite *WorkerTestSuite) Test_RunWithTfStateLockLink_GeneratesABackendThatLocks() {
 	lockHref := "http://localhost/api/terraform/state/workspace/ws/buildingBlock/block-uuid/lock"
-	suite.calls.fetch = mockRunDetailsFetchCall(APPLY.str(), meshBackendImplementation(), meshapi.LinksDTO{
-		MeshstackBaseUrl: meshapi.LinkDTO{Href: "http://localhost"},
-		TfStateLock:      meshapi.LinkDTO{Href: lockHref},
+	suite.run = scenarioRun(APPLY.str(), meshBackendImplementation(), meshapi.MeshRunnerRunLinks{
+		MeshstackBaseUrl: meshapi.MeshRunnerRunLink{Href: "http://localhost"},
+		TfStateLock:      meshapi.MeshRunnerRunLink{Href: lockHref},
 	})
 	backend := suite.generatedBackendDuringInit()
 
@@ -63,8 +63,8 @@ func (suite *WorkerTestSuite) Test_RunWithTfStateLockLink_GeneratesABackendThatL
 }
 
 func (suite *WorkerTestSuite) Test_RunWithoutTfStateLockLink_GeneratesABackendThatDoesNotLock() {
-	suite.calls.fetch = mockRunDetailsFetchCall(APPLY.str(), meshBackendImplementation(), meshapi.LinksDTO{
-		MeshstackBaseUrl: meshapi.LinkDTO{Href: "http://localhost"},
+	suite.run = scenarioRun(APPLY.str(), meshBackendImplementation(), meshapi.MeshRunnerRunLinks{
+		MeshstackBaseUrl: meshapi.MeshRunnerRunLink{Href: "http://localhost"},
 	})
 	backend := suite.generatedBackendDuringInit()
 
@@ -76,7 +76,7 @@ func (suite *WorkerTestSuite) Test_RunWithoutTfStateLockLink_GeneratesABackendTh
 }
 
 func (suite *WorkerTestSuite) Test_Apply_WaitsForTheStateLock() {
-	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), noopBlockRepo, noopBlockPath)
+	suite.run = validRun(APPLY.str(), noopBlockRepo, noopBlockPath)
 	var applyOpts []tfexec.ApplyOption
 	suite.tfMock.applyFunc = func(ctx context.Context, opts ...tfexec.ApplyOption) error {
 		applyOpts = opts
@@ -89,7 +89,7 @@ func (suite *WorkerTestSuite) Test_Apply_WaitsForTheStateLock() {
 }
 
 func (suite *WorkerTestSuite) Test_Destroy_WaitsForTheStateLock() {
-	suite.calls.fetch = mockValidRunDetailsFetchCall(DESTROY.str(), noopBlockRepo, noopBlockPath)
+	suite.run = validRun(DESTROY.str(), noopBlockRepo, noopBlockPath)
 	var destroyOpts []tfexec.DestroyOption
 	suite.tfMock.destroyFunc = func(ctx context.Context, opts ...tfexec.DestroyOption) error {
 		destroyOpts = opts
@@ -102,7 +102,7 @@ func (suite *WorkerTestSuite) Test_Destroy_WaitsForTheStateLock() {
 }
 
 func (suite *WorkerTestSuite) Test_Detect_WaitsForTheStateLock() {
-	suite.calls.fetch = mockValidRunDetailsFetchCall(DETECT.str(), noopBlockRepo, noopBlockPath)
+	suite.run = validRun(DETECT.str(), noopBlockRepo, noopBlockPath)
 	var planOpts []tfexec.PlanOption
 	suite.tfMock.planFunc = func(ctx context.Context, opts ...tfexec.PlanOption) (bool, error) {
 		planOpts = opts

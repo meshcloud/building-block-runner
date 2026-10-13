@@ -2,7 +2,6 @@ package inprocess
 
 import (
 	"context"
-	"encoding/json/v2"
 	"errors"
 	"testing"
 	"testing/synctest"
@@ -24,22 +23,40 @@ func newRun(implementationType string) dispatcher.Run {
 	return run
 }
 
+type fakeRunnerClient struct {
+	meshapi.MeshRunnerClient
+}
+
+func (fakeRunnerClient) ForRun(run meshapi.MeshRunnerRun) meshapi.MeshRunnerRunClient {
+	return fakeRunClient{run: run}
+}
+
+type fakeRunClient struct {
+	meshapi.MeshRunnerRunClient
+
+	run meshapi.MeshRunnerRun
+}
+
 func manualDispatcher(ctx context.Context, execute executeFunc) *Dispatcher {
-	return newDispatcher(ctx, executors{config.RunnerTypeManual: execute}, time.Hour)
+	return newDispatcher(ctx, fakeRunnerClient{}, executors{config.RunnerTypeManual: execute}, time.Hour)
 }
 
 func Test_Start_FailsForATypeWithoutExecutor(t *testing.T) {
-	d := manualDispatcher(t.Context(), func(context.Context, []byte) error { return nil })
+	d := manualDispatcher(t.Context(), func(context.Context, dispatcher.Run, meshapi.MeshRunnerRunClient) error { return nil })
 
 	err := d.Start(t.Context(), newRun("GITHUB_WORKFLOW"))
 
 	assert.EqualError(t, err, "this runner cannot run github runs")
 }
 
-func Test_Start_PassesTheRunAsJsonWithItsToken(t *testing.T) {
-	received := make(chan []byte, 1)
-	d := manualDispatcher(t.Context(), func(_ context.Context, runJson []byte) error {
-		received <- runJson
+func Test_Start_PassesTheRunWithAClientForIt(t *testing.T) {
+	type execution struct {
+		run dispatcher.Run
+		api meshapi.MeshRunnerRunClient
+	}
+	received := make(chan execution, 1)
+	d := manualDispatcher(t.Context(), func(_ context.Context, run dispatcher.Run, api meshapi.MeshRunnerRunClient) error {
+		received <- execution{run, api}
 		return nil
 	})
 	run := newRun("MANUAL")
@@ -47,17 +64,20 @@ func Test_Start_PassesTheRunAsJsonWithItsToken(t *testing.T) {
 	require.NoError(t, d.Start(t.Context(), run))
 
 	assert.Equal(t, dispatcher.RunStatus{RunUuid: run.Metadata.Uuid, Ended: true}, <-d.Status())
-	var decoded dispatcher.Run
-	require.NoError(t, json.Unmarshal(<-received, &decoded))
-	assert.Equal(t, "a-run-token", decoded.Spec.RunToken)
+	assert.Equal(t, execution{run, fakeRunClient{run: run}}, <-received)
 }
 
 func Test_Run_EndsWithAnErrorWhenItFailsPanicsOrTimesOut(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		executors := map[string]executeFunc{
-			"tofu failed":                            func(context.Context, []byte) error { return errors.New("tofu failed") },
-			"the run panicked: boom":                 func(context.Context, []byte) error { panic("boom") },
-			"the run exceeded the timeout of 1h0m0s": func(ctx context.Context, _ []byte) error { <-ctx.Done(); return nil },
+			"tofu failed": func(context.Context, dispatcher.Run, meshapi.MeshRunnerRunClient) error {
+				return errors.New("tofu failed")
+			},
+			"the run panicked: boom": func(context.Context, dispatcher.Run, meshapi.MeshRunnerRunClient) error { panic("boom") },
+			"the run exceeded the timeout of 1h0m0s": func(ctx context.Context, _ dispatcher.Run, _ meshapi.MeshRunnerRunClient) error {
+				<-ctx.Done()
+				return nil
+			},
 		}
 		for message, execute := range executors {
 			d := manualDispatcher(t.Context(), execute)
@@ -75,7 +95,7 @@ func Test_Status_ClosesAfterTheLastRunEnded(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		release := make(chan struct{})
-		d := manualDispatcher(ctx, func(ctx context.Context, _ []byte) error {
+		d := manualDispatcher(ctx, func(ctx context.Context, _ dispatcher.Run, _ meshapi.MeshRunnerRunClient) error {
 			select {
 			case <-release:
 				return nil

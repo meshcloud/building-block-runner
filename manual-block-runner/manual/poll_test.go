@@ -2,28 +2,27 @@ package manual
 
 import (
 	"context"
-	"net/http"
+	gohttp "net/http"
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"uuid"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func Test_StoppedPoller_ClaimsNoRun(t *testing.T) {
 	var requests atomic.Int32
-	meshStack := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	meshStack := httptest.NewServer(gohttp.HandlerFunc(func(w gohttp.ResponseWriter, r *gohttp.Request) {
 		requests.Add(1)
-		w.WriteHeader(http.StatusNotFound)
+		w.WriteHeader(gohttp.StatusNotFound)
 	}))
 	defer meshStack.Close()
 
-	cfg := defaultConfig()
-	cfg.Api.Url = meshStack.URL
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	NewPoller(cfg).Run(ctx)
+	NewPoller(runnerClient(t, meshStack.URL), uuid.New()).Run(ctx)
 
 	assert.Zero(t, requests.Load())
 }

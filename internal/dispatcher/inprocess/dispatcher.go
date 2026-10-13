@@ -2,7 +2,6 @@ package inprocess
 
 import (
 	"context"
-	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log"
@@ -13,10 +12,12 @@ import (
 
 	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/internal/dispatcher"
+	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
 )
 
 type Dispatcher struct {
 	logger    *log.Logger
+	api       meshapi.MeshRunnerClient
 	executors executors
 	timeout   time.Duration
 	// runCtx outlives the context given to New, so that a shutdown waits for the runs.
@@ -28,17 +29,18 @@ type Dispatcher struct {
 	runs     sync.WaitGroup
 }
 
-func New(ctx context.Context, cfg config.Config) (dispatcher.Dispatcher, error) {
+func New(ctx context.Context, cfg config.Config, api meshapi.MeshRunnerClient) (dispatcher.Dispatcher, error) {
 	executors, err := newExecutors(cfg)
 	if err != nil {
 		return nil, err
 	}
-	return newDispatcher(ctx, executors, cfg.Dispatcher.Timeout.Duration), nil
+	return newDispatcher(ctx, api, executors, cfg.Dispatcher.Timeout.Duration), nil
 }
 
-func newDispatcher(ctx context.Context, executors executors, timeout time.Duration) *Dispatcher {
+func newDispatcher(ctx context.Context, api meshapi.MeshRunnerClient, executors executors, timeout time.Duration) *Dispatcher {
 	d := &Dispatcher{
 		logger:    log.New(os.Stdout, "[IN-PROCESS] ", log.LstdFlags),
+		api:       api,
 		executors: executors,
 		timeout:   timeout,
 		runCtx:    context.WithoutCancel(ctx),
@@ -69,10 +71,6 @@ func (d *Dispatcher) Start(_ context.Context, run dispatcher.Run) error {
 	if !ok {
 		return fmt.Errorf("this runner cannot run %s runs", runnerType)
 	}
-	runJson, err := json.Marshal(run)
-	if err != nil {
-		return err
-	}
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -80,13 +78,13 @@ func (d *Dispatcher) Start(_ context.Context, run dispatcher.Run) error {
 		return errors.New("the runner is shutting down")
 	}
 	d.runs.Go(func() {
-		err := d.execute(execute, runJson)
+		err := d.execute(execute, run)
 		d.status <- dispatcher.RunStatus{RunUuid: run.Metadata.Uuid, Ended: true, Err: err}
 	})
 	return nil
 }
 
-func (d *Dispatcher) execute(execute executeFunc, runJson []byte) (err error) {
+func (d *Dispatcher) execute(execute executeFunc, run dispatcher.Run) (err error) {
 	ctx, cancel := context.WithTimeoutCause(d.runCtx, d.timeout, fmt.Errorf("the run exceeded the timeout of %s", d.timeout))
 	defer cancel()
 	defer func() {
@@ -95,7 +93,7 @@ func (d *Dispatcher) execute(execute executeFunc, runJson []byte) (err error) {
 			err = fmt.Errorf("the run panicked: %v", r)
 		}
 	}()
-	err = execute(ctx, runJson)
+	err = execute(ctx, run, d.api.ForRun(run))
 	if err == nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		err = context.Cause(ctx)
 	}

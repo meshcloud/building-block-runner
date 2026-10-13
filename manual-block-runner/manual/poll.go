@@ -4,25 +4,21 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"net/http"
 	"time"
+	"uuid"
 
-	"github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
+	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
 )
 
 const pollInterval = 10 * time.Second
 
 type Poller struct {
-	cfg    Config
-	client *meshapi.Client
+	api        meshapi.MeshRunnerClient
+	runnerUuid uuid.UUID
 }
 
-func NewPoller(cfg Config) Poller {
-	var auth meshapi.AuthProvider = meshapi.BasicAuth{Username: cfg.Auth.Username, Password: cfg.Auth.Password}
-	if cfg.Auth.ApiKey.ClientId != "" && cfg.Auth.ApiKey.ClientSecret != "" {
-		auth = meshapi.NewApiKeyAuth(cfg.Api.Url, cfg.Auth.ApiKey.ClientId, cfg.Auth.ApiKey.ClientSecret)
-	}
-	return Poller{cfg: cfg, client: meshapi.NewClientWithHTTP(cfg.Api.Url, cfg.Uuid, auth, meshStackHTTP)}
+func NewPoller(api meshapi.MeshRunnerClient, runnerUuid uuid.UUID) Poller {
+	return Poller{api: api, runnerUuid: runnerUuid}
 }
 
 func (p Poller) Run(ctx context.Context) {
@@ -40,22 +36,17 @@ func (p Poller) Run(ctx context.Context) {
 }
 
 func (p Poller) executeNextRun(ctx context.Context) bool {
-	_, data, err := p.client.FetchRun(p.cfg.Uuid)
-	if statusErr, ok := errors.AsType[*meshapi.StatusError](err); ok && statusErr.Status == http.StatusNotFound {
+	// meshStack commits a claim before it answers, so a claimed run must be reported even during shutdown.
+	ctx = context.WithoutCancel(ctx)
+	run, err := p.api.ClaimRun(ctx, p.runnerUuid)
+	if errors.Is(err, meshapi.ErrNoRunToClaim) {
 		return false
 	}
 	if err != nil {
-		slog.Error("cannot fetch a run", "err", err)
+		slog.Error("cannot claim a run", "err", err)
 		return false
 	}
-
-	run, err := parseRun(data)
-	if err != nil {
-		slog.Error("cannot parse the fetched run", "err", err)
-		return false
-	}
-	// meshStack has claimed the run, so it must be reported even during shutdown.
-	if err := ExecuteRun(context.WithoutCancel(ctx), p.cfg, run); err != nil {
+	if err := Execute(ctx, run, p.api.ForRun(run), p.runnerUuid); err != nil {
 		slog.Error("cannot execute run", "err", err)
 		return false
 	}

@@ -26,7 +26,7 @@ func Serve(ctx context.Context, cfg config.Config, logger *log.Logger, userAgent
 
 	dispatcherCtx, stopDispatcher := context.WithCancel(ctx)
 	defer stopDispatcher()
-	dispatcher, err := Current(dispatcherCtx, cfg)
+	dispatcher, err := Current(dispatcherCtx, cfg, api)
 	if err != nil {
 		return err
 	}

@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-exec/tfexec"
-	meshcrypto "github.com/meshcloud/building-block-runner/go-meshapi-client/crypto"
 	"github.com/sebdah/goldie/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -351,26 +350,13 @@ func Test_vars_WithSpecialCharacters(t *testing.T) {
 	assertContainsHCL(t, contentStr, `description = "This is a \"quoted\" string with \\backslashes\\"`)
 }
 
-func Test_vars_SensitiveCodeInputThatIsNoValidHcl_ValueNotInLog(t *testing.T) {
-	pubKey, err := os.ReadFile("../../go-meshapi-client/resources/test.pem")
-	require.NoError(t, err)
-	crypto, pubKeyErr, privKeyErr := meshcrypto.NewCertBasedCrypto("../../go-meshapi-client/resources/test.key", pubKey)
-	require.NoError(t, pubKeyErr)
-	require.NoError(t, privKeyErr)
-	previousCrypto := meshcrypto.Crypto
-	meshcrypto.Crypto = crypto
-	t.Cleanup(func() { meshcrypto.Crypto = previousCrypto })
-
-	encrypted, err := crypto.EncryptMeshCertBased(codeInputPlainText)
-	require.NoError(t, err)
-
+func Test_vars_CodeInputThatIsNoValidHcl_ValueNotInLog(t *testing.T) {
 	uut := makeTestGenericTfCmd(t)
 	updateLogPath := path.Join(t.TempDir(), "update.log")
 	uut.runContextInfo.logwrap = NewLogWrap(log.New(io.Discard, "[tfCmd_test] ", log.LstdFlags), updateLogPath)
 	uut.params.vars["secret_code"] = &Variable{
-		value:       encrypted,
-		Type:        DATA_TYPE_CODE,
-		isSensitive: true,
+		value: codeInputPlainText,
+		Type:  DATA_TYPE_CODE,
 	}
 
 	require.NoError(t, uut.vars())
@@ -667,13 +653,7 @@ func Test_buildTfEnv_WithoutMeshBackendFallback_DoesNotSetTfHttpBasicAuthEnv(t *
 
 func Test_createMeshStackHttpBackendFile_MissingRunToken_ReturnsError(t *testing.T) {
 	originalConfig := AppConfig
-	AppConfig = TfRunnerConfig{
-		RunApiBackend: RunApiConfig{
-			Url:      "http://localhost:8080",
-			User:     "some-user",
-			Password: "top-secret",
-		},
-	}
+	AppConfig = TfRunnerConfig{ApiUrl: "http://localhost:8080"}
 	t.Cleanup(func() { AppConfig = originalConfig })
 
 	uut := makeTestGenericTfCmd(t)
@@ -703,12 +683,7 @@ func Test_createMeshStackHttpBackendFile_MissingRunToken_ReturnsError(t *testing
 // It also verifies that meshstackBaseUrl from the run links is used as the backend base URL.
 func Test_createMeshStackHttpBackendFile_WithRunToken(t *testing.T) {
 	originalConfig := AppConfig
-	// No credentials configured – simulates Kubernetes mode where none are injected.
-	AppConfig = TfRunnerConfig{
-		RunApiBackend: RunApiConfig{
-			Url: "http://fallback-url-should-not-be-used:8080",
-		},
-	}
+	AppConfig = TfRunnerConfig{ApiUrl: "http://fallback-url-should-not-be-used:8080"}
 	t.Cleanup(func() { AppConfig = originalConfig })
 
 	uut := makeTestGenericTfCmd(t)

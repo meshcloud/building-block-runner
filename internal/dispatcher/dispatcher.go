@@ -28,7 +28,7 @@ type Dispatcher interface {
 }
 
 // Current is set by the init of the dispatcher package that the build tags select.
-var Current func(ctx context.Context, cfg config.Config) (Dispatcher, error)
+var Current func(ctx context.Context, cfg config.Config, api meshapi.MeshRunnerClient) (Dispatcher, error)
 
 type WorkloadIdentityProvider interface {
 	// WorkloadIdentity returns nil when the runs have no workload identity.

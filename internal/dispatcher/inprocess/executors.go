@@ -10,11 +10,12 @@ import (
 
 	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/internal/dispatcher"
+	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
 	"github.com/meshcloud/building-block-runner/manual-block-runner/manual"
 	"github.com/meshcloud/building-block-runner/tf-block-runner/tfrun"
 )
 
-type executeFunc func(ctx context.Context, runJson []byte) error
+type executeFunc func(ctx context.Context, run dispatcher.Run, api meshapi.MeshRunnerRunClient) error
 
 type executors map[config.RunnerType]executeFunc
 
@@ -55,16 +56,16 @@ func newTfExecutor(cfg config.Config) (executeFunc, error) {
 		SkipHostKeyValidation: cfg.Tf.SkipHostKeyValidation,
 		WsTimeoutMins:         int(cfg.Tf.WsTimeout.Minutes()),
 		InitTimeoutMins:       int(cfg.Tf.InitTimeout.Minutes()),
-		RunnerUuid:            cfg.Uuid.String(),
-		RunApiBackend:         tfrun.RunApiConfig{Url: cfg.Api.Url.String()},
+		RunnerUuid:            cfg.Uuid,
+		ApiUrl:                cfg.Api.Url.String(),
 	}
 	tfBinaries, err := tfrun.NewTfBin(tfrun.AppConfig.TfInstallDir, os.Stdout)
 	if err != nil {
 		return nil, err
 	}
 	logger := log.New(os.Stdout, "[TF RUNNER] ", log.LstdFlags)
-	return func(ctx context.Context, runJson []byte) error {
-		err := tfrun.ExecuteDecryptedRun(ctx, logger, runJson, tfBinaries)
+	return func(ctx context.Context, run dispatcher.Run, api meshapi.MeshRunnerRunClient) error {
+		err := tfrun.Execute(ctx, logger, run, api, tfBinaries)
 		if errors.Is(err, tfrun.ErrFailureReported) {
 			return fmt.Errorf("%w: %w", err, dispatcher.ErrFailureReported)
 		}
@@ -73,10 +74,7 @@ func newTfExecutor(cfg config.Config) (executeFunc, error) {
 }
 
 func newManualExecutor(cfg config.Config) (executeFunc, error) {
-	var manualConfig manual.Config
-	manualConfig.Uuid = cfg.Uuid.String()
-	manualConfig.Api.Url = cfg.Api.Url.String()
-	return func(ctx context.Context, runJson []byte) error {
-		return manual.ExecuteRunJson(ctx, manualConfig, runJson)
+	return func(ctx context.Context, run dispatcher.Run, api meshapi.MeshRunnerRunClient) error {
+		return manual.Execute(ctx, run, api, cfg.Uuid)
 	}, nil
 }

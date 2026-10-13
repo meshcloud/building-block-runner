@@ -34,7 +34,7 @@ type Dispatcher struct {
 	reported map[uuid.UUID]bool
 }
 
-func New(ctx context.Context, cfg config.Config) (dispatcher.Dispatcher, error) {
+func New(ctx context.Context, cfg config.Config, _ meshapi.MeshRunnerClient) (dispatcher.Dispatcher, error) {
 	if err := cfg.ValidateK8s(); err != nil {
 		return nil, err
 	}

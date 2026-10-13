@@ -47,14 +47,13 @@ For general information about the meshStack platform and Building Blocks, see th
 
 This repository uses two separate build systems in parallel:
 
-- **Go** (`run-controller`, `tf-block-runner`, `manual-block-runner`, `go-meshapi-client`) shares one [Go module](go.mod) at the repository root.
+- **Go** (`run-controller`, `tf-block-runner`, `manual-block-runner`) shares one [Go module](go.mod) at the repository root.
 - **JVM modules** (`block-runner-core`, `github-block-runner`, `gitlab-block-runner`, `azure-devops-block-runner`) are managed via [Gradle](build.gradle). Each runner locks its dependency versions in a `gradle.lockfile`. Run `./gradlew resolveRunners --write-locks` after you change a dependency.
 
 Alongside the runners, the repository contains shared modules:
 
 - [`run-controller`](run-controller/) — Kubernetes controller that executes Building Block Runs via Kubernetes Jobs, supporting all runner implementations with parallel execution
 - [`block-runner-core`](block-runner-core/) — shared Kotlin library used by all JVM-based runners
-- [`go-meshapi-client`](go-meshapi-client/) — shared Go client for the meshcloud API
 
 Common tasks are available via [Task](https://taskfile.dev), which the [Nix](flake.nix) dev shell provides:
 

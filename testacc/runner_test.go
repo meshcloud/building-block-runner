@@ -2,9 +2,7 @@ package testacc
 
 import (
 	"context"
-	"errors"
 	"log"
-	"net/http"
 	"testing"
 	"uuid"
 
@@ -12,12 +10,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
 	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/internal/config/xurl"
 	"github.com/meshcloud/building-block-runner/internal/dispatcher"
 	internalhttp "github.com/meshcloud/building-block-runner/internal/http"
+	"github.com/meshcloud/building-block-runner/internal/http/meshapi"
 )
+
+var userAgent = internalhttp.UserAgent{GitHubRepo: "meshcloud/building-block-runner", Version: "0.0.0-testacc"}
 
 // One every local stack has: the dev dump's ALL runner belongs to it.
 const workspace = "admin-customer"
@@ -33,7 +33,7 @@ func TestAccRunner(t *testing.T) {
 		step func(*testing.T)
 	}{
 		{"run-controller's registration updates the runner", registrationUpdatesTheRunner(stack, runner)},
-		{"a claim without work finds no run and marks the runner as seen", claimWithoutWorkFindsNoRun(stack, runner.Uuid.String())},
+		{"a claim without work finds no run and marks the runner as seen", claimWithoutWorkFindsNoRun(stack, runner)},
 	}
 	for _, s := range steps {
 		if !t.Run(s.name, s.step) {
@@ -75,7 +75,6 @@ func (s localStack) createRunner(t *testing.T) config.Config {
 func registrationUpdatesTheRunner(s localStack, cfg config.Config) func(*testing.T) {
 	return func(t *testing.T) {
 		cfg.Dispatcher.Register = &config.Register{DisplayName: "building-block-runner TestAcc, registered"}
-		userAgent := internalhttp.UserAgent{GitHubRepo: "meshcloud/building-block-runner", Version: "0.0.0-testacc"}
 		require.NoError(t, dispatcher.Register(t.Context(), cfg, log.New(t.Output(), "", 0), userAgent))
 
 		after, err := s.api.BuildingBlockRunner.Read(t.Context(), cfg.Uuid.String())
@@ -85,16 +84,15 @@ func registrationUpdatesTheRunner(s localStack, cfg config.Config) func(*testing
 	}
 }
 
-func claimWithoutWorkFindsNoRun(s localStack, runnerUuid string) func(*testing.T) {
+func claimWithoutWorkFindsNoRun(s localStack, cfg config.Config) func(*testing.T) {
 	return func(t *testing.T) {
-		runnerAuth := meshapi.NewApiKeyAuth(s.endpoint, s.runnerKey, s.runnerSecret)
-		_, _, err := meshapi.NewClient(s.endpoint, runnerUuid, runnerAuth).FetchRun(runnerUuid)
+		client := internalhttp.NewClient(userAgent)
+		runnerAuth := internalhttp.NewApiKeyLogin(client, cfg.Api.Url.URL, s.runnerKey, s.runnerSecret)
+		_, err := meshapi.NewMeshRunnerClient(client.WithAuthorization(runnerAuth), cfg.Api.Url.URL).ClaimRun(t.Context(), cfg.Uuid)
 
-		statusErr, ok := errors.AsType[*meshapi.StatusError](err)
-		require.Truef(t, ok, "the claim did not answer with a status: %v", err)
-		assert.Equal(t, http.StatusNotFound, statusErr.Status)
+		require.ErrorIs(t, err, meshapi.ErrNoRunToClaim)
 
-		runner, err := s.api.BuildingBlockRunner.Read(t.Context(), runnerUuid)
+		runner, err := s.api.BuildingBlockRunner.Read(t.Context(), cfg.Uuid.String())
 		require.NoError(t, err)
 		assert.NotNil(t, runner.Metadata.LastSeen, "meshStack shows a runner that claims as online through lastSeen")
 	}

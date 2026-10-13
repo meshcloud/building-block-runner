@@ -1,12 +1,16 @@
 package crypto
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha1"
 	"crypto/x509"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/pem"
 	"io/fs"
-	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,8 +18,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	oldcrypto "github.com/meshcloud/building-block-runner/go-meshapi-client/crypto"
 )
 
 func TestDecrypt(t *testing.T) {
@@ -43,6 +45,18 @@ func TestDecrypt(t *testing.T) {
 		_, err := Crypto{}.Decrypt(encryptLikeMeshStack(t, newKey, "secret"))
 		assert.ErrorIs(t, err, errNoPrivateKey)
 	})
+}
+
+func Test_Decrypt_ReadsAValueThatTheFormerGoClientEncrypted(t *testing.T) {
+	keyFile, err := LoadPrivateKeyFile("testdata/meshstack.key")
+	require.NoError(t, err)
+	encrypted, err := os.ReadFile("testdata/meshstack.encrypted")
+	require.NoError(t, err)
+
+	decrypted, err := Crypto{PrivateKeyFiles: PrivateKeyFiles{keyFile}}.Decrypt(string(encrypted))
+
+	require.NoError(t, err)
+	assert.Equal(t, "secret", decrypted)
 }
 
 func TestFirstPublicKey(t *testing.T) {
@@ -131,16 +145,22 @@ func writePKCS8(t *testing.T, path string, key *rsa.PrivateKey) {
 	require.NoError(t, os.WriteFile(path, pkcs8PEM(t, key), 0o600))
 }
 
-// encryptLikeMeshStack uses the previous runner code as reference, which only reads a certificate.
 func encryptLikeMeshStack(t *testing.T, key *rsa.PrivateKey, plainText string) string {
-	template := &x509.Certificate{SerialNumber: big.NewInt(1)}
-	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	aesKey := make([]byte, 32)
+	rand.Read(aesKey)
+	block, err := aes.NewCipher(aesKey)
 	require.NoError(t, err)
-	encryptor, publicKeyErr, _ := oldcrypto.NewCertBasedCrypto("", pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
-	require.NoError(t, publicKeyErr)
-	encrypted, err := encryptor.EncryptMeshCertBased(plainText)
+	gcm, err := cipher.NewGCM(block)
 	require.NoError(t, err)
-	return encrypted
+	iv := make([]byte, gcm.NonceSize())
+	rand.Read(iv)
+	encryptedKey, err := rsa.EncryptOAEP(sha1.New(), rand.Reader, &key.PublicKey, aesKey, nil)
+	require.NoError(t, err)
+
+	cipherText := binary.BigEndian.AppendUint32(encryptedKey, uint32(len(iv)))
+	cipherText = append(cipherText, iv...)
+	cipherText = gcm.Seal(cipherText, iv, []byte(plainText), nil)
+	return base64.StdEncoding.EncodeToString(cipherText)
 }
 
 func TestAddImplicitPrivateKeyFile(t *testing.T) {

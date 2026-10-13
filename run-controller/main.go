@@ -10,7 +10,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
 	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/internal/dispatcher"
 	"github.com/meshcloud/building-block-runner/internal/http"
@@ -21,7 +20,6 @@ const metricsAddr = ":2112"
 
 func main() {
 	logger := log.New(os.Stdout, "[RUN CONTROLLER] ", log.LstdFlags)
-	meshapi.SetClientMetadata("run-controller", build.Version)
 	logger.Printf("Build metadata: version=%s", build.Version)
 
 	cfg, err := config.LoadFile(config.FileFromEnv(), logger)

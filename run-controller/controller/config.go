@@ -4,7 +4,9 @@ import (
 	"cmp"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
+	"strings"
 
 	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
 	"gopkg.in/yaml.v2"
@@ -16,18 +18,49 @@ var AppConfig *ControllerConfig = nil
 var DiscoveredOidcIssuer string = ""
 
 type ControllerConfig struct {
-	Namespace              string                     `yaml:"namespace"`
-	ImagePullSecrets       []string                   `yaml:"imagePullSecrets"`
-	PollingIntervalSeconds int                        `yaml:"pollingIntervalSeconds"`
-	MaxConcurrentJobs      int                        `yaml:"maxConcurrentJobs"` // negative means unlimited
-	Api                    ApiConfig                  `yaml:"api"`
-	Uuid                   string                     `yaml:"uuid"`
-	OwnedByWorkspace       string                     `yaml:"ownedByWorkspace"`
-	DisplayName            string                     `yaml:"displayName"`
-	Crypto                 CryptoConfig               `yaml:"crypto"`
-	Tolerations            []TolerationConfig         `yaml:"tolerations"`
-	NodeSelector           map[string]string          `yaml:"nodeSelector"`
-	Implementations        map[string]JobSpecTemplate `yaml:"implementations"`
+	Namespace                  string                           `yaml:"namespace"`
+	ImagePullSecrets           []string                         `yaml:"imagePullSecrets"`
+	PollingIntervalSeconds     int                              `yaml:"pollingIntervalSeconds"`
+	MaxConcurrentJobs          int                              `yaml:"maxConcurrentJobs"` // negative means unlimited
+	Api                        ApiConfig                        `yaml:"api"`
+	Uuid                       string                           `yaml:"uuid"`
+	OwnedByWorkspace           string                           `yaml:"ownedByWorkspace"`
+	DisplayName                string                           `yaml:"displayName"`
+	Crypto                     CryptoConfig                     `yaml:"crypto"`
+	Tolerations                []TolerationConfig               `yaml:"tolerations"`
+	NodeSelector               map[string]string                `yaml:"nodeSelector"`
+	Implementations            map[string]JobSpecTemplate       `yaml:"implementations"`
+	WorkloadIdentityFederation WorkloadIdentityFederationConfig `yaml:"workloadIdentityFederation"`
+}
+
+type WorkloadIdentityFederationConfig struct {
+	Issuer   WifIssuer          `yaml:"issuer"`
+	Keycloak *KeycloakWifConfig `yaml:"keycloak"`
+}
+
+type WifIssuer string
+
+const (
+	WifIssuerKubernetes WifIssuer = "kubernetes"
+	WifIssuerKeycloak   WifIssuer = "keycloak"
+	WifIssuerOff        WifIssuer = "off"
+)
+
+func (c WorkloadIdentityFederationConfig) issuer() WifIssuer {
+	return cmp.Or(c.Issuer, WifIssuerKubernetes)
+}
+
+type KeycloakWifConfig struct {
+	Url                  string `yaml:"url"`
+	Realm                string `yaml:"realm"`
+	ClientId             string `yaml:"clientId"`
+	ClientSecret         string `yaml:"clientSecret"`
+	TokenLifetimeMinutes int    `yaml:"tokenLifetimeMinutes"`
+}
+
+// issuer is the iss claim of the realm's tokens.
+func (c KeycloakWifConfig) issuer() string {
+	return c.Url + "/realms/" + c.Realm
 }
 
 // ApiConfig holds API connection and authentication details.
@@ -141,6 +174,8 @@ const (
 	// in flight when maxConcurrentJobs is not configured. This caps how many runs the
 	// controller claims so it does not fetch (and thereby fail) runs it cannot place.
 	DefaultMaxConcurrentJobs = 20
+
+	DefaultWifTokenLifetimeMinutes = 90
 )
 
 func ReadConfig(logger *log.Logger) *ControllerConfig {
@@ -155,6 +190,7 @@ func ReadConfig(logger *log.Logger) *ControllerConfig {
 	}
 	config.Api.Url = cmp.Or(os.Getenv(envApiUrl), config.Api.Url)
 	applyApiKeyEnvOverrides(config, logger)
+	applyKeycloakWifDefaults(config.WorkloadIdentityFederation.Keycloak)
 
 	if err := validateConfig(config); err != nil {
 		logger.Fatalf("Invalid configuration: %v\n", err)
@@ -191,6 +227,31 @@ func applyApiKeyEnvOverrides(config *ControllerConfig, logger *log.Logger) {
 		logger.Printf("Using %s from environment\n", envApiClientSecret)
 		config.Api.ClientSecret = clientSecret
 	}
+}
+
+func applyKeycloakWifDefaults(config *KeycloakWifConfig) {
+	if config == nil {
+		return
+	}
+	config.Url = strings.TrimSuffix(config.Url, "/")
+	config.TokenLifetimeMinutes = cmp.Or(config.TokenLifetimeMinutes, DefaultWifTokenLifetimeMinutes)
+}
+
+func validateKeycloakWif(config *KeycloakWifConfig) error {
+	// The scheme must be https, because the run-controller sends its client secret and receives the tokens over this URL.
+	if parsed, err := url.Parse(config.Url); err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+		return fmt.Errorf("workloadIdentityFederation.keycloak.url must be an https URL")
+	}
+	if config.Realm == "" {
+		return fmt.Errorf("workloadIdentityFederation.keycloak.realm is required")
+	}
+	if config.ClientId == "" || config.ClientSecret == "" {
+		return fmt.Errorf("workloadIdentityFederation.keycloak.clientId and clientSecret are required")
+	}
+	if config.TokenLifetimeMinutes < 0 {
+		return fmt.Errorf("workloadIdentityFederation.keycloak.tokenLifetimeMinutes must be positive")
+	}
+	return nil
 }
 
 // validateApiAuth checks that at least one complete authentication method is configured for an
@@ -260,7 +321,24 @@ func validateConfig(config *ControllerConfig) error {
 			return fmt.Errorf("implementations.%s.image is required", key)
 		}
 	}
-	return nil
+	return validateWorkloadIdentityFederation(config.WorkloadIdentityFederation)
+}
+
+func validateWorkloadIdentityFederation(config WorkloadIdentityFederationConfig) error {
+	switch config.issuer() {
+	case WifIssuerKeycloak:
+		if config.Keycloak == nil {
+			return fmt.Errorf("workloadIdentityFederation.keycloak is required with issuer keycloak")
+		}
+		return validateKeycloakWif(config.Keycloak)
+	case WifIssuerKubernetes, WifIssuerOff:
+		if config.Keycloak != nil {
+			return fmt.Errorf("workloadIdentityFederation.keycloak is only valid with issuer keycloak, not %s", config.issuer())
+		}
+		return nil
+	default:
+		return fmt.Errorf("workloadIdentityFederation.issuer must be kubernetes, keycloak or off")
+	}
 }
 
 // logConfig logs the startup configuration
@@ -287,6 +365,10 @@ func logConfig(logger *log.Logger, config *ControllerConfig) {
 			logger.Printf(" (%d custom env vars)", len(spec.Env))
 		}
 		logger.Println()
+	}
+	logger.Printf("Workload identity issuer: %s\n", config.WorkloadIdentityFederation.issuer())
+	if wif := config.WorkloadIdentityFederation.Keycloak; wif != nil {
+		logger.Printf("  keycloak: issuer=%s lifetime=%dm\n", wif.issuer(), wif.TokenLifetimeMinutes)
 	}
 	logger.Println("--------------------------------------------------------------------")
 }

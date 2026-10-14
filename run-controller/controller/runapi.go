@@ -24,7 +24,7 @@ type RunApi interface {
 	UpdateRunStatus(ctx context.Context, runId string, status string, summary string, stepMessage string) error
 }
 
-func newApi() RunApi {
+func newApi() *RunApiClient {
 	return &RunApiClient{
 		url:     AppConfig.Api.Url,
 		metrics: NewMetricsCollector(),
@@ -109,5 +109,41 @@ func (api *RunApiClient) UpdateRunStatus(ctx context.Context, runId string, stat
 	}
 
 	log.Printf("Successfully reported %s status for run %s", status, runId)
+	return nil
+}
+
+const wifTokenStepId = "meshstack-wif-token"
+
+// ReportWifTokenMissing adds a failed step to the run, which tells the user that the run has no workload identity
+// token. The step needs its own source ID. Later, the tf-block-runner registers its steps with the runner's UUID as
+// source ID, and meshStack ignores a second registration of the same source ID.
+func (api *RunApiClient) ReportWifTokenMissing(ctx context.Context, runId string) error {
+	sourceId := AppConfig.Uuid + "-wif-token"
+	client := api.newMeshClient(fmt.Sprintf("%s-%s", requesterPrefix, AppConfig.Uuid))
+
+	registration := meshapi.RegistrationDTO{
+		Source: meshapi.SourceDTO{Id: sourceId},
+		Steps:  []meshapi.StepRegistrationDTO{{Id: wifTokenStepId, DisplayName: "meshStack workload identity token"}},
+	}
+	if err := client.RegisterSourceAt(ctx, fmt.Sprintf(meshapi.EPRunSourceRegistration, api.url, runId), registration); err != nil {
+		return fmt.Errorf("register source: %w", err)
+	}
+
+	status := "FAILED"
+	// Keep the cause out of the message, because it can name internal hosts and addresses. createWifTokenSecret logs
+	// the cause instead.
+	message := fmt.Sprintf("meshStack could not issue the workload identity token for this run.\n\n"+
+		"The run continues without %s. Steps that use this file to sign in to a cloud will fail.", wifTokenPath)
+	update := meshapi.StatusUpdateDTO{
+		Steps: []meshapi.StepStatusUpdateDTO{{
+			Id:            wifTokenStepId,
+			DisplayName:   "meshStack workload identity token",
+			Status:        &status,
+			SystemMessage: &message,
+		}},
+	}
+	if _, err := client.PatchStatus(ctx, runId, sourceId, update); err != nil {
+		return fmt.Errorf("update status: %w", err)
+	}
 	return nil
 }

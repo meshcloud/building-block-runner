@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func setupAppConfigForDTOTests() func() {
@@ -34,7 +36,7 @@ func TestBuildRunnerRegistrationDTO_ImplementationTypeIsAll(t *testing.T) {
 	cleanup := setupAppConfigForDTOTests()
 	defer cleanup()
 
-	dto := BuildRunnerRegistrationDTO("test-namespace", "")
+	dto := BuildRunnerRegistrationDTO(kubernetesWif("test-namespace", ""))
 
 	if dto.Spec.ImplementationType != string(meshapi.RunnerTypeAll) {
 		t.Errorf("expected implementationType %q, got %q", meshapi.RunnerTypeAll, dto.Spec.ImplementationType)
@@ -45,7 +47,7 @@ func TestBuildRunnerRegistrationDTO_UsesControllerUUID(t *testing.T) {
 	cleanup := setupAppConfigForDTOTests()
 	defer cleanup()
 
-	dto := BuildRunnerRegistrationDTO("test-namespace", "")
+	dto := BuildRunnerRegistrationDTO(kubernetesWif("test-namespace", ""))
 
 	if dto.Metadata.Uuid != "test-controller-uuid" {
 		t.Errorf("expected UUID %q, got %q", "test-controller-uuid", dto.Metadata.Uuid)
@@ -56,7 +58,7 @@ func TestBuildRunnerRegistrationDTO_UsesPublicKey(t *testing.T) {
 	cleanup := setupAppConfigForDTOTests()
 	defer cleanup()
 
-	dto := BuildRunnerRegistrationDTO("test-namespace", "")
+	dto := BuildRunnerRegistrationDTO(kubernetesWif("test-namespace", ""))
 
 	if dto.Spec.PublicKey != "test-public-key" {
 		t.Errorf("expected publicKey %q, got %q", "test-public-key", dto.Spec.PublicKey)
@@ -67,7 +69,7 @@ func TestBuildRunnerRegistrationDTO_OwnedByWorkspace(t *testing.T) {
 	cleanup := setupAppConfigForDTOTests()
 	defer cleanup()
 
-	dto := BuildRunnerRegistrationDTO("test-namespace", "")
+	dto := BuildRunnerRegistrationDTO(kubernetesWif("test-namespace", ""))
 
 	if dto.Metadata.OwnedByWorkspace != "test-workspace" {
 		t.Errorf("expected OwnedByWorkspace %q, got %q", "test-workspace", dto.Metadata.OwnedByWorkspace)
@@ -78,7 +80,7 @@ func TestBuildRunnerRegistrationDTO_DisplayName(t *testing.T) {
 	cleanup := setupAppConfigForDTOTests()
 	defer cleanup()
 
-	dto := BuildRunnerRegistrationDTO("test-namespace", "")
+	dto := BuildRunnerRegistrationDTO(kubernetesWif("test-namespace", ""))
 
 	if dto.Spec.DisplayName != "Test Controller" {
 		t.Errorf("expected DisplayName %q, got %q", "Test Controller", dto.Spec.DisplayName)
@@ -89,7 +91,7 @@ func TestBuildRunnerRegistrationDTO_WIFConfiguredWhenOIDCIssuerSet(t *testing.T)
 	cleanup := setupAppConfigForDTOTests()
 	defer cleanup()
 
-	dto := BuildRunnerRegistrationDTO("test-namespace", "https://oidc.example.com")
+	dto := BuildRunnerRegistrationDTO(kubernetesWif("test-namespace", "https://oidc.example.com"))
 
 	if dto.Spec.WorkloadIdentityFederation == nil {
 		t.Fatal("expected WorkloadIdentityFederation to be configured when oidcIssuer is set")
@@ -103,7 +105,7 @@ func TestBuildRunnerRegistrationDTO_WIFSubjectTemplateUsesPlaceholders(t *testin
 	cleanup := setupAppConfigForDTOTests()
 	defer cleanup()
 
-	dto := BuildRunnerRegistrationDTO("test-namespace", "https://oidc.example.com")
+	dto := BuildRunnerRegistrationDTO(kubernetesWif("test-namespace", "https://oidc.example.com"))
 
 	expected := "system:serviceaccount:test-namespace:workspace.{{ workspaceIdentifier }}.buildingblockdefinition.{{ buildingBlockDefinitionUuid }}"
 	if dto.Spec.WorkloadIdentityFederation.SubjectTemplate != expected {
@@ -115,7 +117,7 @@ func TestBuildRunnerRegistrationDTO_WIFSerializesSubjectTemplate(t *testing.T) {
 	cleanup := setupAppConfigForDTOTests()
 	defer cleanup()
 
-	dto := BuildRunnerRegistrationDTO("test-namespace", "https://oidc.example.com")
+	dto := BuildRunnerRegistrationDTO(kubernetesWif("test-namespace", "https://oidc.example.com"))
 
 	body, err := json.Marshal(dto)
 	if err != nil {
@@ -143,9 +145,41 @@ func TestBuildRunnerRegistrationDTO_WIFNotConfiguredWhenOIDCIssuerEmpty(t *testi
 	cleanup := setupAppConfigForDTOTests()
 	defer cleanup()
 
-	dto := BuildRunnerRegistrationDTO("test-namespace", "")
+	dto := BuildRunnerRegistrationDTO(kubernetesWif("test-namespace", ""))
 
 	if dto.Spec.WorkloadIdentityFederation != nil {
 		t.Error("expected WorkloadIdentityFederation to be nil when oidcIssuer is empty")
 	}
+}
+
+func TestRegisteredWif_KeycloakSetForEveryCloud(t *testing.T) {
+	config := WorkloadIdentityFederationConfig{
+		Issuer:   WifIssuerKeycloak,
+		Keycloak: &KeycloakWifConfig{Url: "https://id-dev.meshstack.io", Realm: "meshcloud-dev-wif"},
+	}
+
+	wif := registeredWif(config, "test-namespace", "https://container.googleapis.com/v1/projects/p/locations/l/clusters/c")
+
+	require.NotNil(t, wif)
+	assert.Equal(t, "https://id-dev.meshstack.io/realms/meshcloud-dev-wif", wif.Issuer)
+	assert.Equal(t, "bbd:{{ workspaceIdentifier }}:{{ buildingBlockDefinitionUuid }}", wif.SubjectTemplate)
+	for _, cloud := range []struct{ audience, tokenPath string }{
+		{wif.Gcp.Audience, wif.Gcp.TokenPath},
+		{wif.Aws.Audience, wif.Aws.TokenPath},
+		{wif.Azure.Audience, wif.Azure.TokenPath},
+	} {
+		assert.Equal(t, "meshstack-wif", cloud.audience)
+		assert.Equal(t, "/var/run/secrets/workload-identity/meshstack/token", cloud.tokenPath)
+	}
+}
+
+func TestRegisteredWif_KubernetesIsTheDefault(t *testing.T) {
+	wif := registeredWif(WorkloadIdentityFederationConfig{}, "test-namespace", "https://oidc.example.com")
+
+	require.NotNil(t, wif)
+	assert.Equal(t, "https://oidc.example.com", wif.Issuer)
+}
+
+func TestRegisteredWif_OffRegistersNone(t *testing.T) {
+	assert.Nil(t, registeredWif(WorkloadIdentityFederationConfig{Issuer: WifIssuerOff}, "test-namespace", "https://oidc.example.com"))
 }

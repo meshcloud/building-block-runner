@@ -33,6 +33,10 @@ func NewKubernetesDispatcher() build.Dispatcher {
 	if err != nil {
 		log.Fatalf("Failed to create Kubernetes client: %v", err)
 	}
+	if wif := AppConfig.WorkloadIdentityFederation; wif.issuer() == WifIssuerKeycloak {
+		k8sClient.wifTokens = newWifTokenIssuer(wif.Keycloak, log.New(os.Stdout, "[WIF-TOKEN] ", log.LstdFlags))
+		k8sClient.wifWarnings = newApi()
+	}
 	return kubernetesDispatcher{jobs: k8sClient, metrics: NewMetricsCollector()}
 }
 

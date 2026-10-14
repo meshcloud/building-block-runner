@@ -73,6 +73,10 @@ func newDispatcher(logger *log.Logger) build.Dispatcher {
 	if name == "" {
 		return controller.NewKubernetesDispatcher()
 	}
+	// Only the Kubernetes dispatcher supports the keycloak issuer.
+	if controller.AppConfig.WorkloadIdentityFederation.Issuer == controller.WifIssuerKeycloak {
+		logger.Fatalf("The %s dispatcher cannot issue Keycloak workload identity tokens; set workloadIdentityFederation.issuer to kubernetes or off", name)
+	}
 	newNamedDispatcher, found := build.Dispatchers[name]
 	if !found {
 		logger.Fatalf("This binary does not contain the dispatcher %q; build it with -tags inprocess", name)

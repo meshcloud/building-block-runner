@@ -317,3 +317,83 @@ func TestApplyApiKeyEnvOverrides(t *testing.T) {
 		}
 	})
 }
+
+func validKeycloakWif() *KeycloakWifConfig {
+	return &KeycloakWifConfig{
+		Url:          "https://id-dev.meshstack.io/",
+		Realm:        "meshcloud-dev-wif",
+		ClientId:     "run-controller",
+		ClientSecret: "secret",
+	}
+}
+
+func Test_KeycloakWif_IssuerFromRealmUrl(t *testing.T) {
+	wif := validKeycloakWif()
+
+	applyKeycloakWifDefaults(wif)
+
+	require.Equal(t, "https://id-dev.meshstack.io/realms/meshcloud-dev-wif", wif.issuer())
+	require.Equal(t, 90, wif.TokenLifetimeMinutes)
+}
+
+func Test_InstanceKeycloakWif_IssuerKeepsAuthPath(t *testing.T) {
+	wif := validKeycloakWif()
+	wif.Url = "https://sso.example.com/auth"
+	wif.Realm = "example-wif"
+
+	applyKeycloakWifDefaults(wif)
+
+	require.Equal(t, "https://sso.example.com/auth/realms/example-wif", wif.issuer())
+}
+
+func Test_KeycloakWif_Validation(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		change func(*KeycloakWifConfig)
+		error  string
+	}{
+		"http url":          {func(c *KeycloakWifConfig) { c.Url = "http://keycloak-http/auth" }, "workloadIdentityFederation.keycloak.url must be an https URL"},
+		"no url":            {func(c *KeycloakWifConfig) { c.Url = "" }, "workloadIdentityFederation.keycloak.url"},
+		"no realm":          {func(c *KeycloakWifConfig) { c.Realm = "" }, "workloadIdentityFederation.keycloak.realm"},
+		"no client secret":  {func(c *KeycloakWifConfig) { c.ClientSecret = "" }, "workloadIdentityFederation.keycloak.clientId and clientSecret"},
+		"negative lifetime": {func(c *KeycloakWifConfig) { c.TokenLifetimeMinutes = -1 }, "workloadIdentityFederation.keycloak.tokenLifetimeMinutes"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			config := createValidBasicAuthConfig()
+			config.WorkloadIdentityFederation = WorkloadIdentityFederationConfig{Issuer: WifIssuerKeycloak, Keycloak: validKeycloakWif()}
+			testCase.change(config.WorkloadIdentityFederation.Keycloak)
+			applyKeycloakWifDefaults(config.WorkloadIdentityFederation.Keycloak)
+
+			require.ErrorContains(t, validateConfig(config), testCase.error)
+		})
+	}
+}
+
+func Test_WifIssuer_Validation(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		wif   WorkloadIdentityFederationConfig
+		error string
+	}{
+		"left out":                   {WorkloadIdentityFederationConfig{}, ""},
+		"kubernetes":                 {WorkloadIdentityFederationConfig{Issuer: WifIssuerKubernetes}, ""},
+		"off":                        {WorkloadIdentityFederationConfig{Issuer: WifIssuerOff}, ""},
+		"keycloak":                   {WorkloadIdentityFederationConfig{Issuer: WifIssuerKeycloak, Keycloak: validKeycloakWif()}, ""},
+		"keycloak without its block": {WorkloadIdentityFederationConfig{Issuer: WifIssuerKeycloak}, "workloadIdentityFederation.keycloak is required with issuer keycloak"},
+		"keycloak block, no issuer":  {WorkloadIdentityFederationConfig{Keycloak: validKeycloakWif()}, "only valid with issuer keycloak, not kubernetes"},
+		"keycloak block with off":    {WorkloadIdentityFederationConfig{Issuer: WifIssuerOff, Keycloak: validKeycloakWif()}, "only valid with issuer keycloak, not off"},
+		"unknown issuer":             {WorkloadIdentityFederationConfig{Issuer: "gke"}, "workloadIdentityFederation.issuer must be kubernetes, keycloak or off"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			config := createValidBasicAuthConfig()
+			config.WorkloadIdentityFederation = testCase.wif
+			applyKeycloakWifDefaults(config.WorkloadIdentityFederation.Keycloak)
+
+			err := validateConfig(config)
+
+			if testCase.error == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, testCase.error)
+			}
+		})
+	}
+}

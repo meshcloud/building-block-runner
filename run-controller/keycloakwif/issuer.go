@@ -38,8 +38,6 @@ type Config struct {
 	TokenLifetime time.Duration
 }
 
-// Issuer mints workload identity tokens from short-lived per-run Keycloak clients. It is not safe for concurrent use,
-// because it caches the admin token without a lock.
 type Issuer struct {
 	config Config
 	http   *http.Client

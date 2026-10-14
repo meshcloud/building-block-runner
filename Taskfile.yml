@@ -18,6 +18,25 @@ tasks:
     cmds:
       - go test -race -tags inprocess {{.CLI_ARGS}} {{.PACKAGES}}
 
+  test:keycloak:
+    desc: Test the meshStack WIF token against a real Keycloak. Set KEYCLOAK_VERSION to test another version.
+    vars:
+      KEYCLOAK_VERSION: '{{.KEYCLOAK_VERSION | default "26.8.1"}}'
+      CONTAINER: run-controller-keycloak-{{.KEYCLOAK_VERSION}}
+    cmds:
+      - >-
+        docker run -d --rm --name {{.CONTAINER}}
+        -v ./run-controller/keycloakwif/testdata:/opt/keycloak/data/import:ro
+        -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin
+        quay.io/keycloak/keycloak:{{.KEYCLOAK_VERSION}} start-dev --import-realm
+      - defer: docker stop {{.CONTAINER}}
+      - >-
+        docker run --rm --network container:{{.CONTAINER}} -v "$PWD":/src:ro -w /src
+        -v run-controller-gomod:/go/pkg/mod -v run-controller-gocache:/root/.cache/go-build
+        -e KEYCLOAK_URL=http://127.0.0.1:8080 -e GOFLAGS=-buildvcs=false golang:1.27
+        sh -c 'for i in $(seq 120); do wget -q -O /dev/null $KEYCLOAK_URL/realms/wif-test/.well-known/openid-configuration && break; sleep 1; done;
+        go test -tags keycloak -count=1 -v -run Test_Keycloak ./run-controller/keycloakwif/...'
+
   lint:
     desc: Run golangci-lint. Set PACKAGES to lint fewer, `-- --fix` to fix.
     cmds:

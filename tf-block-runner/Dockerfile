@@ -6,6 +6,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY go-meshapi-client/ ./go-meshapi-client/
+COPY internal/ ./internal/
 COPY tf-block-runner/ ./tf-block-runner/
 
 WORKDIR /app/tf-block-runner

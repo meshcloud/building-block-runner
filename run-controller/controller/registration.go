@@ -24,29 +24,27 @@ type RegistrationApi interface {
 
 // RegistrationApiClient implements the RegistrationApi
 type RegistrationApiClient struct {
-	url        string
-	namespace  string
-	auth       meshapi.AuthProvider
-	oidcIssuer string
-	client     *http.Client
-	logger     *log.Logger
+	url    string
+	auth   meshapi.AuthProvider
+	wif    *meshapi.WifDTO
+	client *http.Client
+	logger *log.Logger
 }
 
 // NewRegistrationApi creates a new registration API client
 func NewRegistrationApi(logger *log.Logger) RegistrationApi {
 	return &RegistrationApiClient{
-		url:        AppConfig.Api.Url,
-		namespace:  AppConfig.Namespace,
-		auth:       AppConfig.Api.NewAuthProvider(AppConfig.Api.Url),
-		oidcIssuer: DiscoveredOidcIssuer,
-		client:     &http.Client{},
-		logger:     logger,
+		url:    AppConfig.Api.Url,
+		auth:   AppConfig.Api.NewAuthProvider(AppConfig.Api.Url),
+		wif:    registeredWif(AppConfig.WorkloadIdentityFederation, AppConfig.Namespace, DiscoveredOidcIssuer),
+		client: &http.Client{},
+		logger: logger,
 	}
 }
 
 // RegisterController updates the universal run controller registration via PUT. Must already exist.
 func (api *RegistrationApiClient) RegisterController(metrics *MetricsCollector) error {
-	dto := BuildRunnerRegistrationDTO(api.namespace, api.oidcIssuer)
+	dto := BuildRunnerRegistrationDTO(api.wif)
 
 	jsonBody, err := json.Marshal(dto)
 	if err != nil {

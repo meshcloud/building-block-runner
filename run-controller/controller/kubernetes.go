@@ -21,9 +21,11 @@ import (
 )
 
 type KubernetesClient struct {
-	clientset *kubernetes.Clientset
-	namespace string
-	logger    *log.Logger
+	clientset   kubernetes.Interface
+	namespace   string
+	logger      *log.Logger
+	wifTokens   wifTokenIssuer
+	wifWarnings wifTokenWarner
 }
 
 func newKubernetesClient(namespace string, logger *log.Logger) (*KubernetesClient, error) {
@@ -37,7 +39,9 @@ func newKubernetesClient(namespace string, logger *log.Logger) (*KubernetesClien
 		return nil, fmt.Errorf("failed to create kubernetes client: %w", err)
 	}
 
-	DiscoveredOidcIssuer = discoverOIDCIssuer(clientset, logger)
+	if AppConfig.WorkloadIdentityFederation.issuer() == WifIssuerKubernetes {
+		DiscoveredOidcIssuer = discoverOIDCIssuer(clientset, logger)
+	}
 
 	return &KubernetesClient{
 		clientset: clientset,
@@ -98,9 +102,7 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 		}
 	}
 
-	// Periods separate the parts because workspace identifiers can contain dashes. The name becomes the sub claim
-	// of the workload identity token and must match the subject template BuildRunnerRegistrationDTO registers.
-	serviceAccountName := fmt.Sprintf("workspace.%s.buildingblockdefinition.%s", runInfo.BuildingBlockDefinitionWorkspace, runInfo.BuildingBlockDefinitionUuid)
+	serviceAccountName := renderSubjectTemplate(serviceAccountNameTemplate, runInfo)
 	err = k.createServiceAccount(namespace, serviceAccountName, runInfo.Uuid, metrics)
 	if err != nil {
 		metrics.jobCreationErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeJobCreation).Inc()
@@ -115,6 +117,9 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 		metrics.jobCreationErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeJobCreation).Inc()
 		return fmt.Errorf("failed to create run json secret: %w", err)
 	}
+
+	wifTokenSecretName := k.createWifTokenSecret(namespace, runInfo, implType, metrics)
+	wifVolumes, wifVolumeMounts := wifTokenVolumes(namespace, wifTokenSecretName)
 
 	// Create Job with run data mounted as a file via secret volume
 	job := &batchv1.Job{
@@ -148,7 +153,7 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 					ImagePullSecrets:   k.buildImagePullSecrets(),
 					Tolerations:        buildTolerations(AppConfig.Tolerations),
 					NodeSelector:       AppConfig.NodeSelector,
-					Volumes:            k.createVolumes(namespace, jobSpec, runJsonSecretName),
+					Volumes:            k.createVolumes(jobSpec, runJsonSecretName, wifVolumes),
 					// Disable service-link env injection (MARIADB_*, KUBERNETES_* etc.) to keep
 					// the container environment clean and avoid leaking service discovery info.
 					EnableServiceLinks: new(false),
@@ -163,7 +168,7 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 							Args:            k.buildArgs(jobSpec),
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							Env:             k.buildEnvVars(jobSpec),
-							VolumeMounts:    k.createVolumeMounts(jobSpec),
+							VolumeMounts:    k.createVolumeMounts(jobSpec, wifVolumeMounts),
 							Resources:       buildResourceRequirements(jobSpec.Resources),
 							SecurityContext: &corev1.SecurityContext{
 								AllowPrivilegeEscalation: new(false),
@@ -185,15 +190,23 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 	createdJob, err := k.clientset.BatchV1().Jobs(namespace).Create(context.TODO(), job, metav1.CreateOptions{})
 	if err != nil {
 		metrics.jobCreationErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeJobCreation).Inc()
-		// Clean up the secret since the job failed to create
+		// Delete the run's secrets, because the Job was not created.
 		_ = k.clientset.CoreV1().Secrets(namespace).Delete(context.TODO(), runJsonSecretName, metav1.DeleteOptions{})
+		if wifTokenSecretName != "" {
+			_ = k.clientset.CoreV1().Secrets(namespace).Delete(context.TODO(), wifTokenSecretName, metav1.DeleteOptions{})
+		}
 		return fmt.Errorf("failed to create job: %w", err)
 	}
 
-	// Set owner reference on the secret so it gets garbage-collected when the job is deleted
-	err = k.setSecretOwnerReference(namespace, runJsonSecretName, createdJob)
-	if err != nil {
-		k.logger.Printf("Warning: failed to set owner reference on secret %s: %v (secret will need manual cleanup)", runJsonSecretName, err)
+	// Make the Job own the secrets, so that Kubernetes deletes them together with the Job.
+	ownedSecrets := []string{runJsonSecretName}
+	if wifTokenSecretName != "" {
+		ownedSecrets = append(ownedSecrets, wifTokenSecretName)
+	}
+	for _, secretName := range ownedSecrets {
+		if err := k.setSecretOwnerReference(namespace, secretName, createdJob); err != nil {
+			k.logger.Printf("Warning: failed to set owner reference on secret %s: %v (secret will need manual cleanup)", secretName, err)
+		}
 	}
 
 	metrics.jobsCreatedTotal.WithLabelValues(AppConfig.Uuid).Inc()
@@ -466,9 +479,7 @@ func (k *KubernetesClient) setSecretOwnerReference(namespace, secretName string,
 	return nil
 }
 
-func (k *KubernetesClient) createVolumes(namespace string, jobSpec *JobSpecTemplate, runJsonSecretName string) []corev1.Volume {
-	expirationSeconds := int64(7200)
-
+func (k *KubernetesClient) createVolumes(jobSpec *JobSpecTemplate, runJsonSecretName string, wifVolumes []corev1.Volume) []corev1.Volume {
 	volumes := []corev1.Volume{
 		{
 			Name: "run-json",
@@ -476,49 +487,8 @@ func (k *KubernetesClient) createVolumes(namespace string, jobSpec *JobSpecTempl
 				SecretName: runJsonSecretName,
 			},
 		},
-		{
-			Name: "service-account-token-azure",
-			Projected: &corev1.ProjectedVolumeSource{
-				Sources: []corev1.VolumeProjection{
-					{
-						ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
-							Audience:          "api://AzureADTokenExchange",
-							ExpirationSeconds: &expirationSeconds,
-							Path:              "token",
-						},
-					},
-				},
-			},
-		},
-		{
-			Name: "service-account-token-gcp",
-			Projected: &corev1.ProjectedVolumeSource{
-				Sources: []corev1.VolumeProjection{
-					{
-						ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
-							Audience:          fmt.Sprintf("gcp-workload-identity-provider:%s", namespace),
-							ExpirationSeconds: &expirationSeconds,
-							Path:              "token",
-						},
-					},
-				},
-			},
-		},
-		{
-			Name: "service-account-token-aws",
-			Projected: &corev1.ProjectedVolumeSource{
-				Sources: []corev1.VolumeProjection{
-					{
-						ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
-							Audience:          fmt.Sprintf("aws-workload-identity-provider:%s", namespace),
-							ExpirationSeconds: &expirationSeconds,
-							Path:              "token",
-						},
-					},
-				},
-			},
-		},
 	}
+	volumes = append(volumes, wifVolumes...)
 
 	// Add extra volumes from job spec
 	for _, extraVol := range jobSpec.ExtraVolumes {
@@ -551,29 +521,56 @@ func (k *KubernetesClient) createVolumes(namespace string, jobSpec *JobSpecTempl
 	return volumes
 }
 
-func (k *KubernetesClient) createVolumeMounts(jobSpec *JobSpecTemplate) []corev1.VolumeMount {
+// wifTokenVolumes returns the volumes and volume mounts for the token files that the configured issuer needs: the
+// minted token Secret for keycloak, one projected service account token per cloud for kubernetes, and nothing when
+// the issuer is off.
+func wifTokenVolumes(namespace, tokenSecretName string) ([]corev1.Volume, []corev1.VolumeMount) {
+	switch AppConfig.WorkloadIdentityFederation.issuer() {
+	case WifIssuerKeycloak:
+		if tokenSecretName == "" {
+			return nil, nil
+		}
+		volume := corev1.Volume{Name: wifTokenVolumeName}
+		volume.Secret = &corev1.SecretVolumeSource{SecretName: tokenSecretName}
+		return []corev1.Volume{volume}, []corev1.VolumeMount{{Name: wifTokenVolumeName, MountPath: wifTokenMountPath, ReadOnly: true}}
+	case WifIssuerKubernetes:
+		expirationSeconds := int64(7200)
+		var volumes []corev1.Volume
+		var mounts []corev1.VolumeMount
+		for _, token := range []struct{ cloud, audience string }{
+			{"azure", "api://AzureADTokenExchange"},
+			{"gcp", fmt.Sprintf("gcp-workload-identity-provider:%s", namespace)},
+			{"aws", fmt.Sprintf("aws-workload-identity-provider:%s", namespace)},
+		} {
+			volume := corev1.Volume{Name: "service-account-token-" + token.cloud}
+			volume.Projected = &corev1.ProjectedVolumeSource{
+				Sources: []corev1.VolumeProjection{{
+					ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
+						Audience:          token.audience,
+						ExpirationSeconds: &expirationSeconds,
+						Path:              "token",
+					},
+				}},
+			}
+			volumes = append(volumes, volume)
+			mounts = append(mounts, corev1.VolumeMount{Name: volume.Name, MountPath: "/var/run/secrets/workload-identity/" + token.cloud, ReadOnly: true})
+		}
+		return volumes, mounts
+	default:
+		return nil, nil
+	}
+}
+
+func (k *KubernetesClient) createVolumeMounts(jobSpec *JobSpecTemplate, wifVolumeMounts []corev1.VolumeMount) []corev1.VolumeMount {
 	volumeMounts := []corev1.VolumeMount{
 		{
 			Name:      "run-json",
 			MountPath: "/var/run/secrets/meshstack",
 			ReadOnly:  true,
 		},
-		{
-			Name:      "service-account-token-azure",
-			MountPath: "/var/run/secrets/workload-identity/azure",
-			ReadOnly:  true,
-		},
-		{
-			Name:      "service-account-token-gcp",
-			MountPath: "/var/run/secrets/workload-identity/gcp",
-			ReadOnly:  true,
-		},
-		{
-			Name:      "service-account-token-aws",
-			MountPath: "/var/run/secrets/workload-identity/aws",
-			ReadOnly:  true,
-		},
 	}
+
+	volumeMounts = append(volumeMounts, wifVolumeMounts...)
 
 	// Add extra volume mounts from job spec
 	for _, extraMount := range jobSpec.ExtraVolumeMounts {

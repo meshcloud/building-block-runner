@@ -1,10 +1,9 @@
 .gradle
 .kotlin/
 
-build/
-!tf-block-runner/build/
-!manual-block-runner/build/
-!run-controller/build/
+# The Go modules have build packages.
+**/build/*
+!**/build/*.go
 
 out/
 .DS_Store

@@ -3,6 +3,7 @@ package tfrun
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -72,6 +73,8 @@ func ExecuteDecryptedRun(ctx context.Context, logger *log.Logger, runJson []byte
 	return worker.ExecuteRun(ctx, run)
 }
 
+var ErrFailureReported = errors.New("the run reported its failure")
+
 func (w *SingleRunWorker) ExecuteRun(ctx context.Context, run *Run) error {
 	w.log.Printf("Start execution of run %s: %s %s\n", run.Id, run.Behavior.str(), run.BuildingBlockName)
 
@@ -84,13 +87,13 @@ func (w *SingleRunWorker) ExecuteRun(ctx context.Context, run *Run) error {
 	cmdDir, err := os.MkdirTemp(w.workerDir, fmt.Sprintf("block-%s-*", run.BuildingBlockId))
 	if err != nil {
 		w.sendInitFail(run)
-		return fmt.Errorf("failed to create temp directory: %w", err)
+		return fmt.Errorf("failed to create temp directory: %w: %w", err, ErrFailureReported)
 	}
 
 	err = os.Mkdir(path.Join(cmdDir, "logs"), 0700)
 	if err != nil {
 		w.sendInitFail(run)
-		return fmt.Errorf("failed to create logs directory: %w", err)
+		return fmt.Errorf("failed to create logs directory: %w: %w", err, ErrFailureReported)
 	}
 
 	defer os.RemoveAll(cmdDir)

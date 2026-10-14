@@ -54,7 +54,6 @@ Alongside the runners, the repository contains shared modules:
 
 - [`run-controller`](run-controller/) — Kubernetes controller that executes Building Block Runs via Kubernetes Jobs, supporting all runner implementations with parallel execution
 - [`block-runner-core`](block-runner-core/) — shared Kotlin library used by all JVM-based runners
-- [`go-meshapi-client`](go-meshapi-client/) — shared Go client for the meshcloud API
 
 Common tasks are available via [Task](https://taskfile.dev), which the [Nix](flake.nix) dev shell provides:
 

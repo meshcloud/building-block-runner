@@ -28,10 +28,16 @@ type kubernetesDispatcher struct {
 	metrics *MetricsCollector
 }
 
-func NewKubernetesDispatcher() build.Dispatcher {
+func NewKubernetesDispatcher(ctx context.Context) build.Dispatcher {
 	k8sClient, err := newKubernetesClient(AppConfig.Namespace, log.New(os.Stdout, "[K8S-CLIENT] ", log.LstdFlags))
 	if err != nil {
 		log.Fatalf("Failed to create Kubernetes client: %v", err)
+	}
+	if keycloak := AppConfig.WorkloadIdentityFederation.Keycloak; keycloak != nil {
+		issuer := newWifTokenIssuer(keycloak)
+		k8sClient.wifTokens = issuer
+		k8sClient.wifWarnings = newRunApiClient()
+		go deleteStaleWifClients(ctx, issuer, log.New(os.Stdout, "[WIF-TOKEN] ", log.LstdFlags))
 	}
 	return kubernetesDispatcher{jobs: k8sClient, metrics: NewMetricsCollector()}
 }

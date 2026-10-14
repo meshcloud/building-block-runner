@@ -51,6 +51,10 @@ type MetricsCollector struct {
 	// Decryption metrics
 	decryptionErrors *prometheus.CounterVec
 
+	// meshStack WIF token metrics
+	wifTokensIssuedTotal *prometheus.CounterVec
+	wifTokenErrors       *prometheus.CounterVec
+
 	// Runner registration metrics
 	runnerRegistrationSuccess *prometheus.CounterVec
 	runnerRegistrationErrors  *prometheus.CounterVec
@@ -127,6 +131,20 @@ func NewMetricsCollector() *MetricsCollector {
 				prometheus.CounterOpts{
 					Name: "run_controller_decryption_errors_total",
 					Help: "Total number of errors while decrypting run details",
+				},
+				[]string{"controller_uuid"},
+			),
+			wifTokensIssuedTotal: promauto.NewCounterVec(
+				prometheus.CounterOpts{
+					Name: "run_controller_wif_tokens_issued_total",
+					Help: "Total number of runs that got the meshStack workload identity token",
+				},
+				[]string{"controller_uuid"},
+			),
+			wifTokenErrors: promauto.NewCounterVec(
+				prometheus.CounterOpts{
+					Name: "run_controller_wif_token_errors_total",
+					Help: "Total number of runs that started without the meshStack workload identity token because issuing it failed",
 				},
 				[]string{"controller_uuid"},
 			),

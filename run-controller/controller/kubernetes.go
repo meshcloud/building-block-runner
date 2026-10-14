@@ -21,10 +21,29 @@ import (
 )
 
 type KubernetesClient struct {
-	clientset *kubernetes.Clientset
-	namespace string
-	logger    *log.Logger
+	clientset   kubernetes.Interface
+	namespace   string
+	logger      *log.Logger
+	wifTokens   wifTokenIssuer
+	wifWarnings wifTokenWarner
 }
+
+type wifTokenIssuer interface {
+	Issue(ctx context.Context, runUuid string, subject string) (string, error)
+}
+
+type wifTokenWarner interface {
+	ReportWifTokenMissing(ctx context.Context, runId string, reason string) error
+}
+
+const wifTokenPath = wifTokenMountPath + "/" + wifTokenSecretKey
+
+const (
+	wifTokenMountPath    = "/var/run/secrets/workload-identity/meshstack"
+	wifTokenSecretKey    = "token"
+	wifTokenVolumeName   = "meshstack-wif-token"
+	wifTokenIssueTimeout = 15 * time.Second
+)
 
 func newKubernetesClient(namespace string, logger *log.Logger) (*KubernetesClient, error) {
 	config, err := getKubernetesConfig()
@@ -116,6 +135,9 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 		return fmt.Errorf("failed to create run json secret: %w", err)
 	}
 
+	wifTokenSecretName := fmt.Sprintf("wif-token-%s", runInfo.Uuid)
+	hasWifToken := k.createWifTokenSecret(namespace, wifTokenSecretName, runInfo, implType, metrics)
+
 	// Create Job with run data mounted as a file via secret volume
 	job := &batchv1.Job{
 		Name:      jobName,
@@ -148,7 +170,7 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 					ImagePullSecrets:   k.buildImagePullSecrets(),
 					Tolerations:        buildTolerations(AppConfig.Tolerations),
 					NodeSelector:       AppConfig.NodeSelector,
-					Volumes:            k.createVolumes(namespace, jobSpec, runJsonSecretName),
+					Volumes:            k.createVolumes(namespace, jobSpec, runJsonSecretName, wifTokenSecretName),
 					// Disable service-link env injection (MARIADB_*, KUBERNETES_* etc.) to keep
 					// the container environment clean and avoid leaking service discovery info.
 					EnableServiceLinks: new(false),
@@ -185,15 +207,21 @@ func (k *KubernetesClient) CreateRunnerJob(runInfo meshapi.RunInfo, runJsonBase6
 	createdJob, err := k.clientset.BatchV1().Jobs(namespace).Create(context.TODO(), job, metav1.CreateOptions{})
 	if err != nil {
 		metrics.jobCreationErrors.WithLabelValues(AppConfig.Uuid, ErrorTypeJobCreation).Inc()
-		// Clean up the secret since the job failed to create
+		// Clean up the secrets since the job failed to create
 		_ = k.clientset.CoreV1().Secrets(namespace).Delete(context.TODO(), runJsonSecretName, metav1.DeleteOptions{})
+		_ = k.clientset.CoreV1().Secrets(namespace).Delete(context.TODO(), wifTokenSecretName, metav1.DeleteOptions{})
 		return fmt.Errorf("failed to create job: %w", err)
 	}
 
-	// Set owner reference on the secret so it gets garbage-collected when the job is deleted
-	err = k.setSecretOwnerReference(namespace, runJsonSecretName, createdJob)
-	if err != nil {
-		k.logger.Printf("Warning: failed to set owner reference on secret %s: %v (secret will need manual cleanup)", runJsonSecretName, err)
+	// Set owner references on the secrets so they get garbage-collected when the job is deleted
+	ownedSecrets := []string{runJsonSecretName}
+	if hasWifToken {
+		ownedSecrets = append(ownedSecrets, wifTokenSecretName)
+	}
+	for _, secretName := range ownedSecrets {
+		if err := k.setSecretOwnerReference(namespace, secretName, createdJob); err != nil {
+			k.logger.Printf("Warning: failed to set owner reference on secret %s: %v (secret will need manual cleanup)", secretName, err)
+		}
 	}
 
 	metrics.jobsCreatedTotal.WithLabelValues(AppConfig.Uuid).Inc()
@@ -403,7 +431,47 @@ func (k *KubernetesClient) createRunJsonSecret(namespace, secretName, runJsonBas
 	if err != nil {
 		return fmt.Errorf("failed to decode run json base64: %w", err)
 	}
+	return k.createRunSecret(namespace, secretName, runID, map[string][]byte{"run.json": runJsonBytes})
+}
 
+func (k *KubernetesClient) createWifTokenSecret(namespace, secretName string, runInfo meshapi.RunInfo, implType string, metrics *MetricsCollector) bool {
+	if k.wifTokens == nil || implType != string(meshapi.RunnerTypeTerraform) {
+		return false
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), wifTokenIssueTimeout)
+	defer cancel()
+	subject := fmt.Sprintf("bbd:%s:%s", runInfo.BuildingBlockDefinitionWorkspace, runInfo.BuildingBlockDefinitionUuid)
+	token, err := k.wifTokens.Issue(ctx, runInfo.Uuid, subject)
+	if err == nil {
+		err = k.replaceRunSecret(namespace, secretName, runInfo.Uuid, map[string][]byte{wifTokenSecretKey: []byte(token)})
+	}
+	if err != nil {
+		metrics.wifTokenErrors.WithLabelValues(AppConfig.Uuid).Inc()
+		k.logger.Printf("Run %s starts without the meshStack WIF token: %v", runInfo.Uuid, err)
+		warnCtx, cancelWarn := context.WithTimeout(context.Background(), wifTokenIssueTimeout)
+		defer cancelWarn()
+		if warnErr := k.wifWarnings.ReportWifTokenMissing(warnCtx, runInfo.Uuid, err.Error()); warnErr != nil {
+			k.logger.Printf("Failed to tell run %s that it has no meshStack WIF token: %v", runInfo.Uuid, warnErr)
+		}
+		return false
+	}
+
+	metrics.wifTokensIssuedTotal.WithLabelValues(AppConfig.Uuid).Inc()
+	k.logger.Printf("Issued the meshStack WIF token for run %s with subject %s", runInfo.Uuid, subject)
+	return true
+}
+
+// A Secret left from an earlier attempt of the same run holds an older token.
+func (k *KubernetesClient) replaceRunSecret(namespace, secretName, runID string, data map[string][]byte) error {
+	err := k.clientset.CoreV1().Secrets(namespace).Delete(context.TODO(), secretName, metav1.DeleteOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete secret %s: %w", secretName, err)
+	}
+	return k.createRunSecret(namespace, secretName, runID, data)
+}
+
+func (k *KubernetesClient) createRunSecret(namespace, secretName, runID string, data map[string][]byte) error {
 	secret := &corev1.Secret{
 		Name:      secretName,
 		Namespace: namespace,
@@ -412,13 +480,11 @@ func (k *KubernetesClient) createRunJsonSecret(namespace, secretName, runJsonBas
 			"meshcloud.io/run-id":    runID,
 			"meshcloud.io/runner-id": AppConfig.Uuid,
 		},
-		Data: map[string][]byte{
-			"run.json": runJsonBytes,
-		},
+		Data: data,
 	}
 
 	// Check if secret already exists
-	_, err = k.clientset.CoreV1().Secrets(namespace).Get(context.TODO(), secretName, metav1.GetOptions{})
+	_, err := k.clientset.CoreV1().Secrets(namespace).Get(context.TODO(), secretName, metav1.GetOptions{})
 	if err == nil {
 		k.logger.Printf("Secret %s already exists, skipping creation", secretName)
 		return nil
@@ -432,7 +498,7 @@ func (k *KubernetesClient) createRunJsonSecret(namespace, secretName, runJsonBas
 		return fmt.Errorf("failed to create secret: %w", err)
 	}
 
-	k.logger.Printf("Successfully created run json secret %s in namespace %s", secretName, namespace)
+	k.logger.Printf("Successfully created secret %s in namespace %s", secretName, namespace)
 	return nil
 }
 
@@ -466,7 +532,7 @@ func (k *KubernetesClient) setSecretOwnerReference(namespace, secretName string,
 	return nil
 }
 
-func (k *KubernetesClient) createVolumes(namespace string, jobSpec *JobSpecTemplate, runJsonSecretName string) []corev1.Volume {
+func (k *KubernetesClient) createVolumes(namespace string, jobSpec *JobSpecTemplate, runJsonSecretName, wifTokenSecretName string) []corev1.Volume {
 	expirationSeconds := int64(7200)
 
 	volumes := []corev1.Volume{
@@ -474,6 +540,13 @@ func (k *KubernetesClient) createVolumes(namespace string, jobSpec *JobSpecTempl
 			Name: "run-json",
 			Secret: &corev1.SecretVolumeSource{
 				SecretName: runJsonSecretName,
+			},
+		},
+		{
+			Name: wifTokenVolumeName,
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: wifTokenSecretName,
+				Optional:   new(true),
 			},
 		},
 		{
@@ -556,6 +629,11 @@ func (k *KubernetesClient) createVolumeMounts(jobSpec *JobSpecTemplate) []corev1
 		{
 			Name:      "run-json",
 			MountPath: "/var/run/secrets/meshstack",
+			ReadOnly:  true,
+		},
+		{
+			Name:      wifTokenVolumeName,
+			MountPath: wifTokenMountPath,
 			ReadOnly:  true,
 		},
 		{

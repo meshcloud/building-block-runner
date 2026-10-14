@@ -317,3 +317,67 @@ func TestApplyApiKeyEnvOverrides(t *testing.T) {
 		}
 	})
 }
+
+func validKeycloakWif() *KeycloakWifConfig {
+	return &KeycloakWifConfig{
+		Url:          "https://id-dev.meshstack.io/",
+		Realm:        "meshcloud-dev-wif",
+		ClientId:     "run-controller",
+		ClientSecret: "secret",
+	}
+}
+
+func Test_KeycloakWifWithoutIssuer_IssuerFromRealmUrl(t *testing.T) {
+	wif := validKeycloakWif()
+
+	applyKeycloakWifDefaults(wif)
+
+	require.Equal(t, "https://id-dev.meshstack.io/realms/meshcloud-dev-wif", wif.Issuer)
+	require.Equal(t, 90, wif.TokenLifetimeMinutes)
+}
+
+func Test_InstanceKeycloakWif_IssuerKeepsAuthPath(t *testing.T) {
+	wif := validKeycloakWif()
+	wif.Url = "https://sso.meshcloud.cloud.internal/auth"
+	wif.Realm = "coba-prod-wif"
+
+	applyKeycloakWifDefaults(wif)
+
+	require.Equal(t, "https://sso.meshcloud.cloud.internal/auth/realms/coba-prod-wif", wif.Issuer)
+}
+
+func Test_KeycloakWif_Validation(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		change func(*KeycloakWifConfig)
+		error  string
+	}{
+		"left out": {nil, ""},
+		"complete": {func(*KeycloakWifConfig) {}, ""},
+		"internal http url": {func(c *KeycloakWifConfig) {
+			c.Url = "http://keycloak-http/auth"
+			c.Issuer = "https://sso.x/auth/realms/r"
+		}, ""},
+		"no url":            {func(c *KeycloakWifConfig) { c.Url = "" }, "workloadIdentityFederation.keycloak.url"},
+		"no realm":          {func(c *KeycloakWifConfig) { c.Realm = "" }, "workloadIdentityFederation.keycloak.realm"},
+		"no client secret":  {func(c *KeycloakWifConfig) { c.ClientSecret = "" }, "workloadIdentityFederation.keycloak.clientId and clientSecret"},
+		"http issuer":       {func(c *KeycloakWifConfig) { c.Url = "http://keycloak-http/auth" }, "workloadIdentityFederation.keycloak.issuer must be an https URL"},
+		"negative lifetime": {func(c *KeycloakWifConfig) { c.TokenLifetimeMinutes = -1 }, "workloadIdentityFederation.keycloak.tokenLifetimeMinutes"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			config := createValidBasicAuthConfig()
+			if testCase.change != nil {
+				config.WorkloadIdentityFederation.Keycloak = validKeycloakWif()
+				testCase.change(config.WorkloadIdentityFederation.Keycloak)
+				applyKeycloakWifDefaults(config.WorkloadIdentityFederation.Keycloak)
+			}
+
+			err := validateConfig(config)
+
+			if testCase.error == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, testCase.error)
+			}
+		})
+	}
+}

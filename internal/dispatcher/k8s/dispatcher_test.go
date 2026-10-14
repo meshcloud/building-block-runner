@@ -102,7 +102,7 @@ func Test_Start_CreatesAJobWithItsRunInASecret(t *testing.T) {
 		assert.Equal(t, "platform", job.Labels["team"])
 		assert.Equal(t, "TERRAFORM", job.Labels[labelRunnerType])
 		assert.Equal(t, int64(45*60), *job.Spec.ActiveDeadlineSeconds)
-		assert.Equal(t, int32(3), *job.Spec.BackoffLimit)
+		assert.Equal(t, int32(0), *job.Spec.BackoffLimit)
 		assert.Equal(t, int32(defaultTtlSeconds), *job.Spec.TTLSecondsAfterFinished)
 
 		pod := job.Spec.Template.Spec

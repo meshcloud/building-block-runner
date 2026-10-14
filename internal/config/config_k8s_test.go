@@ -36,13 +36,11 @@ func Test_LoadK8s_ReadsTheNewAndTheLegacyLayouts(t *testing.T) {
 		api := newApi("http://host.minikube.internal:8080", "your-client-id", "your-client-secret")
 		api.Auth.Profile, api.Auth.Workspace = "local-dev", "admin-customer"
 		templates := maps.Clone(typeTemplates)
-		all := podSpecTemplate(corev1.PodSpec{
+		templates[RunnerTypeAll] = podSpecTemplate(corev1.PodSpec{
 			Tolerations:  []corev1.Toleration{spotToleration},
 			NodeSelector: map[string]string{"spot": "true"},
 			Containers:   []corev1.Container{{Name: "runner", Env: []corev1.EnvVar{logLevelDebug}}},
 		})
-		all.Spec.BackoffLimit = new(int32(1))
-		templates[RunnerTypeAll] = all
 
 		cfg, _ := loadFile(t, "runner-config-new.yml")
 

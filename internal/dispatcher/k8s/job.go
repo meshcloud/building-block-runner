@@ -34,7 +34,6 @@ const (
 	// maxSecretBytes leaves room for the metadata of a Secret within the 1 MiB that Kubernetes allows.
 	maxSecretBytes = 1<<20 - 10<<10
 
-	defaultBackoffLimit = 1
 	// defaultTtlSeconds keeps a finished Job long enough to inspect it, but not so long that it fills the Job quota.
 	defaultTtlSeconds = 120
 )
@@ -108,7 +107,8 @@ func (d *Dispatcher) newJob(run dispatcher.Run, runnerType config.RunnerType, te
 	job.Name, job.Namespace = jobName(run.Metadata.Uuid.String()), d.cfg.K8s.Namespace
 	job.Labels = merge(job.Labels, labels)
 	job.Spec.ActiveDeadlineSeconds = new(int64(d.cfg.Dispatcher.Timeout.Seconds()))
-	job.Spec.BackoffLimit = cmp.Or(job.Spec.BackoffLimit, new(int32(defaultBackoffLimit)))
+	// A second pod would run the run again.
+	job.Spec.BackoffLimit = new(int32(0))
 	job.Spec.TTLSecondsAfterFinished = cmp.Or(job.Spec.TTLSecondsAfterFinished, new(int32(defaultTtlSeconds)))
 
 	pod := &job.Spec.Template

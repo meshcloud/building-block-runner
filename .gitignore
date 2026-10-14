@@ -25,6 +25,7 @@ bin/
 
 # Terraform variable files that may contain secrets
 *.tfvars
+!*.golden.tfvars
 *.tfvars.json
 
 # Crash log files

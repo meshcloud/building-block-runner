@@ -10,7 +10,7 @@ import (
 	"slices"
 
 	"github.com/hashicorp/terraform-exec/tfexec"
-	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
+	"github.com/meshcloud/meshstack-cli/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -26,7 +26,7 @@ func (suite *WorkerTestSuite) Test_DetectSucceeded_UploadsArtifactViaEndpoint() 
 		return true, os.WriteFile(rci.artifactFilePath, planBytes, 0600)
 	}
 
-	suite.calls.fetch = mockDetectRunWithUploadLinkFetchCall(
+	suite.run = detectRunWithUploadLink(
 		"https://github.com/meshcloud/meshstack-hub.git",
 		"modules/github/repository/buildingblock",
 		uploadHref,
@@ -67,7 +67,7 @@ func (suite *WorkerTestSuite) Test_DetectSucceeded_UploadsArtifactViaEndpoint() 
 	assert.Equal(suite.T(), planBytes, uploadedBytes)
 
 	require.GreaterOrEqual(suite.T(), len(updateBodies), 1)
-	var lastUpdate meshapi.RunStatusUpdateDTO
+	var lastUpdate client.MeshRunnerRunStatusUpdate
 	require.NoError(suite.T(), json.Unmarshal(updateBodies[len(updateBodies)-1], &lastUpdate))
 	assert.Equal(suite.T(), SUCCEEDED.str(), *lastUpdate.Status)
 }
@@ -84,7 +84,7 @@ func (suite *WorkerTestSuite) Test_DetectSucceeded_UploadFailureFailsRun() {
 		return true, os.WriteFile(rci.artifactFilePath, planBytes, 0600)
 	}
 
-	suite.calls.fetch = mockDetectRunWithUploadLinkFetchCall(
+	suite.run = detectRunWithUploadLink(
 		"https://github.com/meshcloud/meshstack-hub.git",
 		"modules/github/repository/buildingblock",
 		uploadHref,
@@ -114,7 +114,7 @@ func (suite *WorkerTestSuite) Test_DetectSucceeded_UploadFailureFailsRun() {
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, err := io.ReadAll(lastUpdate.Body)
 	require.NoError(suite.T(), err)
-	var update meshapi.RunStatusUpdateDTO
+	var update client.MeshRunnerRunStatusUpdate
 	require.NoError(suite.T(), json.Unmarshal(data, &update))
 
 	assert.Equal(suite.T(), FAILED.str(), *update.Status, "a failed plan upload must fail the run")
@@ -135,7 +135,7 @@ func (suite *WorkerTestSuite) Test_DetectFailed_WhenNoUploadUrl() {
 		return true, os.WriteFile(rci.artifactFilePath, planBytes, 0600)
 	}
 
-	suite.calls.fetch = mockDetectRunWithoutUploadLinkFetchCall(
+	suite.run = detectRunWithoutUploadLink(
 		"https://github.com/meshcloud/meshstack-hub.git",
 		"modules/github/repository/buildingblock",
 	)
@@ -168,7 +168,7 @@ func (suite *WorkerTestSuite) Test_DetectFailed_WhenNoUploadUrl() {
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, err := io.ReadAll(lastUpdate.Body)
 	require.NoError(suite.T(), err)
-	var update meshapi.RunStatusUpdateDTO
+	var update client.MeshRunnerRunStatusUpdate
 	require.NoError(suite.T(), json.Unmarshal(data, &update))
 
 	assert.Equal(suite.T(), FAILED.str(), *update.Status, "a missing upload URL must fail the run")
@@ -187,7 +187,7 @@ func (suite *WorkerTestSuite) Test_DetectSucceeded_NoChangesDetected() {
 		return false, os.WriteFile(rci.artifactFilePath, planBytes, 0600)
 	}
 
-	suite.calls.fetch = mockValidRunDetailsFetchCall(DETECT.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	suite.run = validRun(DETECT.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
 
 	updateCalls := make([]http.Request, 0)
 	suite.calls.update = func(req *http.Request) *http.Response {
@@ -205,7 +205,7 @@ func (suite *WorkerTestSuite) Test_DetectSucceeded_NoChangesDetected() {
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, err := io.ReadAll(lastUpdate.Body)
 	require.NoError(suite.T(), err)
-	var update meshapi.RunStatusUpdateDTO
+	var update client.MeshRunnerRunStatusUpdate
 	require.NoError(suite.T(), json.Unmarshal(data, &update))
 
 	assert.Equal(suite.T(), SUCCEEDED.str(), *update.Status)
@@ -221,7 +221,7 @@ func (suite *WorkerTestSuite) Test_ApplyWithPlanArtifact_DownloadsAndAppliesSave
 	savedPlanBytes := []byte("predecessor-saved-plan-binary")
 
 	planArtifactHref := "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/plan-artifact"
-	suite.calls.fetch = mockApplyRunWithPlanArtifactFetchCall(
+	suite.run = applyRunWithPlanArtifact(
 		"https://github.com/meshcloud/meshstack-hub.git",
 		"modules/github/repository/buildingblock",
 		planArtifactHref,
@@ -269,7 +269,7 @@ func (suite *WorkerTestSuite) Test_ApplyWithPlanArtifact_DownloadsAndAppliesSave
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, err := io.ReadAll(lastUpdate.Body)
 	require.NoError(suite.T(), err)
-	var update meshapi.RunStatusUpdateDTO
+	var update client.MeshRunnerRunStatusUpdate
 	require.NoError(suite.T(), json.Unmarshal(data, &update))
 	assert.Equal(suite.T(), SUCCEEDED.str(), *update.Status)
 }
@@ -277,7 +277,7 @@ func (suite *WorkerTestSuite) Test_ApplyWithPlanArtifact_DownloadsAndAppliesSave
 // Test_ApplyWithoutPlanArtifact_PlainApply is the backward-compatibility regression: an APPLY run
 // with NO planArtifact link must do a plain terraform apply (no download, no DirOrPlan option).
 func (suite *WorkerTestSuite) Test_ApplyWithoutPlanArtifact_PlainApply() {
-	suite.calls.fetch = mockValidRunDetailsFetchCall(APPLY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	suite.run = validRun(APPLY.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
 
 	downloadCalled := false
 	suite.calls.download = func(req *http.Request) *http.Response {
@@ -310,7 +310,7 @@ func (suite *WorkerTestSuite) Test_ApplyWithoutPlanArtifact_PlainApply() {
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, err := io.ReadAll(lastUpdate.Body)
 	require.NoError(suite.T(), err)
-	var update meshapi.RunStatusUpdateDTO
+	var update client.MeshRunnerRunStatusUpdate
 	require.NoError(suite.T(), json.Unmarshal(data, &update))
 	assert.Equal(suite.T(), SUCCEEDED.str(), *update.Status)
 	assert.Nil(suite.T(), update.ChangesDetected, "APPLY runs must not report changesDetected")
@@ -320,7 +320,7 @@ func (suite *WorkerTestSuite) Test_ApplyWithoutPlanArtifact_PlainApply() {
 // returns a non-2xx (e.g. the artifact is gone), the run FAILS and terraform apply is never called.
 func (suite *WorkerTestSuite) Test_ApplyWithPlanArtifact_DownloadFailureFailsRun() {
 	planArtifactHref := "http://localhost/api/meshobjects/meshbuildingblockruns/run-uuid/plan-artifact"
-	suite.calls.fetch = mockApplyRunWithPlanArtifactFetchCall(
+	suite.run = applyRunWithPlanArtifact(
 		"https://github.com/meshcloud/meshstack-hub.git",
 		"modules/github/repository/buildingblock",
 		planArtifactHref,
@@ -358,7 +358,7 @@ func (suite *WorkerTestSuite) Test_ApplyWithPlanArtifact_DownloadFailureFailsRun
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, err := io.ReadAll(lastUpdate.Body)
 	require.NoError(suite.T(), err)
-	var update meshapi.RunStatusUpdateDTO
+	var update client.MeshRunnerRunStatusUpdate
 	require.NoError(suite.T(), json.Unmarshal(data, &update))
 
 	assert.Equal(suite.T(), FAILED.str(), *update.Status)
@@ -378,7 +378,7 @@ func (suite *WorkerTestSuite) Test_DetectFailed_WhenPlanFileNotWritten() {
 		return true, nil
 	}
 
-	suite.calls.fetch = mockValidRunDetailsFetchCall(DETECT.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
+	suite.run = validRun(DETECT.str(), "https://github.com/meshcloud/meshstack-hub.git", "modules/github/repository/buildingblock")
 
 	updateCalls := make([]http.Request, 0)
 	suite.calls.update = func(req *http.Request) *http.Response {
@@ -396,7 +396,7 @@ func (suite *WorkerTestSuite) Test_DetectFailed_WhenPlanFileNotWritten() {
 	lastUpdate := updateCalls[len(updateCalls)-1]
 	data, err := io.ReadAll(lastUpdate.Body)
 	require.NoError(suite.T(), err)
-	var update meshapi.RunStatusUpdateDTO
+	var update client.MeshRunnerRunStatusUpdate
 	require.NoError(suite.T(), json.Unmarshal(data, &update))
 
 	assert.True(suite.T(), planFuncCalled, "expected DETECT behavior to invoke terraform plan")
@@ -405,7 +405,7 @@ func (suite *WorkerTestSuite) Test_DetectFailed_WhenPlanFileNotWritten() {
 	executeTf := findStep(suite.T(), update, StepExecuteTf)
 	assert.Equal(suite.T(), FAILED.str(), *executeTf.Status)
 	require.NotNil(suite.T(), executeTf.UserMessage)
-	assert.Contains(suite.T(), *executeTf.UserMessage, "failed to read plan artifact")
+	assert.Contains(suite.T(), *executeTf.UserMessage, "failed to upload artifact")
 }
 
 func isDirOrPlanOption(opt tfexec.ApplyOption) bool {

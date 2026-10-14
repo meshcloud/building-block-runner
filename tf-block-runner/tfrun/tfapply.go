@@ -10,9 +10,6 @@ import (
 
 type TfApplyCommand struct {
 	GenericTfCmd
-	// runApi is the authenticated run API client (same one used for status updates). APPLY is the
-	// only command that needs it: it downloads the predecessor plan artifact when
-	// params.planArtifactUrl is set.
 	runApi RunApi
 }
 
@@ -220,7 +217,7 @@ func (tfcmd *TfApplyCommand) applyPredecessorPlan(tf TfFacade) error {
 		return fmt.Errorf("failed to create predecessor plan artifact file %s: %w", planFile, err)
 	}
 	// Stream the download straight to disk so a large terraform plan is never fully buffered in RAM.
-	if err := tfcmd.runApi.DownloadPredecessorArtifact(tfcmd.params.planArtifactUrl, f); err != nil {
+	if err := tfcmd.runApi.DownloadPredecessorArtifact(tfcmd.ctx, f); err != nil {
 		f.Close()
 		// A planArtifact link was handed out only when the predecessor plan is genuinely available,
 		// so a download failure here means the previewed plan can no longer be retrieved. Fail the

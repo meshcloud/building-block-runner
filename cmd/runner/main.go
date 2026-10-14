@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -24,7 +25,9 @@ func main() {
 	if err != nil {
 		logger.Fatal(err)
 	}
-	serveMetrics(logger, ":"+cmp.Or(os.Getenv("PORT"), "2112"))
+	if err := serveMetrics(logger, ":"+cmp.Or(os.Getenv("PORT"), "2112")); err != nil {
+		logger.Fatal(err)
+	}
 
 	ctx, stopOnSignal := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	// A second signal ends the process without waiting for the runs.
@@ -35,15 +38,20 @@ func main() {
 	}
 }
 
-func serveMetrics(logger *log.Logger, addr string) {
+func serveMetrics(logger *log.Logger, addr string) error {
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
 	http.Handle("/metrics", promhttp.Handler())
 	http.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("OK"))
 	})
 	go func() {
 		logger.Printf("Serving metrics on %s", addr)
-		if err := http.ListenAndServe(addr, nil); err != nil {
+		if err := http.Serve(listener, nil); err != nil {
 			logger.Printf("Serving metrics failed: %v", err)
 		}
 	}()
+	return nil
 }

@@ -2,7 +2,6 @@ package inprocess
 
 import (
 	"context"
-	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log"
@@ -51,27 +50,13 @@ func newTfExecutor(cfg config.Config) (executeFunc, error) {
 	if err := cfg.ValidateTf(); err != nil {
 		return nil, err
 	}
-	tfrun.AppConfig = tfrun.TfRunnerConfig{
-		TfCommandTimeoutMins:  int(cfg.Dispatcher.Timeout.Minutes()),
-		TfParentWorkingDir:    cfg.Tf.TfParentWorkingDir,
-		TfInstallDir:          cfg.Tf.TfInstallDir,
-		SkipHostKeyValidation: cfg.Tf.SkipHostKeyValidation,
-		WsTimeoutMins:         int(cfg.Tf.WsTimeout.Minutes()),
-		InitTimeoutMins:       int(cfg.Tf.InitTimeout.Minutes()),
-		RunnerUuid:            cfg.Uuid.String(),
-		RunApiBackend:         tfrun.RunApiConfig{Url: cfg.Api.Url.String()},
-	}
-	tfBinaries, err := tfrun.NewTfBin(tfrun.AppConfig.TfInstallDir, os.Stdout)
+	tfBinaries, err := tfrun.NewTfBin(cfg.Tf.TfInstallDir, os.Stdout)
 	if err != nil {
 		return nil, err
 	}
 	logger := log.New(os.Stdout, "[TF RUNNER] ", log.LstdFlags)
-	return func(ctx context.Context, run dispatcher.Run, _ client.MeshRunnerRunClient) error {
-		runJson, err := json.Marshal(run)
-		if err != nil {
-			return err
-		}
-		err = tfrun.ExecuteDecryptedRun(ctx, logger, runJson, tfBinaries)
+	return func(ctx context.Context, run dispatcher.Run, api client.MeshRunnerRunClient) error {
+		err := tfrun.Execute(ctx, logger, cfg, run, api, tfBinaries)
 		if errors.Is(err, tfrun.ErrFailureReported) {
 			return fmt.Errorf("%w: %w", err, dispatcher.ErrFailureReported)
 		}
@@ -80,14 +65,7 @@ func newTfExecutor(cfg config.Config) (executeFunc, error) {
 }
 
 func newManualExecutor(cfg config.Config) (executeFunc, error) {
-	var manualConfig manual.Config
-	manualConfig.Uuid = cfg.Uuid.String()
-	manualConfig.Api.Url = cfg.Api.Url.String()
-	return func(ctx context.Context, run dispatcher.Run, _ client.MeshRunnerRunClient) error {
-		runJson, err := json.Marshal(run)
-		if err != nil {
-			return err
-		}
-		return manual.ExecuteRunJson(ctx, manualConfig, runJson)
+	return func(ctx context.Context, run dispatcher.Run, api client.MeshRunnerRunClient) error {
+		return manual.Execute(ctx, run, api, cfg.Uuid)
 	}, nil
 }

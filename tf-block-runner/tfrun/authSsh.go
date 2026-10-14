@@ -30,25 +30,16 @@ var ErrResolveGeneric = errors.New("ssh_error_generic")
 var ErrResolveNoExtraKnownHost = errors.New("ssh_error_no_extra_known_host")
 
 type SshAuth struct {
-	knownHostEntry *KnownHost
-	certStr        string
-	prepDir        string
+	knownHostEntry        *KnownHost
+	certStr               string
+	prepDir               string
+	skipHostKeyValidation bool
 }
 
 type KnownHost struct {
 	host  string
 	key   string
 	value string
-}
-
-func (sshAuth *SshAuth) unwrapCert() (string, error) {
-	// If crypto is not initialized (single-run mode), the cert is already decrypted
-	if Crypto == nil {
-		return sshAuth.certStr, nil
-	}
-	// Otherwise, decrypt it (polling mode)
-	r, e := Crypto.Decrypt(sshAuth.certStr)
-	return r, e
 }
 
 func (sshAuth *SshAuth) name() AuthType {
@@ -60,19 +51,14 @@ func (sshAuth *SshAuth) prepare(dir string, log *logwrap) error {
 
 	sshAuth.prepDir = dir
 	certPath := path.Join(dir, TMP_FILE_SSH_CERT)
-	cert, err := sshAuth.unwrapCert()
-	if err != nil {
-		return err
-	}
-
-	// ensure trailing newline
+	cert := sshAuth.certStr
 	if !strings.HasSuffix(cert, "\n") {
 		cert += "\n"
 	}
 
 	// persisting cert file
 	log.PrintlnToLocalLogs(fmt.Sprintf("writing cert file to %s\n", certPath))
-	err = os.WriteFile(certPath, []byte(cert), 0600)
+	err := os.WriteFile(certPath, []byte(cert), 0600)
 	if err != nil {
 		log.PrintlnToLocalLogs("unable to write cert file.")
 		log.PrintlnToUpdateLogs(ERR_MSG_PREPARE)
@@ -110,7 +96,7 @@ func (sshAuth *SshAuth) toTransport(url string, log *logwrap) (transport.AuthMet
 		return nil, err
 	}
 
-	key.HostKeyCallbackHelper = sshAuth.knownHostsKeyCallback(sshAuth.prepDir, AppConfig.SkipHostKeyValidation, log)
+	key.HostKeyCallbackHelper = sshAuth.knownHostsKeyCallback(sshAuth.prepDir, sshAuth.skipHostKeyValidation, log)
 
 	// Configure SSH client to request the specific key type from known_hosts
 	// This tells the server which host key algorithm to use during handshake

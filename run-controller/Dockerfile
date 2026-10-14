@@ -6,13 +6,12 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY internal/ ./internal/
-COPY run-controller/ ./run-controller/
+COPY cmd/ ./cmd/
 
-WORKDIR /app/run-controller
 ARG VERSION=dev
 ARG TARGETOS
 ARG TARGETARCH
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -tags k8s -trimpath -buildvcs=false -ldflags "-s -w -X 'github.com/meshcloud/building-block-runner/internal/build.Version=${VERSION}'" -o run-controller .
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -tags k8s -trimpath -buildvcs=false -ldflags "-s -w -X 'github.com/meshcloud/building-block-runner/internal/build.Version=${VERSION}'" -o runner ./cmd/runner
 
 FROM alpine:3.22.4@sha256:310c62b5e7ca5b08167e4384c68db0fd2905dd9c7493756d356e893909057601
 
@@ -26,10 +25,10 @@ RUN addgroup -S meshcloud -g 2000 && adduser -SD meshcloud -u 2000 -G meshcloud 
 
 ENV CUSTOM_CA_CERTS_PATH=/usr/local/share/ca-certificates
 
-COPY --from=builder --chown=meshcloud:meshcloud --chmod=755 /app/run-controller/run-controller /app/run-controller
-COPY --from=builder --chown=meshcloud:meshcloud /app/run-controller/runner-config.yml /app/.
+COPY --from=builder --chown=meshcloud:meshcloud --chmod=755 /app/runner /app/runner
+COPY --chown=meshcloud:meshcloud run-controller/runner-config.yml /app/.
 COPY --chown=meshcloud:meshcloud --chmod=755 containers/entrypoint-go.sh /app/entrypoint.sh
 
 WORKDIR /app
 USER 2000
-ENTRYPOINT ["/app/entrypoint.sh", "/app/run-controller"]
+ENTRYPOINT ["/app/entrypoint.sh", "/app/runner"]

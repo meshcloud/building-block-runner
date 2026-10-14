@@ -1,6 +1,7 @@
 package tfrun
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -18,6 +19,7 @@ import (
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclwrite"
 	"github.com/hashicorp/terraform-exec/tfexec"
+	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/tf-block-runner/util"
 	"github.com/zclconf/go-cty/cty"
 )
@@ -43,6 +45,7 @@ func stateLockTimeout() *tfexec.LockTimeoutOption {
 }
 
 type TfCmdParams struct {
+	cfg                config.Config
 	dir                string
 	buildingBlockId    string
 	tfVersion          string
@@ -52,10 +55,8 @@ type TfCmdParams struct {
 	source             *GitSource
 	preRunScript       *string
 	runMode            string
-	// planArtifactUrl is copied from Run.PlanArtifactUrl; empty means plain apply.
-	planArtifactUrl string
-	// artifactUploadUrl is copied from Run.ArtifactUploadUrl; a DETECT run uploads the plan
-	// artifact it produced to this URL.
+	// planArtifactUrl is empty for a plain apply.
+	planArtifactUrl   string
 	artifactUploadUrl string
 }
 
@@ -123,10 +124,10 @@ func (tfcmd *GenericTfCmd) failWithUserMsg(err error, overrideUserMsg *string) {
 		tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(msgText)
 
 		if errors.Is(tfcmd.ctx.Err(), context.DeadlineExceeded) {
-			msgText = fmt.Sprintf("execution step stopped, because it exceeded the configured timeout of %d minutes", AppConfig.TfCommandTimeoutMins)
+			msgText = fmt.Sprintf("execution step stopped: %v", context.Cause(tfcmd.ctx))
 			tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(msgText)
 		} else if errors.Is(tfcmd.ctx.Err(), context.Canceled) {
-			msgText = fmt.Sprintf("execution step cancelled: %s", context.Cause(tfcmd.ctx).Error())
+			msgText = fmt.Sprintf("execution step cancelled: %v", context.Cause(tfcmd.ctx))
 			tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(msgText)
 		}
 
@@ -156,7 +157,7 @@ func (tfcmd *GenericTfCmd) createFreshCommandWd() error {
 
 func (tfcmd *GenericTfCmd) init(tf TfFacade) error {
 	tfcmd.Println("Calling tf init")
-	initCtx, cancel := context.WithTimeout(tfcmd.ctx, time.Duration(AppConfig.InitTimeoutMins)*time.Minute)
+	initCtx, cancel := context.WithTimeout(tfcmd.ctx, tfcmd.params.cfg.Tf.InitTimeout.Duration)
 	defer cancel()
 
 	if tfcmd.runContextInfo.useMeshBackendFallback {
@@ -210,7 +211,7 @@ func (tfcmd *GenericTfCmd) useWorkspaceIfNeeded(tf TfFacade) error {
 	}
 
 	// if expected workspace does not exits, create it
-	wsCtx, cancel := context.WithTimeout(tfcmd.ctx, time.Duration(AppConfig.WsTimeoutMins)*time.Minute)
+	wsCtx, cancel := context.WithTimeout(tfcmd.ctx, tfcmd.params.cfg.Tf.WsTimeout.Duration)
 	defer cancel()
 
 	tfcmd.Printfln("Workspace does not exist. Creating it with suggested name: %s.", tfcmd.params.suggestedWorkspace)
@@ -220,7 +221,7 @@ func (tfcmd *GenericTfCmd) useWorkspaceIfNeeded(tf TfFacade) error {
 func (tfcmd *GenericTfCmd) selectWorkspace(tf TfFacade) (string, error) {
 	tfcmd.Printfln("Selecting workspace: %s", tfcmd.params.suggestedWorkspace)
 
-	wsCtx, cancelList := context.WithTimeout(tfcmd.ctx, time.Duration(AppConfig.WsTimeoutMins)*time.Minute)
+	wsCtx, cancelList := context.WithTimeout(tfcmd.ctx, tfcmd.params.cfg.Tf.WsTimeout.Duration)
 	defer cancelList()
 
 	available, current, err := tf.WorkspaceList(wsCtx)
@@ -255,7 +256,7 @@ func (tfcmd *GenericTfCmd) deleteWorkspaceIfNeeded(tf TfFacade) {
 		return
 	}
 
-	wsCtx, cancel := context.WithTimeout(tfcmd.ctx, time.Duration(AppConfig.WsTimeoutMins)*time.Minute)
+	wsCtx, cancel := context.WithTimeout(tfcmd.ctx, tfcmd.params.cfg.Tf.WsTimeout.Duration)
 	defer cancel()
 
 	// This is primarly using the somewhat complex workspace naming logic to detect the workspace
@@ -304,10 +305,7 @@ func (tfcmd *GenericTfCmd) createMeshStackHttpBackendFile() error {
 		return fmt.Errorf("a file with the name '%s' already exists in the working directory", backendFileName)
 	}
 
-	baseUrl := tfcmd.runContextInfo.meshstackBaseUrl
-	if baseUrl == "" {
-		baseUrl = AppConfig.RunApiBackend.Url
-	}
+	baseUrl := cmp.Or(tfcmd.runContextInfo.meshstackBaseUrl, tfcmd.params.cfg.Api.Url.String())
 	url := fmt.Sprintf(EP_State, baseUrl, tfcmd.runContextInfo.workspaceIdentifier, tfcmd.runContextInfo.bbId)
 
 	f := hclwrite.NewEmptyFile()
@@ -474,7 +472,7 @@ func (tfcmd *GenericTfCmd) buildTfEnv() (map[string]string, error) {
 	// Set GIT_SSH_COMMAND if SSH authentication is configured
 	if tfcmd.params.source != nil && tfcmd.params.source.auth.name() == AUTH_TYPE_SSH {
 		gitSshCommandEnv := fmt.Sprintf("ssh -i '%s'", path.Join(tfcmd.runContextInfo.workingDirectory, TMP_FILE_SSH_CERT))
-		if AppConfig.SkipHostKeyValidation {
+		if tfcmd.params.cfg.Tf.SkipHostKeyValidation {
 			gitSshCommandEnv += " -o StrictHostKeyChecking=no"
 		}
 		tfcmd.Println(fmt.Sprintf("Setting GIT_SSH_COMMAND=%s", gitSshCommandEnv))
@@ -485,19 +483,12 @@ func (tfcmd *GenericTfCmd) buildTfEnv() (map[string]string, error) {
 	for varName, variable := range tfcmd.params.vars {
 		// Note: TF_VAR_ prefixed env vars from Building Blocks are passed in as *.auto.tfvars file (see vars() method)
 		if variable.env && !strings.HasPrefix(varName, TfVarEnvPrefix) {
-			val, err := variable.decryptIfSensitive(Crypto)
-			if err == nil {
-				encodedValue, err := encodeVarValueForEnv(val, variable.Type)
-				if err != nil {
-					return nil, err
-				}
-				env[varName] = encodedValue
-				envKeys = append(envKeys, varName)
-			} else {
-				tfcmd.Printfln("Failed to decrypt input '%s'", varName)
-				tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(fmt.Sprintf("Failed to decrypt input '%s': %s", varName, err.Error()))
-				return nil, fmt.Errorf("input decryption failed for '%s'", varName)
+			encodedValue, err := encodeVarValueForEnv(variable.value, variable.Type)
+			if err != nil {
+				return nil, err
 			}
+			env[varName] = encodedValue
+			envKeys = append(envKeys, varName)
 		}
 	}
 
@@ -547,16 +538,8 @@ func (tfcmd *GenericTfCmd) saveInputFiles() (savedFiles int, err error) {
 			return savedFiles, err
 		}
 
-		value, err := v.decryptIfSensitive(Crypto)
-		if err != nil {
-			tfcmd.Printfln("Failed to decrypt file input '%s'", k)
-			tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(fmt.Sprintf("Failed to decrypt file input '%s': %s", k, err.Error()))
-			return savedFiles, fmt.Errorf("file input decryption failed for '%s'", k)
-		}
-
 		tfcmd.Printfln("Writing variable file to %s", vPath)
-		// FILE type values are data URLs that should be decoded directly, not encoded
-		dataUrl := fmt.Sprintf("%v", value)
+		dataUrl := fmt.Sprintf("%v", v.value)
 		fileContent, err := extractContentFromDataUrl(dataUrl)
 		if err != nil {
 			tfcmd.runContextInfo.logwrap.PrintlnToLocalAndUpdateLogs("Unable to decode file content from DataURL")
@@ -612,13 +595,6 @@ func (tfcmd *GenericTfCmd) vars() error {
 			continue
 		}
 
-		decryptedValue, err := variable.decryptIfSensitive(Crypto)
-		if err != nil {
-			tfcmd.Printfln("Failed to decrypt input '%s'", varName)
-			_, _ = tfcmd.runContextInfo.logwrap.PrintlnToUpdateLogs(fmt.Sprintf("Failed to decrypt input '%s': %s", varName, err.Error()))
-			return fmt.Errorf("input decryption failed for '%s'", varName)
-		}
-
 		opts := AddVariableOptions{}
 		stringLikeTypes := []DataType{
 			DATA_TYPE_STRING,
@@ -633,9 +609,9 @@ func (tfcmd *GenericTfCmd) vars() error {
 		var diags hcl.Diagnostics
 		// DATA_TYPE_LIST is legacy data type, should be handled same as DATA_TYPE_CODE
 		if variable.Type == DATA_TYPE_CODE || variable.Type == DATA_TYPE_LIST {
-			diags = varsFile.AddRawVariable(varName, fmt.Sprintf("%v", decryptedValue), opts)
+			diags = varsFile.AddRawVariable(varName, fmt.Sprintf("%v", variable.value), opts)
 		} else {
-			diags = varsFile.AddVariable(varName, decryptedValue, opts)
+			diags = varsFile.AddVariable(varName, variable.value, opts)
 		}
 		for _, diag := range diags {
 			// just log without return, as adding variable should only have warnings and very rarely errors

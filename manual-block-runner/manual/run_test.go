@@ -7,10 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"uuid"
 
-	"github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
+	"github.com/meshcloud/meshstack-cli/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/meshcloud/building-block-runner/internal/testmeshstack"
 )
 
 func Test_Outputs_EchoInputsWithOutputTypes(t *testing.T) {
@@ -38,51 +41,37 @@ func Test_Outputs_EchoInputsWithOutputTypes(t *testing.T) {
 	})
 }
 
-func Test_RunJsonNotJSON_FailsBeforeContactingMeshStack(t *testing.T) {
-	err := ExecuteRunJson(t.Context(), defaultConfig(), []byte("not json"))
-	assert.ErrorContains(t, err, "parse run")
-}
-
-func Test_Run_ReportsThroughItsSourceLinks(t *testing.T) {
+func Test_Run_ReportsThroughItsSourceLinksWithTheRunToken(t *testing.T) {
 	var requests []string
 	meshStack := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests = append(requests, r.Method+" "+r.URL.EscapedPath())
-		w.WriteHeader(http.StatusOK)
+		requests = append(requests, r.Method+" "+r.URL.EscapedPath()+" "+r.Header.Get("Authorization"))
+		_, _ = w.Write([]byte("{}"))
 	}))
 	defer meshStack.Close()
 
-	cfg := defaultConfig()
-	cfg.Uuid = "runner/1"
+	sourceId := uuid.MustParse("6f0c5c2c-5b7e-4c1e-9d6f-3c7f2b1a0e11")
 	run := testRun(t)
 	run.Links.RegisterSource.Href = meshStack.URL + "/register"
 	run.Links.UpdateSource.Href = meshStack.URL + "/update/{sourceId}"
 
-	require.NoError(t, ExecuteRun(t.Context(), cfg, run))
+	require.NoError(t, Execute(t.Context(), run, runClient(t, meshStack.URL, run), sourceId))
 
-	assert.Equal(t, []string{"POST /register", "PATCH /update/runner%2F1"}, requests)
+	assert.Equal(t, []string{
+		"POST /register Bearer aaaa-bbbb-cccc-dddd",
+		"PATCH /update/" + sourceId.String() + " Bearer aaaa-bbbb-cccc-dddd",
+	}, requests)
 }
 
-func Test_RunWithoutSourceLink_FailsNamingTheLink(t *testing.T) {
-	cfg := defaultConfig()
-
-	t.Run("registerSource", func(t *testing.T) {
-		run := testRun(t)
-		run.Links.RegisterSource = meshapi.LinkDTO{}
-		assert.ErrorContains(t, ExecuteRun(t.Context(), cfg, run), "no registerSource link")
-	})
-
-	t.Run("updateSource", func(t *testing.T) {
-		run := testRun(t)
-		run.Links.UpdateSource = meshapi.LinkDTO{}
-		assert.ErrorContains(t, ExecuteRun(t.Context(), cfg, run), "no updateSource link")
-	})
+func runClient(t *testing.T, meshStackUrl string, run client.MeshRunnerRun) client.MeshRunnerRunClient {
+	t.Helper()
+	return testmeshstack.Client(t, meshStackUrl).Runner.ForRun(run)
 }
 
-func testRun(t *testing.T) *meshapi.RunDetailsDTO {
+func testRun(t *testing.T) client.MeshRunnerRun {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join("testdata", "run.json"))
 	require.NoError(t, err)
-	run, err := parseRun(data)
-	require.NoError(t, err)
+	var run client.MeshRunnerRun
+	require.NoError(t, json.Unmarshal(data, &run))
 	return run
 }

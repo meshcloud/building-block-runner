@@ -1,14 +1,7 @@
 package tfrun
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/sha1"
 	_ "embed"
-	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"io"
 	"io/fs"
@@ -20,10 +13,11 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-exec/tfexec"
-	"github.com/meshcloud/building-block-runner/internal/crypto"
 	"github.com/sebdah/goldie/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/meshcloud/building-block-runner/internal/config/xurl"
 )
 
 //go:embed testdata/custom_meshStack_run_vars.tf
@@ -358,21 +352,13 @@ func Test_vars_WithSpecialCharacters(t *testing.T) {
 	assertContainsHCL(t, contentStr, `description = "This is a \"quoted\" string with \\backslashes\\"`)
 }
 
-func Test_vars_SensitiveCodeInputThatIsNoValidHcl_ValueNotInLog(t *testing.T) {
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	require.NoError(t, err)
-	previousCrypto := Crypto
-	Crypto = &crypto.Crypto{PrivateKeys: crypto.PrivateKeys{{PrivateKey: key}}}
-	t.Cleanup(func() { Crypto = previousCrypto })
-	encrypted := encryptLikeMeshStack(t, key, codeInputPlainText)
-
+func Test_vars_CodeInputThatIsNoValidHcl_ValueNotInLog(t *testing.T) {
 	uut := makeTestGenericTfCmd(t)
 	updateLogPath := path.Join(t.TempDir(), "update.log")
 	uut.runContextInfo.logwrap = NewLogWrap(log.New(io.Discard, "[tfCmd_test] ", log.LstdFlags), updateLogPath)
 	uut.params.vars["secret_code"] = &Variable{
-		value:       encrypted,
-		Type:        DATA_TYPE_CODE,
-		isSensitive: true,
+		value: codeInputPlainText,
+		Type:  DATA_TYPE_CODE,
 	}
 
 	require.NoError(t, uut.vars())
@@ -668,17 +654,8 @@ func Test_buildTfEnv_WithoutMeshBackendFallback_DoesNotSetTfHttpBasicAuthEnv(t *
 }
 
 func Test_createMeshStackHttpBackendFile_MissingRunToken_ReturnsError(t *testing.T) {
-	originalConfig := AppConfig
-	AppConfig = TfRunnerConfig{
-		RunApiBackend: RunApiConfig{
-			Url:      "http://localhost:8080",
-			User:     "some-user",
-			Password: "top-secret",
-		},
-	}
-	t.Cleanup(func() { AppConfig = originalConfig })
-
 	uut := makeTestGenericTfCmd(t)
+	uut.params.cfg.Api.Url = xurl.MustParse("http://localhost:8080")
 	uut.runContextInfo.bbId = "test-bb-id"
 	uut.runContextInfo.workspaceIdentifier = "test-workspace"
 	// runToken deliberately left empty — simulates missing token from server
@@ -704,16 +681,8 @@ func Test_createMeshStackHttpBackendFile_MissingRunToken_ReturnsError(t *testing
 // buildTfEnv), so nothing secret is baked into a saved plan.
 // It also verifies that meshstackBaseUrl from the run links is used as the backend base URL.
 func Test_createMeshStackHttpBackendFile_WithRunToken(t *testing.T) {
-	originalConfig := AppConfig
-	// No credentials configured – simulates Kubernetes mode where none are injected.
-	AppConfig = TfRunnerConfig{
-		RunApiBackend: RunApiConfig{
-			Url: "http://fallback-url-should-not-be-used:8080",
-		},
-	}
-	t.Cleanup(func() { AppConfig = originalConfig })
-
 	uut := makeTestGenericTfCmd(t)
+	uut.params.cfg.Api.Url = xurl.MustParse("http://fallback-url-should-not-be-used:8080")
 	uut.runContextInfo.bbId = "test-bb-id"
 	uut.runContextInfo.workspaceIdentifier = "test-workspace"
 	uut.runContextInfo.runToken = "ephemeral-run-token"
@@ -753,20 +722,21 @@ func readGeneratedBackendFile(t *testing.T, workingDirectory string) []byte {
 	return content
 }
 
-func encryptLikeMeshStack(t *testing.T, key *rsa.PrivateKey, plainText string) string {
-	aesKey := make([]byte, 32)
-	rand.Read(aesKey)
-	block, err := aes.NewCipher(aesKey)
-	require.NoError(t, err)
-	gcm, err := cipher.NewGCM(block)
-	require.NoError(t, err)
-	iv := make([]byte, gcm.NonceSize())
-	rand.Read(iv)
-	encryptedKey, err := rsa.EncryptOAEP(sha1.New(), rand.Reader, &key.PublicKey, aesKey, nil)
-	require.NoError(t, err)
+func Test_RunnerCredentialsInTheProcessEnvironment_ReachNeitherTofuNorThePreRunScript(t *testing.T) {
+	credentials := []string{
+		"MESHSTACK_API_KEY", "MESHSTACK_API_SECRET", "MESHSTACK_API_TOKEN", "MESHSTACK_API_USERNAME", "MESHSTACK_API_PASSWORD",
+		"MESHSTACK_PROFILE", "MESHSTACK_WORKSPACE", "MESHSTACK_CONFIG_DIR", "RUNNER_API_CLIENT_SECRET", "RUNNER_API_PASSWORD",
+	}
+	for _, key := range credentials {
+		t.Setenv(key, "secret")
+	}
 
-	cipherText := binary.BigEndian.AppendUint32(encryptedKey, uint32(len(iv)))
-	cipherText = append(cipherText, iv...)
-	cipherText = gcm.Seal(cipherText, iv, []byte(plainText), nil)
-	return base64.StdEncoding.EncodeToString(cipherText)
+	tfEnv, err := makeTestGenericTfCmd(t).buildTfEnv()
+	require.NoError(t, err)
+	scriptEnv := buildScriptEnvironmentVariables("/tf/bin", "/user-message.txt", tfEnv)
+
+	for _, key := range credentials {
+		assert.NotContains(t, tfEnv, key)
+		assert.NotContains(t, scriptEnv, key+"=secret")
+	}
 }

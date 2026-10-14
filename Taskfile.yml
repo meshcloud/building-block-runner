@@ -18,6 +18,13 @@ tasks:
     cmds:
       - go test -race -tags inprocess {{.CLI_ARGS}} {{.PACKAGES}}
 
+  test:keycloak:
+    desc: Test the meshStack WIF token against a real Keycloak in Docker. Set KEYCLOAK_VERSION to test another version.
+    env:
+      KEYCLOAK_VERSION: '{{.KEYCLOAK_VERSION}}'
+    cmds:
+      - go test -tags keycloak -count=1 -run Test_Keycloak ./run-controller/keycloakwif/
+
   lint:
     desc: Run golangci-lint. Set PACKAGES to lint fewer, `-- --fix` to fix.
     cmds:

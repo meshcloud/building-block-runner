@@ -176,6 +176,9 @@ jobs:
         env:
           CGO_ENABLED: "1" # the race detector needs cgo
 
+      - name: Test against Keycloak
+        run: go test -tags keycloak -count=1 -run Test_Keycloak ./run-controller/keycloakwif/
+
       # meshfed-release's satellite coverage finds this by the commit sha and merges it with the
       # acceptance run's coverage. The contract is the artifact name `covdata-unit` and
       # covmeta.*/covcounters.* at its root, which naming the directory gives and a glob would nest.

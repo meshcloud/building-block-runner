@@ -6,6 +6,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY go-meshapi-client/ ./go-meshapi-client/
+COPY internal/ ./internal/
 COPY run-controller/ ./run-controller/
 
 WORKDIR /app/run-controller

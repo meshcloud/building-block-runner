@@ -121,7 +121,6 @@ func Test_Start_CreatesAJobWithItsRunInASecret(t *testing.T) {
 		assert.Equal(t, "/var/run/secrets/meshstack/run.json", env["RUNNER_CLAIM_RUN_YML"])
 		assert.Equal(t, "/var/run/secrets/meshstack/run.json", env["RUN_JSON_FILE_PATH"])
 		assert.NotContains(t, env, "MESHSTACK_API_TOKEN")
-		assert.Equal(t, "tf", env["RUNNER_DISPATCHER_FOR_TYPES"])
 		assert.Equal(t, resource.MustParse("2Gi"), container.Resources.Limits[corev1.ResourceMemory])
 		assert.Equal(t, resource.MustParse("256Mi"), container.Resources.Requests[corev1.ResourceMemory])
 	})

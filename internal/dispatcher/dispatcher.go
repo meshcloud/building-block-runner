@@ -36,6 +36,9 @@ type Dispatcher interface {
 // Current is set by the init of the dispatcher package that the build tags select. It does no network I/O.
 var Current func(ctx context.Context, cfg config.Config, api client.MeshRunnerClient) (Dispatcher, error)
 
+// DefaultForTypes fills an empty dispatcher.forTypes when the selected dispatcher package sets it.
+var DefaultForTypes func() config.RunnerTypes
+
 // FailureReportConfirmer is implemented by a dispatcher that must not report a failure again once meshStack accepted it.
 type FailureReportConfirmer interface {
 	FailureReported(ctx context.Context, runUuid uuid.UUID)

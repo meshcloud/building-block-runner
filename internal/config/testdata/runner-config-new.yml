@@ -94,6 +94,7 @@ k8s:
 
 dispatcher:
   # exactly one of tf, manual, github, gitlab, azureDevOps, ALL / '*', also the names of the meshStack API like TERRAFORM
+  # defaults to tf in a binary built with -tags tf, and to manual with -tags manual
   forTypes: [ALL]
   register: # updates the registration in meshStack on start, needs api.auth.workspace or api.auth.profile
     displayName: meshcloud-hosted Runner

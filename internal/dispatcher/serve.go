@@ -28,6 +28,9 @@ const (
 
 // Serve claims runs until ctx ends, or runs only the run in the file that RUNNER_CLAIM_RUN_YML names.
 func Serve(ctx context.Context, cfg config.Config, logger *log.Logger) error {
+	if len(cfg.Dispatcher.ForTypes) == 0 && DefaultForTypes != nil {
+		cfg.Dispatcher.ForTypes = DefaultForTypes()
+	}
 	if path := os.Getenv(claimRunYmlEnv); path != "" {
 		if builtWithK8sTag {
 			return errors.New(claimRunYmlEnv + " needs a binary built without -tags k8s")

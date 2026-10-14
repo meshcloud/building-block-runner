@@ -7,13 +7,12 @@ RUN go mod download
 
 COPY internal/ ./internal/
 COPY cmd/ ./cmd/
-COPY manual-block-runner/ ./manual-block-runner/
 COPY tf-block-runner/ ./tf-block-runner/
 
 ARG VERSION=dev
 ARG TARGETOS
 ARG TARGETARCH
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -buildvcs=false -ldflags "-s -w -X 'github.com/meshcloud/building-block-runner/internal/build.Version=${VERSION}'" -o runner ./cmd/runner
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -tags tf -trimpath -buildvcs=false -ldflags "-s -w -X 'github.com/meshcloud/building-block-runner/internal/build.Version=${VERSION}'" -o runner ./cmd/runner
 
 FROM alpine:3.22.4@sha256:310c62b5e7ca5b08167e4384c68db0fd2905dd9c7493756d356e893909057601
 
@@ -56,7 +55,6 @@ COPY --chown=meshcloud:meshcloud --chmod=644 tf-block-runner/resources/known_hos
 COPY --chown=meshcloud:meshcloud --chmod=755 containers/entrypoint-go.sh /app/entrypoint.sh
 
 ENV SSH_KNOWN_HOSTS=/app/known_hosts
-ENV RUNNER_DISPATCHER_FOR_TYPES=tf
 ENV PORT=8080
 EXPOSE 8080
 

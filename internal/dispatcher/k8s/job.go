@@ -128,7 +128,7 @@ func (d *Dispatcher) newJob(run dispatcher.Run, runnerType config.RunnerType, te
 	}
 	container := &pod.Spec.Containers[runner]
 	container.SecurityContext = restrictedSecurityContext()
-	container.Env = replaceByName(container.Env, envVarName, d.env(runnerType)...)
+	container.Env = replaceByName(container.Env, envVarName, d.env()...)
 	container.VolumeMounts = replaceByName(container.VolumeMounts, volumeMountName, d.volumeMounts()...)
 	container.Resources.Requests = withDefaults(container.Resources.Requests, corev1.ResourceList{
 		corev1.ResourceCPU:    resource.MustParse("100m"),
@@ -170,10 +170,9 @@ func (d *Dispatcher) volumeMounts() []corev1.VolumeMount {
 	return mounts
 }
 
-func (d *Dispatcher) env(runnerType config.RunnerType) []corev1.EnvVar {
+func (d *Dispatcher) env() []corev1.EnvVar {
 	return []corev1.EnvVar{
 		{Name: "RUNNER_CLAIM_RUN_YML", Value: runDir + "/" + runFile},
-		{Name: "RUNNER_DISPATCHER_FOR_TYPES", Value: string(runnerType)},
 		{Name: "RUN_JSON_FILE_PATH", Value: runDir + "/" + runFile},
 		{Name: "RUNNER_UUID", Value: d.cfg.Uuid.String()},
 		{Name: "RUNNER_API_URL", Value: d.cfg.Api.Url.String()},

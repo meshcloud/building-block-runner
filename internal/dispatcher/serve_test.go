@@ -2,6 +2,8 @@ package dispatcher
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"encoding/json/v2"
 	"errors"
 	"io"
@@ -24,6 +26,7 @@ import (
 	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/internal/config/xtime"
 	"github.com/meshcloud/building-block-runner/internal/config/xurl"
+	"github.com/meshcloud/building-block-runner/internal/crypto"
 	"github.com/meshcloud/building-block-runner/internal/testmeshstack"
 )
 
@@ -135,4 +138,28 @@ func Test_NewClient_RetriesUntilMeshfedAnswers(t *testing.T) {
 		assert.ErrorContains(t, newClient(server.URL), "unsupported meshStack version")
 		assert.Equal(t, int32(1), calls.Load())
 	})
+}
+
+func Test_Serve_FillsAnEmptyForTypesFromTheBuild(t *testing.T) {
+	testmeshstack.Isolate(t)
+	t.Setenv(setting.SkipVersionCheck.EnvKey(), "")
+	t.Setenv(claimRunYmlEnv, "")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"version":"2020.1.0"}`))
+	}))
+	t.Cleanup(server.Close)
+	previous := DefaultForTypes
+	t.Cleanup(func() { DefaultForTypes = previous })
+	DefaultForTypes = func() config.RunnerTypes { return config.RunnerTypes{config.RunnerTypeTf} }
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	cfg := testConfig(1)
+	cfg.Api.Url = xurl.MustParse(server.URL)
+	cfg.Api.Auth.Basic = config.BasicAuth{Username: "user", Password: "password"}
+	cfg.Crypto = crypto.Crypto{PrivateKeys: crypto.PrivateKeys{{PrivateKey: key}}}
+	cfg.Dispatcher.Timeout = xtime.Minutes(60)
+
+	err = Serve(t.Context(), cfg, log.New(io.Discard, "", 0))
+
+	assert.ErrorContains(t, err, "unsupported meshStack version", "the config passed validation and Serve contacted meshStack")
 }

@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 
-	meshcrypto "github.com/meshcloud/building-block-runner/go-meshapi-client/crypto"
 	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
+	"github.com/meshcloud/building-block-runner/internal/crypto"
 )
 
 // decryptRunDetails decrypts all sensitive fields in the run details
-func decryptRunDetails(runJsonBase64 string, cryptoInstance *meshcrypto.MeshCertBasedCrypto) (string, error) {
+func decryptRunDetails(runJsonBase64 string, cryptoInstance crypto.Crypto) (string, error) {
 	// Decode base64
 	runJsonBytes, err := base64.StdEncoding.DecodeString(runJsonBase64)
 	if err != nil {
@@ -29,7 +29,7 @@ func decryptRunDetails(runJsonBase64 string, cryptoInstance *meshcrypto.MeshCert
 		if input.IsSensitive && input.Value != nil {
 			// Only decrypt string-like types
 			if strValue, ok := input.Value.(string); ok && strValue != "" {
-				decryptedValue, err := cryptoInstance.DecryptMeshCertBased(strValue)
+				decryptedValue, err := cryptoInstance.Decrypt(strValue)
 				if err != nil {
 					return "", fmt.Errorf("failed to decrypt sensitive input '%s': %w", input.Key, err)
 				}
@@ -52,7 +52,7 @@ func decryptRunDetails(runJsonBase64 string, cryptoInstance *meshcrypto.MeshCert
 			return "", fmt.Errorf("failed to parse Terraform implementation: %w", err)
 		}
 		if impl.SshPrivateKey != nil && *impl.SshPrivateKey != "" {
-			decryptedKey, err := cryptoInstance.DecryptMeshCertBased(*impl.SshPrivateKey)
+			decryptedKey, err := cryptoInstance.Decrypt(*impl.SshPrivateKey)
 			if err != nil {
 				return "", fmt.Errorf("failed to decrypt SSH private key: %w", err)
 			}
@@ -68,7 +68,7 @@ func decryptRunDetails(runJsonBase64 string, cryptoInstance *meshcrypto.MeshCert
 			return "", fmt.Errorf("failed to parse GitHub implementation: %w", err)
 		}
 		if impl.AppPem != "" {
-			decryptedPem, err := cryptoInstance.DecryptMeshCertBased(impl.AppPem)
+			decryptedPem, err := cryptoInstance.Decrypt(impl.AppPem)
 			if err != nil {
 				return "", fmt.Errorf("failed to decrypt GitHub appPem: %w", err)
 			}
@@ -84,7 +84,7 @@ func decryptRunDetails(runJsonBase64 string, cryptoInstance *meshcrypto.MeshCert
 			return "", fmt.Errorf("failed to parse GitLab implementation: %w", err)
 		}
 		if impl.PipelineTriggerToken != "" {
-			decryptedToken, err := cryptoInstance.DecryptMeshCertBased(impl.PipelineTriggerToken)
+			decryptedToken, err := cryptoInstance.Decrypt(impl.PipelineTriggerToken)
 			if err != nil {
 				return "", fmt.Errorf("failed to decrypt GitLab pipeline trigger token: %w", err)
 			}
@@ -100,7 +100,7 @@ func decryptRunDetails(runJsonBase64 string, cryptoInstance *meshcrypto.MeshCert
 			return "", fmt.Errorf("failed to parse Azure DevOps implementation: %w", err)
 		}
 		if impl.PersonalAccessToken != "" {
-			decryptedPat, err := cryptoInstance.DecryptMeshCertBased(impl.PersonalAccessToken)
+			decryptedPat, err := cryptoInstance.Decrypt(impl.PersonalAccessToken)
 			if err != nil {
 				return "", fmt.Errorf("failed to decrypt Azure DevOps personal access token: %w", err)
 			}

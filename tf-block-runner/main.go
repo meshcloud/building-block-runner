@@ -10,8 +10,8 @@ import (
 	"sync"
 	"syscall"
 
-	meshcrypto "github.com/meshcloud/building-block-runner/go-meshapi-client/crypto"
 	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
+	"github.com/meshcloud/building-block-runner/internal/crypto"
 	"github.com/meshcloud/building-block-runner/tf-block-runner/build"
 	"github.com/meshcloud/building-block-runner/tf-block-runner/tfrun"
 )
@@ -36,11 +36,11 @@ func main() {
 	// init crypto only when NOT in single-run mode
 	// In single-run mode, decryption is handled by the controller
 	if !singleRunMode && tfrun.AppConfig.PrivateKey != "" {
-		var cryptoErr error
-		meshcrypto.Crypto, cryptoErr = meshcrypto.NewCertBasedDecryptor(tfrun.AppConfig.PrivateKey)
-		if cryptoErr != nil {
-			logger.Fatalf("failed to initialize crypto: private key could not be loaded: %s", cryptoErr.Error())
+		var privateKey crypto.PrivateKey
+		if err := privateKey.UnmarshalText([]byte(tfrun.AppConfig.PrivateKey)); err != nil {
+			logger.Fatalf("failed to initialize crypto: private key could not be loaded: %s", err.Error())
 		}
+		tfrun.Crypto = &crypto.Crypto{PrivateKeys: crypto.PrivateKeys{privateKey}}
 		logger.Println("Crypto initialized for polling mode")
 	} else if singleRunMode {
 		logger.Println("Single-run mode: skipping crypto initialization (controller handles decryption)")

@@ -1,7 +1,14 @@
 package tfrun
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha1"
 	_ "embed"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"io"
 	"io/fs"
@@ -13,7 +20,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-exec/tfexec"
-	meshcrypto "github.com/meshcloud/building-block-runner/go-meshapi-client/crypto"
+	"github.com/meshcloud/building-block-runner/internal/crypto"
 	"github.com/sebdah/goldie/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -352,17 +359,12 @@ func Test_vars_WithSpecialCharacters(t *testing.T) {
 }
 
 func Test_vars_SensitiveCodeInputThatIsNoValidHcl_ValueNotInLog(t *testing.T) {
-	pubKey, err := os.ReadFile("../../go-meshapi-client/resources/test.pem")
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
-	crypto, pubKeyErr, privKeyErr := meshcrypto.NewCertBasedCrypto("../../go-meshapi-client/resources/test.key", pubKey)
-	require.NoError(t, pubKeyErr)
-	require.NoError(t, privKeyErr)
-	previousCrypto := meshcrypto.Crypto
-	meshcrypto.Crypto = crypto
-	t.Cleanup(func() { meshcrypto.Crypto = previousCrypto })
-
-	encrypted, err := crypto.EncryptMeshCertBased(codeInputPlainText)
-	require.NoError(t, err)
+	previousCrypto := Crypto
+	Crypto = &crypto.Crypto{PrivateKeys: crypto.PrivateKeys{{PrivateKey: key}}}
+	t.Cleanup(func() { Crypto = previousCrypto })
+	encrypted := encryptLikeMeshStack(t, key, codeInputPlainText)
 
 	uut := makeTestGenericTfCmd(t)
 	updateLogPath := path.Join(t.TempDir(), "update.log")
@@ -749,4 +751,22 @@ func readGeneratedBackendFile(t *testing.T, workingDirectory string) []byte {
 	content, err := os.ReadFile(path.Join(workingDirectory, matches[0]))
 	require.NoError(t, err)
 	return content
+}
+
+func encryptLikeMeshStack(t *testing.T, key *rsa.PrivateKey, plainText string) string {
+	aesKey := make([]byte, 32)
+	rand.Read(aesKey)
+	block, err := aes.NewCipher(aesKey)
+	require.NoError(t, err)
+	gcm, err := cipher.NewGCM(block)
+	require.NoError(t, err)
+	iv := make([]byte, gcm.NonceSize())
+	rand.Read(iv)
+	encryptedKey, err := rsa.EncryptOAEP(sha1.New(), rand.Reader, &key.PublicKey, aesKey, nil)
+	require.NoError(t, err)
+
+	cipherText := binary.BigEndian.AppendUint32(encryptedKey, uint32(len(iv)))
+	cipherText = append(cipherText, iv...)
+	cipherText = gcm.Seal(cipherText, iv, []byte(plainText), nil)
+	return base64.StdEncoding.EncodeToString(cipherText)
 }

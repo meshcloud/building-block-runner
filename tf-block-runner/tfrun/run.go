@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	meshcrypto "github.com/meshcloud/building-block-runner/go-meshapi-client/crypto"
+	"github.com/meshcloud/building-block-runner/internal/crypto"
 )
 
 const (
@@ -46,17 +46,19 @@ type Variable struct {
 	isSensitive bool
 }
 
+var Crypto *crypto.Crypto
+
 // add more "decryptable" types here, once we support them
-func (variable Variable) decryptIfSensitive(crypto *meshcrypto.MeshCertBasedCrypto) (result any, err error) {
+func (variable Variable) decryptIfSensitive(c *crypto.Crypto) (result any, err error) {
 	result = variable.value
 	if variable.isSensitive {
 		switch variable.Type {
 		case DATA_TYPE_CODE:
-			result, err = crypto.DecryptMeshCertBased(fmt.Sprintf("%v", variable.value))
+			result, err = c.Decrypt(fmt.Sprintf("%v", variable.value))
 		case DATA_TYPE_STRING:
-			result, err = crypto.DecryptMeshCertBased(fmt.Sprintf("%v", variable.value))
+			result, err = c.Decrypt(fmt.Sprintf("%v", variable.value))
 		case DATA_TYPE_FILE:
-			result, err = crypto.DecryptMeshCertBased(fmt.Sprintf("%v", variable.value))
+			result, err = c.Decrypt(fmt.Sprintf("%v", variable.value))
 		}
 		if err != nil {
 			// Wrap the error with helpful context

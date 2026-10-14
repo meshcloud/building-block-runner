@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
+	"github.com/meshcloud/building-block-runner/internal/crypto"
 )
 
 func TestGetImplementationType_ValidTypes(t *testing.T) {
@@ -84,7 +85,7 @@ func TestDecryptRunDetails_UnsupportedImplementationType(t *testing.T) {
 	runJson, _ := json.Marshal(runDetails)
 	runJsonBase64 := base64.StdEncoding.EncodeToString(runJson)
 
-	if _, err := decryptRunDetails(runJsonBase64, nil); err == nil {
+	if _, err := decryptRunDetails(runJsonBase64, crypto.Crypto{}); err == nil {
 		t.Error("expected error for unsupported implementation type")
 	}
 }
@@ -118,7 +119,7 @@ func TestDecryptRunDetails_ManualImplementation(t *testing.T) {
 	runJson, _ := json.Marshal(runDetails)
 	runJsonBase64 := base64.StdEncoding.EncodeToString(runJson)
 
-	result, err := decryptRunDetails(runJsonBase64, nil)
+	result, err := decryptRunDetails(runJsonBase64, crypto.Crypto{})
 	if err != nil {
 		t.Errorf("expected no error for MANUAL type, got: %v", err)
 	}
@@ -160,7 +161,7 @@ func TestDecryptRunDetails_InvalidInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := decryptRunDetails(tt.input, nil); err == nil {
+			if _, err := decryptRunDetails(tt.input, crypto.Crypto{}); err == nil {
 				t.Errorf("expected error for %s", tt.name)
 			}
 		})

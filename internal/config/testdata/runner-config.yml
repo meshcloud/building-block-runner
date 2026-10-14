@@ -1,0 +1,105 @@
+uuid: # legacy layouts: uuid, runnerUuid, blockrunner.uuid
+api:
+  url: https://host.minikube.internal:8080
+  # the meshstack-cli environment (MESHSTACK_ENDPOINT, MESHSTACK_API_KEY, ...) fills what is empty here
+  auth:
+    # variant 0: meshstack-cli profile, supplies url, auth and workspace which are not set here
+    profile: local-dev
+    workspace: admin-customer # old: ownedByWorkspace
+
+    # variant 1: apikey (old: id/secret wasn't nested, env RUNNER_API_CLIENT_ID)
+    key:
+     clientId: your-client-id
+     clientSecret: your-client-secret
+
+crypto:
+  privateKeyFiles:
+    - ./testdata/private-key.pem
+
+k8s:
+  namespace: default
+  jobSpecTemplates:
+    ALL: # or '*'
+      spec:
+        template:
+          spec:
+            tolerations:
+              - key: spot
+                operator: Equal
+                value: "true"
+                effect: NoSchedule
+            nodeSelector:
+              spot: "true"
+            containers:
+              - name: runner
+                env:
+                  - name: RUNNER_LOG_LEVEL
+                    value: debug
+    tf:
+      spec:
+        template:
+          spec:
+            containers:
+              - name: runner
+                image: ghcr.io/meshcloud/tf-block-runner:main
+                env:
+                  - name: EXECUTION_MODE
+                    value: single-run
+    manual: # runner type names match in any case, so MANUAL works too
+      spec:
+        template:
+          spec:
+            containers:
+              - name: runner
+                image: ghcr.io/meshcloud/manual-block-runner:main
+                env:
+                  - name: SPRING_PROFILES_ACTIVE
+                    value: kubernetes
+    github:
+      spec:
+        template:
+          spec:
+            containers:
+              - name: runner
+                image: ghcr.io/meshcloud/github-block-runner:main
+                env:
+                  - name: SPRING_PROFILES_ACTIVE
+                    value: kubernetes
+    gitlab:
+      spec:
+        template:
+          spec:
+            containers:
+              - name: runner
+                image: ghcr.io/meshcloud/gitlab-block-runner:main
+                env:
+                  - name: SPRING_PROFILES_ACTIVE
+                    value: kubernetes
+    azureDevOps:
+      spec:
+        template:
+          spec:
+            containers:
+              - name: runner
+                image: ghcr.io/meshcloud/azure-devops-block-runner:main
+                env:
+                  - name: SPRING_PROFILES_ACTIVE
+                    value: kubernetes
+
+dispatcher:
+  # exactly one of tf, manual, github, gitlab, azureDevOps, ALL / '*', also the names of the meshStack API like TERRAFORM
+  # each single-type image sets it through RUNNER_DISPATCHER_FOR_TYPES
+  forTypes: [ALL]
+  register: # updates the registration in meshStack on start, needs api.auth.workspace or api.auth.profile
+    displayName: meshcloud-hosted Runner
+  pollingInterval: 10s # time.Duration or seconds, pollingIntervalSeconds in the legacy layout
+  maxConcurrentJobs: 20
+  timeout: 45m # deadline of a run, timeoutMins in the legacy tf layout
+  killGrace: 150s # time a stopped run gets before it is killed, at least tf.abortGrace + 30s
+
+tf:
+  initTimeout: 5m # one deadline for the clone, tf install, tf init and the workspace selection
+  cacheDir: /tmp/runner/tfcache
+  initRetries: 3 # retries of a clone after a network failure and of each tofu registry request and provider download
+  insecureHostKeys: false
+  abortGrace: 90s # time tofu gets after SIGINT to save its state

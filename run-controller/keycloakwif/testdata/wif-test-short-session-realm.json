@@ -1,0 +1,28 @@
+{
+  "realm": "wif-test-short-session",
+  "enabled": true,
+  "clients": [
+    {
+      "clientId": "run-controller",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "run-controller-secret",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false
+    }
+  ],
+  "users": [
+    {
+      "username": "service-account-run-controller",
+      "enabled": true,
+      "serviceAccountClientId": "run-controller",
+      "clientRoles": {
+        "realm-management": [
+          "manage-clients"
+        ]
+      }
+    }
+  ],
+  "ssoSessionMaxLifespan": 1800
+}

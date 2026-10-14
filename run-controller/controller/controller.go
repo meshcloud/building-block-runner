@@ -7,8 +7,8 @@ import (
 	"os"
 	"time"
 
-	meshcrypto "github.com/meshcloud/building-block-runner/go-meshapi-client/crypto"
 	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
+	"github.com/meshcloud/building-block-runner/internal/crypto"
 	"github.com/meshcloud/building-block-runner/run-controller/build"
 )
 
@@ -16,7 +16,7 @@ type Controller struct {
 	logger     *log.Logger
 	runApi     RunApi
 	dispatcher build.Dispatcher
-	crypto     *meshcrypto.MeshCertBasedCrypto
+	crypto     crypto.Crypto
 	metrics    *MetricsCollector
 }
 
@@ -32,14 +32,11 @@ const (
 const maxDrainPerCycleUnlimited = 10
 
 func NewController(dispatcher build.Dispatcher) *Controller {
-	cryptoInstance, err := meshcrypto.NewCertBasedDecryptorWithValidation(
-		AppConfig.Crypto.PrivateKey,
-		[]byte(AppConfig.Crypto.PublicKey),
-	)
-	if err != nil {
+	var privateKey crypto.PrivateKey
+	if err := privateKey.UnmarshalText([]byte(AppConfig.Crypto.PrivateKey)); err != nil {
 		log.Fatalf("Failed to initialize crypto for controller %s: %v", AppConfig.Uuid, err)
 	}
-	log.Printf("Initialized crypto for controller: %s (keys validated)", AppConfig.Uuid)
+	log.Printf("Initialized crypto for controller: %s", AppConfig.Uuid)
 
 	metrics := NewMetricsCollector()
 	metrics.activeRunners.Set(1)
@@ -48,7 +45,7 @@ func NewController(dispatcher build.Dispatcher) *Controller {
 		logger:     log.New(os.Stdout, "[CONTROLLER] ", log.LstdFlags),
 		runApi:     newApi(),
 		dispatcher: dispatcher,
-		crypto:     cryptoInstance,
+		crypto:     crypto.Crypto{PrivateKeys: crypto.PrivateKeys{privateKey}},
 		metrics:    metrics,
 	}
 }

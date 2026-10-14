@@ -5,7 +5,6 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-COPY go-meshapi-client/ ./go-meshapi-client/
 COPY internal/ ./internal/
 COPY run-controller/ ./run-controller/
 
@@ -13,7 +12,7 @@ WORKDIR /app/run-controller
 ARG VERSION=dev
 ARG TARGETOS
 ARG TARGETARCH
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -buildvcs=false -ldflags "-s -w -X 'github.com/meshcloud/building-block-runner/run-controller/build.Version=${VERSION}'" -o run-controller .
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -tags k8s -trimpath -buildvcs=false -ldflags "-s -w -X 'github.com/meshcloud/building-block-runner/internal/build.Version=${VERSION}'" -o run-controller .
 
 FROM alpine:3.22.4@sha256:310c62b5e7ca5b08167e4384c68db0fd2905dd9c7493756d356e893909057601
 

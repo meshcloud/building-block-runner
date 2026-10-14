@@ -150,7 +150,9 @@ jobs:
           go-version-file: go.mod
 
       - name: Build
-        run: go build ./...
+        run: |
+          go build ./...
+          go build -tags k8s ./...
 
       # Built here rather than downloaded by the action below: golangci-lint's formatters use the
       # go/format compiled into the binary, so the formatting they enforce comes from the Go release
@@ -164,7 +166,12 @@ jobs:
           # The step above already installed it; the action is here for the annotations it puts on
           # the pull request diff, which a bare `run:` does not produce.
           install-mode: none
-          args: --build-tags inprocess
+
+      - name: Lint with the k8s tag
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          install-mode: none
+          args: --build-tags k8s
 
       # Binary coverage data (GOCOVERDIR format) rather than a text profile, because only the binary
       # form merges with the acceptance run's coverage. `-coverpkg=./...` matches what meshfed-release
@@ -172,7 +179,8 @@ jobs:
       - name: Test
         run: |
           mkdir -p covdata/unit
-          go test -race -tags inprocess -coverpkg=./... ./... -args -test.gocoverdir="$PWD/covdata/unit"
+          go test -race -coverpkg=./... ./... -args -test.gocoverdir="$PWD/covdata/unit"
+          go test -race -tags k8s -coverpkg=./... ./... -args -test.gocoverdir="$PWD/covdata/unit"
         env:
           CGO_ENABLED: "1" # the race detector needs cgo
 

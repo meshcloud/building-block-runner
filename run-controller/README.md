@@ -16,11 +16,11 @@ starts the runner Jobs in minikube. `runner-config.yml` already points at
 minikube start
 kubectl config use-context minikube
 echo "127.0.0.1 host.minikube.internal" | sudo tee -a /etc/hosts  # once
-go run .
+go run -tags k8s .
 ```
 
 ## Test
 
 ```bash
-go test -tags inprocess ./...
+task test
 ```

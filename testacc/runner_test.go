@@ -2,17 +2,17 @@ package testacc
 
 import (
 	"context"
-	"errors"
 	"log"
-	"net/http"
 	"testing"
+	"uuid"
 
 	"github.com/meshcloud/meshstack-cli/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
-	"github.com/meshcloud/building-block-runner/run-controller/controller"
+	"github.com/meshcloud/building-block-runner/internal/config"
+	"github.com/meshcloud/building-block-runner/internal/config/xurl"
+	"github.com/meshcloud/building-block-runner/internal/dispatcher"
 )
 
 // One every local stack has: the dev dump's ALL runner belongs to it.
@@ -28,7 +28,7 @@ func TestAccRunner(t *testing.T) {
 		name string
 		step func(*testing.T)
 	}{
-		{"run-controller's registration updates the runner", registrationUpdatesTheRunner(stack, runner)},
+		{"the registration updates the runner", registrationUpdatesTheRunner(stack, runner)},
 		{"a claim without work finds no run and marks the runner as seen", claimWithoutWorkFindsNoRun(stack, runner)},
 	}
 	for _, s := range steps {
@@ -38,18 +38,19 @@ func TestAccRunner(t *testing.T) {
 	}
 }
 
-func (s localStack) createRunner(t *testing.T) string {
+func (s localStack) createRunner(t *testing.T) config.Config {
 	t.Helper()
-	// The certificate the dev dump holds for the ALL runner, rather than an invented key meshStack
-	// may reject.
-	runControllerConfig, err := controller.ReadInYmlConfig("../run-controller/runner-config.yml")
+	// meshStack accepts the key that the dev dump holds for the ALL runner.
+	cfg, err := config.LoadFile("../run-controller/runner-config.yml", log.New(t.Output(), "", 0))
+	require.NoError(t, err)
+	publicKey, err := cfg.Crypto.FirstPublicKey()
 	require.NoError(t, err)
 
 	created, err := s.api.BuildingBlockRunner.Create(t.Context(), client.MeshBuildingBlockRunner{
 		Metadata: client.MeshBuildingBlockRunnerMetadata{OwnedByWorkspace: workspace},
 		Spec: client.MeshBuildingBlockRunnerSpec{
 			DisplayName:        "building-block-runner TestAcc",
-			PublicKey:          runControllerConfig.Crypto.PublicKey,
+			PublicKey:          publicKey,
 			ImplementationType: string(client.MeshBuildingBlockRunnerImplementationTypeAll),
 			Restriction:        new("PRIVATE"),
 		},
@@ -59,42 +60,33 @@ func (s localStack) createRunner(t *testing.T) string {
 	t.Cleanup(func() {
 		assert.NoError(t, s.api.BuildingBlockRunner.Delete(context.Background(), runnerUuid))
 	})
-	return runnerUuid
+
+	cfg.Uuid = uuid.MustParse(runnerUuid)
+	cfg.Api.Url = xurl.MustParse(s.endpoint)
+	cfg.Api.Auth.Workspace = workspace
+	cfg.Api.Auth.Key.ClientId, cfg.Api.Auth.Key.ClientSecret = s.runnerKey, s.runnerSecret
+	return cfg
 }
 
-func registrationUpdatesTheRunner(s localStack, runnerUuid string) func(*testing.T) {
+func registrationUpdatesTheRunner(s localStack, cfg config.Config) func(*testing.T) {
 	return func(t *testing.T) {
-		before, err := s.api.BuildingBlockRunner.Read(t.Context(), runnerUuid)
-		require.NoError(t, err)
+		cfg.Dispatcher.Register = &config.Register{DisplayName: "building-block-runner TestAcc, registered"}
+		require.NoError(t, dispatcher.Register(t.Context(), cfg, log.New(t.Output(), "", 0)))
 
-		previous := controller.AppConfig
-		t.Cleanup(func() { controller.AppConfig = previous })
-		controller.AppConfig = &controller.ControllerConfig{
-			Uuid:             runnerUuid,
-			OwnedByWorkspace: workspace,
-			DisplayName:      "building-block-runner TestAcc, registered",
-			Crypto:           controller.CryptoConfig{PublicKey: before.Spec.PublicKey},
-			Api:              controller.ApiConfig{Url: s.endpoint, ClientId: s.runnerKey, ClientSecret: s.runnerSecret},
-		}
-		require.NoError(t, controller.RegisterController(log.New(t.Output(), "", 0)))
-
-		after, err := s.api.BuildingBlockRunner.Read(t.Context(), runnerUuid)
+		after, err := s.api.BuildingBlockRunner.Read(t.Context(), cfg.Uuid.String())
 		require.NoError(t, err)
 		assert.Equal(t, "building-block-runner TestAcc, registered", after.Spec.DisplayName)
 		assert.Equal(t, string(client.MeshBuildingBlockRunnerImplementationTypeAll), after.Spec.ImplementationType)
 	}
 }
 
-func claimWithoutWorkFindsNoRun(s localStack, runnerUuid string) func(*testing.T) {
+func claimWithoutWorkFindsNoRun(s localStack, cfg config.Config) func(*testing.T) {
 	return func(t *testing.T) {
-		runnerAuth := meshapi.NewApiKeyAuth(s.endpoint, s.runnerKey, s.runnerSecret)
-		_, _, err := meshapi.NewClient(s.endpoint, runnerUuid, runnerAuth).FetchRun(runnerUuid)
+		_, err := s.api.Runner.ClaimRun(t.Context(), cfg.Uuid)
 
-		statusErr, ok := errors.AsType[*meshapi.StatusError](err)
-		require.Truef(t, ok, "the claim did not answer with a status: %v", err)
-		assert.Equal(t, http.StatusNotFound, statusErr.Status)
+		require.ErrorIs(t, err, client.ErrNoRunToClaim)
 
-		runner, err := s.api.BuildingBlockRunner.Read(t.Context(), runnerUuid)
+		runner, err := s.api.BuildingBlockRunner.Read(t.Context(), cfg.Uuid.String())
 		require.NoError(t, err)
 		assert.NotNil(t, runner.Metadata.LastSeen, "meshStack shows a runner that claims as online through lastSeen")
 	}

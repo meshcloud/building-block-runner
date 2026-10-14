@@ -1,82 +1,19 @@
 name: Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      bump:
-        description: "Version bump (auto = derive from conventional commits)"
-        type: choice
-        options:
-          - auto
-          - patch
-          - minor
-          - major
-        default: auto
-      version:
-        description: "Explicit version override, e.g. v1.2.3 (skips bump calc)"
-        type: string
-        required: false
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
 
 jobs:
   prepare:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    outputs:
-      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0 # full history + tags needed for changelog and version calc
-
-      - name: Determine next version
-        id: version
-        run: |
-          INPUT_VERSION="${{ inputs.version }}"
-          BUMP="${{ inputs.bump }}"
-
-          if [ -n "$INPUT_VERSION" ]; then
-            VERSION="$INPUT_VERSION"
-          else
-            LATEST_TAG=$(git describe --tags --match "v*" --abbrev=0 2>/dev/null || echo "v0.0.0")
-            RANGE="${LATEST_TAG:+${LATEST_TAG}..}HEAD"
-
-            # for "auto", derive the bump from conventional commits since the last tag
-            if [ "$BUMP" = "auto" ]; then
-              LOG=$(git log "$RANGE" --pretty=format:'%s%n%b')
-              if echo "$LOG" | grep -qE '^[a-z]+(\([^)]*\))?!:|BREAKING CHANGE'; then
-                BUMP=major
-              elif echo "$LOG" | grep -qE '^feat(\([^)]*\))?:'; then
-                BUMP=minor
-              else
-                # fix / chore / ci / docs / etc. -> patch
-                BUMP=patch
-              fi
-              echo "Auto-detected bump: ${BUMP}"
-            fi
-
-            CURRENT=${LATEST_TAG#v}
-            MAJOR=$(echo "$CURRENT" | cut -d. -f1)
-            MINOR=$(echo "$CURRENT" | cut -d. -f2)
-            PATCH=$(echo "$CURRENT" | cut -d. -f3)
-
-            case "$BUMP" in
-              major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
-              minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
-              patch) PATCH=$((PATCH + 1)) ;;
-            esac
-
-            VERSION="v${MAJOR}.${MINOR}.${PATCH}"
-          fi
-
-          # normalise to a leading "v"
-          case "$VERSION" in
-            v*) ;;
-            *) VERSION="v${VERSION}" ;;
-          esac
-
-          echo "Resolved release version: ${VERSION}"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          fetch-depth: 0 # git-cliff needs the previous tags
 
       # Install git-cliff from its official GitHub release, pinned to an exact
       # version and verified against a SHA-512 hard-coded here (and reviewed in
@@ -109,23 +46,12 @@ jobs:
           "$HOME/.local/bin/git-cliff" --version
 
       - name: Generate release notes
-        run: |
-          git-cliff --config cliff.toml \
-            --unreleased --tag "${{ steps.version.outputs.version }}" \
-            --strip header -o RELEASE_NOTES.md
+        run: git-cliff --config cliff.toml --current --strip header -o RELEASE_NOTES.md
 
-      - name: Create tag and GitHub Release
+      - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "$VERSION"
-          git push origin "$VERSION"
-          gh release create "$VERSION" \
-            --title "$VERSION" \
-            --notes-file RELEASE_NOTES.md
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md
 
   build:
     needs: prepare
@@ -134,5 +60,5 @@ jobs:
       packages: write
     uses: ./.github/workflows/build-images.yml
     with:
-      version: ${{ needs.prepare.outputs.version }}
+      version: ${{ github.ref_name }}
     secrets: inherit

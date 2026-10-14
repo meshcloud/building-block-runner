@@ -4,6 +4,7 @@ package k8s
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log"
 	"maps"
@@ -18,9 +19,12 @@ import (
 	"github.com/stretchr/testify/require"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/internal/config/xtime"
@@ -142,6 +146,41 @@ func Test_Start_CreatesAJobWithItsRunInASecret(t *testing.T) {
 		large.Spec.BuildingBlock.Spec.Inputs = []client.MeshRunnerRunInput{{Key: "large", Value: []byte(`"` + strings.Repeat("x", 1<<20) + `"`)}}
 
 		assert.ErrorIs(t, d.Start(t.Context(), large), dispatcher.ErrRunTooLarge)
+	})
+
+	t.Run("retries a transient create error and takes AlreadyExists for success", func(t *testing.T) {
+		var secretCreates, jobCreates int
+		clientset.PrependReactor("create", "secrets", func(k8stesting.Action) (bool, runtime.Object, error) {
+			secretCreates++
+			return secretCreates == 1, nil, apierrors.NewTooManyRequests("slow down", 0)
+		})
+		clientset.PrependReactor("create", "jobs", func(action k8stesting.Action) (bool, runtime.Object, error) {
+			jobCreates++
+			if jobCreates > 1 {
+				return false, nil, nil
+			}
+			create := action.(k8stesting.CreateAction)
+			require.NoError(t, clientset.Tracker().Create(create.GetResource(), create.GetObject(), create.GetNamespace()))
+			return true, nil, apierrors.NewServiceUnavailable("timed out after the create")
+		})
+		retried := newTfRun()
+
+		require.NoError(t, d.Start(t.Context(), retried))
+
+		assert.Equal(t, 2, secretCreates)
+		assert.Equal(t, 2, jobCreates)
+		assert.Equal(t, "runner-"+retried.Metadata.Uuid.String(), getSecret(retried).OwnerReferences[0].Name)
+	})
+
+	t.Run("fails at once on a permanent create error", func(t *testing.T) {
+		var jobCreates int
+		clientset.PrependReactor("create", "jobs", func(k8stesting.Action) (bool, runtime.Object, error) {
+			jobCreates++
+			return true, nil, apierrors.NewForbidden(batchv1.Resource("jobs"), "runner", errors.New("quota exceeded"))
+		})
+
+		assert.ErrorContains(t, d.Start(t.Context(), newTfRun()), "quota exceeded")
+		assert.Equal(t, 1, jobCreates)
 	})
 }
 

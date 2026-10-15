@@ -1,13 +1,187 @@
-# Starts as the `go vet` and `gofmt` checks the Makefile ran. The modules do not pass golangci-lint's
-# standard linter set yet, so each further linter comes with the fixes it needs.
+# Kept close to meshstack-cli's configuration, so that code moving between the two repositories
+# does not trip a different linter set.
 version: "2"
+issues:
+  max-same-issues: 0
 
 formatters:
   enable:
-    - gofmt
-    - goimports
+    - gci
+    - gofumpt
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - localmodule
+  exclusions:
+    paths:
+      - ^tf-block-runner/
 
 linters:
-  default: none
-  enable:
-    - govet
+  # Every linter, minus the list below, so a rejection is a line here with a reason.
+  default: all
+  disable:
+    # Broken or superseded
+    - exhaustruct_v5   # panics on this codebase with exhaustruct v5.0.3
+    - exhaustruct      # deprecated, superseded by exhaustruct_v5
+    - wsl              # deprecated, superseded by wsl_v5
+    - gomodguard       # deprecated, superseded by gomodguard_v2
+
+    # Layout, which gofumpt and gci already settle
+    - wsl_v5
+    - nlreturn
+    - tagalign
+    - lll
+    - decorder
+    - grouper
+    - goheader
+
+    # Styles this repository chose on purpose
+    - nakedret         # a named result returned bare documents itself at the signature
+    - nonamedreturns   # so a named result stays
+    - noinlineerr      # `if err := f(); err != nil` is the house style
+    - varnamelen       # a short receiver or loop name is idiomatic
+    - godox            # a TODO comment is a deliberate marker
+    - gochecknoglobals # a setting is declared once, as a package-level var
+    - gochecknoinits   # a build tag selects the dispatcher at init
+    - ireturn          # a constructor returning an interface is the dispatcher's shape
+    - testpackage      # an in-package test is a deliberate choice
+    - dupl             # the dispatchers are parallel by design
+    - tagliatelle      # the field names are meshStack's and Kubernetes'
+    - paralleltest     # t.Setenv forbids t.Parallel
+
+    # Error plumbing we decide case by case
+    - wrapcheck
+    - err113
+
+    # Measurements, not goals
+    - funlen
+    - cyclop
+    - gocyclo
+    - gocognit
+    - maintidx
+    - nestif
+    - mnd
+    - goconst
+    - prealloc
+    - dogsled
+    - interfacebloat
+
+  exclusions:
+    paths:
+      # tf-block-runner predates this linter set; it gets the same rules once it is reworked.
+      - ^tf-block-runner/
+    rules:
+      # In test code the testing.T comes first, before a context.
+      - linters:
+          - revive
+        text: "^context-as-argument:"
+        path: (_test\.go|internal/testmeshstack/)
+      # A test key is a fixture, not a leaked secret, and a test runs the go command it builds.
+      - linters:
+          - gosec
+        text: G101|G204
+        path: _test\.go
+      # meshStack encrypts with RSA-OAEP over SHA-1.
+      - linters:
+          - gosec
+        text: G401|G505
+        path: internal/crypto/
+      # The runner reads the files its operator names in the config and the environment.
+      - linters:
+          - gosec
+        text: G304|G703
+      # testacc launches the binary it built and waits for its health endpoint.
+      - path: testacc/
+        linters:
+          - forbidigo
+          - gosec
+
+  settings:
+    forbidigo:
+      analyze-types: true
+      forbid:
+        # Anchored to the package, as net/http has more methods named Get, such as Header.Get.
+        - pattern: ^http\.(Client|DefaultClient|Transport|DefaultTransport|Get|Head|Post|PostForm)$
+          pkg: ^net/http$
+          msg: the process talks to meshStack through the meshstack-cli client; take it from auth.ResolveClient
+        # A test that sleeps for real is slow, and flaky once the machine is slower than the
+        # sleep assumed. synctest.Sleep panics outside a bubble, so it cannot be used the same way.
+        - pattern: ^time\.Sleep$
+          pkg: ^time$
+          msg: a test waits on synctest's fake clock; run it inside synctest.Test and call synctest.Sleep
+
+    gocritic:
+      disabled-checks:
+        # an if-else chain that ends in a return per branch reads as it is written here
+        - ifElseChain
+
+    sloglint:
+      context: all
+      no-mixed-args: true
+
+    govet:
+      enable-all: true
+      disable:
+        # field order follows what reads well, not what packs tightest
+        - fieldalignment
+
+    staticcheck:
+      checks:
+        - all
+        - -ST1000
+        # SA4023 crashes on a type with a generic method, as client.RawClient has: go1.27.0 loses
+        # the order of methods in the export data (golang/go#81188). Enable it again with go1.27.2.
+        - -SA4023
+      # Replaces the default list, so that ClientId, BaseUrl and Uuid stand as the meshObject
+      # API spells them. ST1003 still enforces the rest.
+      initialisms: []
+
+    godoclint:
+      default: basic
+
+    exhaustive:
+      default-signifies-exhaustive: true
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+
+    revive:
+      # No default rule set: package-comments wants a comment on every package, var-naming
+      # wants the API's own field names spelled differently, and exported wants a doc comment on
+      # every exported name.
+      rules:
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: datarace
+        - name: defer
+        - name: early-return
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        - name: identical-branches
+        - name: modifies-value-receiver
+        - name: range-val-address
+        - name: receiver-naming
+        - name: redundant-import-alias
+        - name: string-of-int
+        - name: superfluous-else
+        - name: time-naming
+        - name: unconditional-recursion
+        - name: unused-parameter
+        - name: unexported-return
+        - name: unnecessary-stmt
+        - name: use-any
+        - name: waitgroup-by-value
+
+    depguard:
+      rules:
+        main:
+          files:
+            - $all
+            - "!**/tf-block-runner/**/*.go"
+          deny:
+            - pkg: encoding/json$
+              desc: Use encoding/json/v2

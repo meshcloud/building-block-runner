@@ -186,6 +186,11 @@ jobs:
           install-mode: none
           args: --build-tags manual
 
+      - name: Suggest fix command on failure
+        if: failure()
+        run: |
+          echo "::error::Linting or formatting issues detected. Run 'task lint -- --fix' locally to automatically fix these issues, then commit the changes."
+
       # Binary coverage data (GOCOVERDIR format) rather than a text profile, because only the binary
       # form merges with the acceptance run's coverage. `-coverpkg=./...` matches what meshfed-release
       # instruments, so both figures share one denominator.

@@ -3,7 +3,8 @@ package legacy
 import "github.com/meshcloud/building-block-runner/internal/crypto"
 
 type RunController struct {
-	K8s                    `yaml:",inline"`
+	K8s `yaml:",inline"`
+
 	PollingIntervalSeconds int                       `yaml:"pollingIntervalSeconds"`
 	MaxConcurrentJobs      int                       `yaml:"maxConcurrentJobs"`
 	Uuid                   string                    `yaml:"uuid"`

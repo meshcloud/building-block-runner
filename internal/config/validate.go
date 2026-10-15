@@ -6,7 +6,7 @@ import (
 )
 
 // Validate checks what every runner needs, also one that runs a run file with the run token.
-func (cfg Config) Validate() error {
+func (cfg *Config) Validate() error {
 	var errs validationErrors
 	errs.require(cfg.Uuid != uuid.UUID{}, "uuid is required")
 	// meshStack registers a runner for a single runner type, which ALL also is
@@ -15,7 +15,7 @@ func (cfg Config) Validate() error {
 }
 
 // ValidateDispatcher checks what claiming and dispatching runs needs on top of Validate.
-func (cfg Config) ValidateDispatcher() error {
+func (cfg *Config) ValidateDispatcher() error {
 	var errs validationErrors
 	errs = append(errs, cfg.Crypto.Validate())
 	errs.require(cfg.Dispatcher.PollingInterval.Duration > 0, "dispatcher.pollingInterval must be positive")
@@ -28,7 +28,7 @@ func (cfg Config) ValidateDispatcher() error {
 }
 
 // ValidateTf checks what the tf runner needs on top of Validate.
-func (cfg Config) ValidateTf() error {
+func (cfg *Config) ValidateTf() error {
 	var errs validationErrors
 	errs.require(cfg.Tf.TfParentWorkingDir != "", "tf.workingDir is required")
 	errs.require(cfg.Tf.TfInstallDir != "", "tf.installDir is required")

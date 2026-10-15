@@ -141,7 +141,7 @@ func Test_ValidateK8s_NeedsANamespaceAndAnImagePerType(t *testing.T) {
 			}},
 		}
 	}
-	assert.NoError(t, valid().ValidateK8s())
+	require.NoError(t, new(valid()).ValidateK8s())
 
 	t.Run("fails without k8s", func(t *testing.T) {
 		cfg := valid()
@@ -160,7 +160,7 @@ func Test_ValidateK8s_NeedsANamespaceAndAnImagePerType(t *testing.T) {
 		cfg := valid()
 		cfg.Dispatcher.ForTypes = RunnerTypes{RunnerTypeAll}
 		cfg.K8s.JobSpecTemplates[RunnerTypeAll] = runnerContainerTemplate("")
-		assert.NoError(t, cfg.ValidateK8s())
+		require.NoError(t, cfg.ValidateK8s())
 		delete(cfg.K8s.JobSpecTemplates, RunnerTypeManual)
 		assert.EqualError(t, cfg.ValidateK8s(), "a job spec template needs a container runner with an image")
 	})

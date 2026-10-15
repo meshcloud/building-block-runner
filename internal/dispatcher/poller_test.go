@@ -194,13 +194,11 @@ func Test_Poll_ClaimsUpToCapacityCountingRunsOfAPreviousProcess(t *testing.T) {
 		dispatcher.running = []uuid.UUID{previous}
 		stop := startPolling(t, testConfig(3), api, dispatcher)
 
-		time.Sleep(10 * time.Second)
-		synctest.Wait()
+		synctest.Sleep(10 * time.Second)
 		assert.Equal(t, []uuid.UUID{first.Metadata.Uuid, second.Metadata.Uuid}, dispatcher.startedUuids())
 
 		api.locked(func() { api.claims = 0 })
-		time.Sleep(10 * time.Second)
-		synctest.Wait()
+		synctest.Sleep(10 * time.Second)
 		api.locked(func() { assert.Zero(t, api.claims) })
 
 		dispatcher.finished <- RunFinished{RunUuid: previous}
@@ -216,9 +214,9 @@ func Test_Poll_ReportsEachFailureOnceWithTheRunToken(t *testing.T) {
 		return RunFinished{RunUuid: run.Metadata.Uuid, Err: err}
 	}
 	claimAll := func(t *testing.T, api *fakeApi, dispatcher *fakeDispatcher) (stop func(afterShutdown ...RunFinished) error) {
+		t.Helper()
 		stop = startPolling(t, testConfig(len(api.queue)), api, dispatcher)
-		time.Sleep(10 * time.Second)
-		synctest.Wait()
+		synctest.Sleep(10 * time.Second)
 		return stop
 	}
 	finish := func(dispatcher *fakeDispatcher, finished RunFinished) {
@@ -318,8 +316,7 @@ func Test_Shutdown_LetsAClaimAndItsFailureReportFinish(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		done := make(chan error)
 		go func() { done <- newPoller(testConfig(1), log.New(io.Discard, "", 0), api, dispatcher, nil).poll(ctx) }()
-		time.Sleep(10 * time.Second)
-		synctest.Wait()
+		synctest.Sleep(10 * time.Second)
 
 		cancel()
 		close(api.claimGate)

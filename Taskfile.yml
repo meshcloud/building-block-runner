@@ -21,15 +21,11 @@ tasks:
         cmd: go test -race -tags '{{.ITEM}}' {{.CLI_ARGS}} {{.PACKAGES}}
 
   lint:
+    # Also formats, with the go/format of the Go release that `go tool` builds the linter with.
     desc: Run golangci-lint for each build tag an image or `start:runner` uses. Set PACKAGES to lint fewer, `-- --fix` to fix.
     cmds:
       - for: { var: BUILD_TAGS }
         cmd: go tool golangci-lint run --build-tags '{{.ITEM}}' {{.CLI_ARGS}} {{.PACKAGES}}
-
-  fmt:
-    desc: Format the Go code
-    cmds:
-      - 'go tool golangci-lint fmt ./...'
 
   tidy:
     desc: Tidy go.mod and go.sum

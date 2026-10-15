@@ -44,8 +44,9 @@ type PrivateKeyFiles []PrivateKeyFile
 
 // PrivateKeyFile is read when it is unmarshaled, with a path relative to the working directory.
 type PrivateKeyFile struct {
-	Path string
 	PrivateKey
+
+	Path string
 }
 
 func (f *PrivateKeyFile) UnmarshalText(text []byte) error {
@@ -67,7 +68,7 @@ func LoadPrivateKeyFile(path string) (PrivateKeyFile, error) {
 }
 
 // FirstPublicKey returns the PEM encoded public key that meshStack encrypts for.
-func (c Crypto) FirstPublicKey() (string, error) {
+func (c *Crypto) FirstPublicKey() (string, error) {
 	keys := c.privateKeys()
 	if len(keys) == 0 {
 		return "", errNoPrivateKey
@@ -79,7 +80,7 @@ func (c Crypto) FirstPublicKey() (string, error) {
 	return string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})), nil
 }
 
-func (c Crypto) Decrypt(encrypted string) (string, error) {
+func (c *Crypto) Decrypt(encrypted string) (string, error) {
 	keys := c.privateKeys()
 	if len(keys) == 0 {
 		return "", errNoPrivateKey
@@ -100,19 +101,6 @@ func (c Crypto) Decrypt(encrypted string) (string, error) {
 }
 
 var errNoPrivateKey = errors.New("no private key configured")
-
-func (c Crypto) privateKeys() []*rsa.PrivateKey {
-	var keys []*rsa.PrivateKey
-	for _, key := range c.PrivateKeys {
-		if key.PrivateKey != nil {
-			keys = append(keys, key.PrivateKey)
-		}
-	}
-	for _, file := range c.PrivateKeyFiles {
-		keys = append(keys, file.PrivateKey.PrivateKey)
-	}
-	return keys
-}
 
 var pemBoundary = regexp.MustCompile(`-----(BEGIN|END) [A-Z ]+-----|\s`)
 
@@ -165,7 +153,7 @@ func decrypt(key *rsa.PrivateKey, cipherText []byte) (string, error) {
 
 	symmetric := cipherText[key.Size():]
 	ivEnd := 4 + gcm.NonceSize()
-	if ivEnd > len(symmetric) || binary.BigEndian.Uint32(symmetric[:4]) != uint32(gcm.NonceSize()) {
+	if ivEnd > len(symmetric) || int(binary.BigEndian.Uint32(symmetric[:4])) != gcm.NonceSize() {
 		return "", fmt.Errorf("encrypted value has no IV of %d bytes", gcm.NonceSize())
 	}
 	plainText, err := gcm.Open(nil, symmetric[4:ivEnd], symmetric[ivEnd:], nil)
@@ -195,9 +183,22 @@ func (c *Crypto) AddImplicitPrivateKeyFile() (bool, error) {
 	return true, nil
 }
 
-func (c Crypto) Validate() error {
+func (c *Crypto) Validate() error {
 	if len(c.privateKeys()) == 0 {
 		return errNoPrivateKey
 	}
 	return nil
+}
+
+func (c *Crypto) privateKeys() []*rsa.PrivateKey {
+	var keys []*rsa.PrivateKey
+	for _, key := range c.PrivateKeys {
+		if key.PrivateKey != nil {
+			keys = append(keys, key.PrivateKey)
+		}
+	}
+	for _, file := range c.PrivateKeyFiles {
+		keys = append(keys, file.PrivateKey.PrivateKey)
+	}
+	return keys
 }

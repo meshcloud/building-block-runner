@@ -144,19 +144,19 @@ func (d *Dispatcher) newJob(run dispatcher.Run, runnerType config.RunnerType, te
 func (d *Dispatcher) volumes(secretName string) []corev1.Volume {
 	const tokenExpirationSeconds = 7200
 	volumes := []corev1.Volume{{
-		Name:         runVolumeName,
-		VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: secretName}},
+		Name:   runVolumeName,
+		Secret: &corev1.SecretVolumeSource{SecretName: secretName},
 	}}
 	for _, token := range d.tokens.all() {
 		volumes = append(volumes, corev1.Volume{
 			Name: token.volumeName(),
-			VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{
+			Projected: &corev1.ProjectedVolumeSource{
 				Sources: []corev1.VolumeProjection{{ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
 					Audience:          token.audience,
 					ExpirationSeconds: new(int64(tokenExpirationSeconds)),
 					Path:              "token",
 				}}},
-			}},
+			},
 		})
 	}
 	return volumes

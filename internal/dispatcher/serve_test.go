@@ -113,15 +113,18 @@ func Test_NewClient_RetriesUntilMeshfedAnswers(t *testing.T) {
 
 	t.Run("retries until meshfed listens", func(t *testing.T) {
 		calls.Store(0)
-		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		listener, err := new(net.ListenConfig).Listen(t.Context(), "tcp", "127.0.0.1:0")
 		require.NoError(t, err)
 		addr := listener.Addr().String()
 		require.NoError(t, listener.Close())
 		server := httptest.NewUnstartedServer(answering("2099.1.0"))
 		t.Cleanup(server.Close)
 		time.AfterFunc(100*time.Millisecond, func() {
-			lateListener, err := net.Listen("tcp", addr)
-			assert.NoError(t, err)
+			lateListener, err := new(net.ListenConfig).Listen(t.Context(), "tcp", addr)
+			if err != nil {
+				t.Error(err)
+				return
+			}
 			server.Listener = lateListener
 			server.Start()
 		})
@@ -135,7 +138,7 @@ func Test_NewClient_RetriesUntilMeshfedAnswers(t *testing.T) {
 		server := httptest.NewServer(answering("2020.1.0"))
 		t.Cleanup(server.Close)
 
-		assert.ErrorContains(t, newClient(server.URL), "unsupported meshStack version")
+		require.ErrorContains(t, newClient(server.URL), "unsupported meshStack version")
 		assert.Equal(t, int32(1), calls.Load())
 	})
 }

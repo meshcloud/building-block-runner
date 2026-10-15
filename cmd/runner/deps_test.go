@@ -12,6 +12,7 @@ import (
 const module = "github.com/meshcloud/building-block-runner/"
 
 func Test_EachImageBuild_LinksOnlyWhatItRuns(t *testing.T) {
+	t.Parallel()
 	forbiddenByTags := map[string][]string{
 		"":       {"k8s.io/"},
 		"tf":     {"k8s.io/", module + "manual-block-runner/"},

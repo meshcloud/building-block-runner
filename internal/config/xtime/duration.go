@@ -5,12 +5,15 @@ import (
 	"time"
 )
 
-type DefaultUnit interface{ Minute | Second }
-type Minute struct{}
-type Second struct{}
+type (
+	DefaultUnit interface{ Minute | Second }
+	Minute      struct{}
+	Second      struct{}
+)
 
 type Duration[U DefaultUnit] struct {
 	time.Duration
+
 	defaultUnit U
 }
 
@@ -23,7 +26,7 @@ func Seconds(n int) Duration[Second] {
 }
 
 func (d *Duration[U]) UnmarshalText(text []byte) (err error) {
-	if numberWithoutUnit, err := strconv.Atoi(string(text)); err == nil {
+	if numberWithoutUnit, atoiErr := strconv.Atoi(string(text)); atoiErr == nil {
 		switch any(d.defaultUnit).(type) {
 		case Minute:
 			d.Duration = time.Duration(numberWithoutUnit) * time.Minute

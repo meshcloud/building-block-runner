@@ -33,8 +33,8 @@ func Test_Decrypt_TriesEveryKey(t *testing.T) {
 		assert.Equal(t, "secret", decrypted)
 
 		_, err = c.Decrypt(encryptLikeMeshStack(t, generateKey(t), "secret"))
-		assert.ErrorContains(t, err, "no private key decrypts the value")
-		_, err = Crypto{}.Decrypt(encryptLikeMeshStack(t, newKey, "secret"))
+		require.ErrorContains(t, err, "no private key decrypts the value")
+		_, err = new(Crypto).Decrypt(encryptLikeMeshStack(t, newKey, "secret"))
 		assert.ErrorIs(t, err, errNoPrivateKey)
 	})
 
@@ -54,7 +54,7 @@ func Test_Decrypt_TriesEveryKey(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, &newKey.PublicKey, publicKey)
 
-		_, err = Crypto{}.FirstPublicKey()
+		_, err = new(Crypto).FirstPublicKey()
 		assert.ErrorIs(t, err, errNoPrivateKey)
 	})
 }
@@ -113,7 +113,7 @@ func Test_PrivateKey_ParsesPemAndLoadsKeyFiles(t *testing.T) {
 	t.Run("a broken key file fails naming it", func(t *testing.T) {
 		require.NoError(t, os.WriteFile(ImplicitPrivateKeyFile, []byte("broken"), 0o600))
 		var file PrivateKeyFile
-		assert.ErrorContains(t, file.UnmarshalText([]byte(ImplicitPrivateKeyFile)), ImplicitPrivateKeyFile)
+		require.ErrorContains(t, file.UnmarshalText([]byte(ImplicitPrivateKeyFile)), ImplicitPrivateKeyFile)
 		_, err := (&Crypto{}).AddImplicitPrivateKeyFile()
 		assert.ErrorContains(t, err, "private key file runner-private.pem")
 	})
@@ -131,30 +131,36 @@ func Test_IvLengthOtherThanTheNonceSize_FailsToDecrypt(t *testing.T) {
 }
 
 func generateKey(t *testing.T) *rsa.PrivateKey {
+	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 	return key
 }
 
 func pkcs8PEM(t *testing.T, key *rsa.PrivateKey) []byte {
+	t.Helper()
 	der, err := x509.MarshalPKCS8PrivateKey(key)
 	require.NoError(t, err)
 	return pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
 }
 
 func encryptLikeMeshStack(t *testing.T, key *rsa.PrivateKey, plainText string) string {
+	t.Helper()
 	aesKey := make([]byte, 32)
-	rand.Read(aesKey)
+	_, err := rand.Read(aesKey)
+	require.NoError(t, err)
 	block, err := aes.NewCipher(aesKey)
 	require.NoError(t, err)
 	gcm, err := cipher.NewGCM(block)
 	require.NoError(t, err)
-	iv := make([]byte, gcm.NonceSize())
-	rand.Read(iv)
+	const ivLength = 12
+	iv := make([]byte, ivLength)
+	_, err = rand.Read(iv)
+	require.NoError(t, err)
 	encryptedKey, err := rsa.EncryptOAEP(sha1.New(), rand.Reader, &key.PublicKey, aesKey, nil)
 	require.NoError(t, err)
 
-	cipherText := binary.BigEndian.AppendUint32(encryptedKey, uint32(len(iv)))
+	cipherText := binary.BigEndian.AppendUint32(encryptedKey, ivLength)
 	cipherText = append(cipherText, iv...)
 	cipherText = gcm.Seal(cipherText, iv, []byte(plainText), nil)
 	return base64.StdEncoding.EncodeToString(cipherText)

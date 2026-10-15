@@ -19,7 +19,7 @@ var implementationSecretKeys = map[client.MeshRunnerImplementationType]string{
 type secretMapper func(secret jsontext.Value) (jsontext.Value, error)
 
 // DecryptRun decrypts the sensitive inputs and the secret of the implementation.
-func (c Crypto) DecryptRun(run client.MeshRunnerRun) (client.MeshRunnerRun, error) {
+func (c *Crypto) DecryptRun(run client.MeshRunnerRun) (client.MeshRunnerRun, error) {
 	return mapSecrets(run, c.decryptString)
 }
 
@@ -66,7 +66,7 @@ func mapImplementationSecret(definition client.MeshRunnerRunDefinitionSpec, mapS
 		return definition.Implementation, nil
 	}
 	var fields map[string]jsontext.Value
-	if err := json.Unmarshal(definition.Implementation, &fields); err != nil {
+	if err = json.Unmarshal(definition.Implementation, &fields); err != nil {
 		return nil, fmt.Errorf("implementation: %w", err)
 	}
 	secret, ok := fields[secretKey]
@@ -80,9 +80,15 @@ func mapImplementationSecret(definition client.MeshRunnerRunDefinitionSpec, mapS
 }
 
 // decryptString leaves a value that is no string or empty as it is, as meshStack encrypts only strings.
-func (c Crypto) decryptString(value jsontext.Value) (jsontext.Value, error) {
+func (c *Crypto) decryptString(value jsontext.Value) (jsontext.Value, error) {
+	if value.Kind() != '"' {
+		return value, nil
+	}
 	var encrypted string
-	if json.Unmarshal(value, &encrypted) != nil || encrypted == "" {
+	if err := json.Unmarshal(value, &encrypted); err != nil {
+		return nil, err
+	}
+	if encrypted == "" {
 		return value, nil
 	}
 	decrypted, err := c.Decrypt(encrypted)

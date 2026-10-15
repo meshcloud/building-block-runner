@@ -16,10 +16,10 @@ func (*K8s) UnmarshalYAML([]byte) error {
 	return errNoK8sSupport
 }
 
-func k8sFromLegacy(legacy.RunController) (*K8s, error) {
-	return nil, nil
+func (*Config) applyLegacyK8s(legacy.RunController) error {
+	return nil
 }
 
-func (Config) ValidateK8s() error {
+func (*Config) ValidateK8s() error {
 	return errNoK8sSupport
 }

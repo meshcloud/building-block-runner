@@ -38,7 +38,7 @@ type fakeRunClient struct {
 }
 
 func manualDispatcher(ctx context.Context, execute executeFunc) *Dispatcher {
-	return newDispatcher(ctx, fakeRunnerClient{}, executors{config.RunnerTypeManual: execute}, time.Hour)
+	return newDispatcher(ctx, fakeRunnerClient{}, executorsByType{config.RunnerTypeManual: execute}, time.Hour)
 }
 
 func Test_Start_RunsTheExecutorOfTheRunType(t *testing.T) {
@@ -89,7 +89,7 @@ func Test_Run_FinishesWithAnErrorWhenItFailsPanicsOrTimesOut(t *testing.T) {
 
 func Test_Run_HasNoDeadlineForATimeoutOf0(t *testing.T) {
 	hasDeadline := make(chan bool, 1)
-	d := newDispatcher(t.Context(), fakeRunnerClient{}, executors{config.RunnerTypeManual: func(ctx context.Context, _ dispatcher.Run, _ client.MeshRunnerRunClient) error {
+	d := newDispatcher(t.Context(), fakeRunnerClient{}, executorsByType{config.RunnerTypeManual: func(ctx context.Context, _ dispatcher.Run, _ client.MeshRunnerRunClient) error {
 		_, ok := ctx.Deadline()
 		hasDeadline <- ok
 		return nil
@@ -118,7 +118,7 @@ func Test_Finished_ClosesAfterTheLastRunFinished(t *testing.T) {
 
 		cancel()
 		synctest.Wait()
-		assert.EqualError(t, d.Start(t.Context(), newRun("MANUAL")), "the runner is shutting down")
+		require.EqualError(t, d.Start(t.Context(), newRun("MANUAL")), "the runner is shutting down")
 
 		close(release)
 		assert.Equal(t, dispatcher.RunFinished{RunUuid: run.Metadata.Uuid}, <-d.Finished())

@@ -30,7 +30,7 @@ func Test_Register_NeedsAWorkspaceAndAddsTheWorkloadIdentity(t *testing.T) {
 
 	t.Run("fails without a workspace naming where to set it", func(t *testing.T) {
 		testmeshstack.Isolate(t)
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}))
 		t.Cleanup(server.Close)

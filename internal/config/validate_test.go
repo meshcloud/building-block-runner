@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/meshcloud/building-block-runner/internal/crypto"
 )
@@ -19,18 +20,18 @@ func Test_Validate_ReportsEveryMissingSetting(t *testing.T) {
 	}
 
 	t.Run("accepts a complete config", func(t *testing.T) {
-		assert.NoError(t, valid().Validate())
-		assert.NoError(t, valid().ValidateDispatcher())
-		assert.NoError(t, valid().ValidateTf())
+		assert.NoError(t, new(valid()).Validate())
+		assert.NoError(t, new(valid()).ValidateDispatcher())
+		assert.NoError(t, new(valid()).ValidateTf())
 	})
 
 	t.Run("reports every error of an empty config", func(t *testing.T) {
-		assert.EqualError(t, Config{}.Validate(), "uuid is required\ndispatcher.forTypes needs exactly one runner type")
-		assert.EqualError(t, Config{}.ValidateDispatcher(), `no private key configured
+		require.EqualError(t, new(Config).Validate(), "uuid is required\ndispatcher.forTypes needs exactly one runner type")
+		require.EqualError(t, new(Config).ValidateDispatcher(), `no private key configured
 dispatcher.pollingInterval must be positive
 dispatcher.timeout must be positive
 dispatcher.maxConcurrentJobs must not be 0, a negative value means unlimited`)
-		assert.EqualError(t, Config{}.ValidateTf(), `tf.workingDir is required
+		assert.EqualError(t, new(Config).ValidateTf(), `tf.workingDir is required
 tf.installDir is required
 tf.wsTimeout must be positive
 tf.initTimeout must be positive`)
@@ -40,7 +41,7 @@ tf.initTimeout must be positive`)
 		cfg := valid()
 		cfg.Dispatcher.ForTypes = RunnerTypes{RunnerTypeTf, RunnerTypeManual}
 		cfg.Dispatcher.Register = &Register{}
-		assert.EqualError(t, cfg.Validate(), "dispatcher.forTypes needs exactly one runner type")
+		require.EqualError(t, cfg.Validate(), "dispatcher.forTypes needs exactly one runner type")
 		assert.EqualError(t, cfg.ValidateDispatcher(), "dispatcher.register.displayName is required")
 	})
 }

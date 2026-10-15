@@ -84,8 +84,9 @@ func typedScalar(value string, position *token.Position) ast.Node {
 		return ast.Float(tk)
 	case token.NullType:
 		return ast.Null(tk)
+	default:
+		return nil
 	}
-	return nil
 }
 
 func expandPlaceholders(s string) (string, error) {

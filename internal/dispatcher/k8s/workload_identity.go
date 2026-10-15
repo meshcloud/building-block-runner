@@ -8,9 +8,8 @@ import (
 	"errors"
 	"fmt"
 
-	"k8s.io/client-go/kubernetes"
-
 	"github.com/meshcloud/meshstack-cli/client"
+	"k8s.io/client-go/kubernetes"
 )
 
 const (

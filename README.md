@@ -91,8 +91,7 @@ Override the port with the `PORT` environment variable. All images but run-contr
 
 ```bash
 task test          # run all Go tests
-task lint          # run golangci-lint, including the format check
-task fmt           # format Go code
+task lint          # run golangci-lint, including the format check; -- --fix formats and fixes
 task tidy          # tidy go.mod and go.sum
 ```
 

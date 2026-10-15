@@ -34,7 +34,7 @@ func (cfg *Config) applyLegacy(l legacy.Config) (err error) {
 	auth.Key.ClientId = cmp.Or(l.Api.ClientId, blockRunner.Auth.ApiKey.ClientId)
 	auth.Key.ClientSecret = cmp.Or(l.Api.ClientSecret, blockRunner.Auth.ApiKey.ClientSecret)
 
-	for _, privateKey := range []crypto.PrivateKey{l.Crypto.PrivateKey, l.TfRunner.PrivateKey, blockRunner.PrivateKey} {
+	for _, privateKey := range []crypto.PrivateKey{l.Crypto.PrivateKey, l.PrivateKey, blockRunner.PrivateKey} {
 		if privateKey.PrivateKey != nil {
 			cfg.Crypto.PrivateKeys = append(cfg.Crypto.PrivateKeys, privateKey)
 		}
@@ -63,7 +63,7 @@ func (cfg *Config) applyLegacy(l legacy.Config) (err error) {
 	}
 
 	for implementationType := range l.Implementations {
-		if _, err := ParseRunnerType(implementationType); err != nil {
+		if _, err = ParseRunnerType(implementationType); err != nil {
 			return fmt.Errorf("legacy implementation: %w", err)
 		}
 	}
@@ -72,10 +72,5 @@ func (cfg *Config) applyLegacy(l legacy.Config) (err error) {
 		cfg.Dispatcher.ForTypes = append(cfg.Dispatcher.ForTypes, RunnerTypeAll)
 	}
 
-	legacyK8s, err := k8sFromLegacy(l.RunController)
-	if err != nil {
-		return err
-	}
-	cfg.K8s = cmp.Or(legacyK8s, cfg.K8s)
-	return nil
+	return cfg.applyLegacyK8s(l.RunController)
 }

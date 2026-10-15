@@ -4,10 +4,9 @@ import (
 	"encoding/json/jsontext"
 	"testing"
 
+	"github.com/meshcloud/meshstack-cli/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/meshcloud/meshstack-cli/client"
 )
 
 func Test_RunSecrets_AreDecryptedAndRedacted(t *testing.T) {

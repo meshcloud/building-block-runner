@@ -19,11 +19,9 @@ import (
 type Dispatcher struct {
 	logger    *log.Logger
 	api       client.MeshRunnerClient
-	executors executors
+	executors executorsByType
 	timeout   time.Duration
-	// runCtx outlives the context given to New, so that a shutdown waits for the runs.
-	runCtx   context.Context
-	finished chan dispatcher.RunFinished
+	finished  chan dispatcher.RunFinished
 
 	mu       sync.Mutex
 	stopping bool
@@ -38,25 +36,16 @@ func New(ctx context.Context, cfg config.Config, api client.MeshRunnerClient) (d
 	return newDispatcher(ctx, api, executors, cfg.Dispatcher.Timeout.Duration), nil
 }
 
-func newDispatcher(ctx context.Context, api client.MeshRunnerClient, executors executors, timeout time.Duration) *Dispatcher {
+func newDispatcher(ctx context.Context, api client.MeshRunnerClient, executors executorsByType, timeout time.Duration) *Dispatcher {
 	d := &Dispatcher{
 		logger:    log.New(os.Stdout, "[IN-PROCESS] ", log.LstdFlags),
 		api:       api,
 		executors: executors,
 		timeout:   timeout,
-		runCtx:    context.WithoutCancel(ctx),
 		finished:  make(chan dispatcher.RunFinished),
 	}
 	context.AfterFunc(ctx, d.stop)
 	return d
-}
-
-func (d *Dispatcher) stop() {
-	d.mu.Lock()
-	d.stopping = true
-	d.mu.Unlock()
-	d.runs.Wait()
-	close(d.finished)
 }
 
 func (*Dispatcher) Init(context.Context) (dispatcher.InitState, error) {
@@ -67,7 +56,7 @@ func (d *Dispatcher) Finished() <-chan dispatcher.RunFinished {
 	return d.finished
 }
 
-func (d *Dispatcher) Start(_ context.Context, run dispatcher.Run) error {
+func (d *Dispatcher) Start(ctx context.Context, run dispatcher.Run) error {
 	runnerType, err := dispatcher.RunnerTypeOf(run)
 	if err != nil {
 		return err
@@ -82,15 +71,25 @@ func (d *Dispatcher) Start(_ context.Context, run dispatcher.Run) error {
 	if d.stopping {
 		return errors.New("the runner is shutting down")
 	}
+	// A run outlives a shutdown, which waits for it.
+	runCtx := context.WithoutCancel(ctx)
 	d.runs.Go(func() {
-		err := d.execute(execute, run)
+		err := d.execute(runCtx, execute, run)
 		d.finished <- dispatcher.RunFinished{RunUuid: run.Metadata.Uuid, Err: err}
 	})
 	return nil
 }
 
-func (d *Dispatcher) execute(execute executeFunc, run dispatcher.Run) (err error) {
-	ctx, cancel := d.withTimeout()
+func (d *Dispatcher) stop() {
+	d.mu.Lock()
+	d.stopping = true
+	d.mu.Unlock()
+	d.runs.Wait()
+	close(d.finished)
+}
+
+func (d *Dispatcher) execute(ctx context.Context, execute executeFunc, run dispatcher.Run) (err error) {
+	ctx, cancel := d.withTimeout(ctx)
 	defer cancel()
 	defer func() {
 		if r := recover(); r != nil {
@@ -105,9 +104,9 @@ func (d *Dispatcher) execute(execute executeFunc, run dispatcher.Run) (err error
 	return
 }
 
-func (d *Dispatcher) withTimeout() (context.Context, context.CancelFunc) {
+func (d *Dispatcher) withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
 	if d.timeout == 0 {
-		return context.WithCancel(d.runCtx)
+		return context.WithCancel(ctx)
 	}
-	return context.WithTimeoutCause(d.runCtx, d.timeout, fmt.Errorf("the run exceeded the timeout of %s", d.timeout))
+	return context.WithTimeoutCause(ctx, d.timeout, fmt.Errorf("the run exceeded the timeout of %s", d.timeout))
 }

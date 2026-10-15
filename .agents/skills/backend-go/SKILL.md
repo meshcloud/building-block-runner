@@ -28,8 +28,7 @@ All images build `./cmd/runner`: run-controller with `-tags k8s` (no executor), 
 ## Mandatory Steps After Every Change
 
 ```bash
-task fmt
-task lint
+task lint -- --fix
 task test
 ```
 

@@ -70,6 +70,7 @@ func (s localStack) createRunner(t *testing.T) config.Config {
 
 func registrationUpdatesTheRunner(s localStack, cfg config.Config) func(*testing.T) {
 	return func(t *testing.T) {
+		t.Helper()
 		cfg.Dispatcher.Register = &config.Register{DisplayName: "building-block-runner TestAcc, registered"}
 		require.NoError(t, dispatcher.Register(t.Context(), cfg, log.New(t.Output(), "", 0)))
 
@@ -82,6 +83,7 @@ func registrationUpdatesTheRunner(s localStack, cfg config.Config) func(*testing
 
 func claimWithoutWorkFindsNoRun(s localStack, cfg config.Config) func(*testing.T) {
 	return func(t *testing.T) {
+		t.Helper()
 		_, err := s.api.Runner.ClaimRun(t.Context(), cfg.Uuid)
 
 		require.ErrorIs(t, err, client.ErrNoRunToClaim)

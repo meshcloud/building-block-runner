@@ -7,11 +7,12 @@ import (
 )
 
 type Config struct {
-	Api           Api `yaml:"api"`
 	RunController `yaml:",inline"`
 	TfRunner      `yaml:",inline"`
 	Spring        `yaml:",inline"`
-	BlockRunner   *BlockRunner `yaml:"-"`
+
+	Api         Api          `yaml:"api"`
+	BlockRunner *BlockRunner `yaml:"-"`
 }
 
 // Spring holds the top-level keys of a Spring config, of which only blockrunner configured the runner.

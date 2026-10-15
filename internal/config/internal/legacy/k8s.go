@@ -3,6 +3,7 @@
 package legacy
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"reflect"
@@ -73,7 +74,7 @@ func (rc RunController) JobSpecTemplates(allRunnerTypes string) (map[string]batc
 		return batchv1.JobTemplateSpec{Spec: batchv1.JobSpec{Template: corev1.PodTemplateSpec{Spec: spec}}}
 	}
 	templates := map[string]batchv1.JobTemplateSpec{}
-	if all := rc.K8s.podSpec(); !reflect.ValueOf(all).IsZero() {
+	if all := rc.podSpec(); !reflect.ValueOf(all).IsZero() {
 		templates[allRunnerTypes] = podSpecTemplate(all)
 	}
 	for runnerType, implementation := range rc.Implementations {
@@ -150,7 +151,7 @@ func (r Resource) list() (corev1.ResourceList, error) {
 		list[name] = parsed
 	}
 	if len(list) == 0 {
-		return nil, nil
+		return nil, nil //nolint:nilnil // a nil list leaves the resources unset
 	}
 	return list, nil
 }
@@ -159,7 +160,7 @@ func (volume ExtraVolume) volume() (corev1.Volume, error) {
 	v := corev1.Volume{Name: volume.Name}
 	switch {
 	case volume.ConfigMap != nil:
-		v.ConfigMap = &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: volume.ConfigMap.Name}}
+		v.ConfigMap = &corev1.ConfigMapVolumeSource{Name: volume.ConfigMap.Name}
 	case volume.Secret != nil:
 		v.Secret = &corev1.SecretVolumeSource{SecretName: volume.Secret.SecretName}
 	case volume.EmptyDir != nil:
@@ -172,7 +173,7 @@ func (volume ExtraVolume) volume() (corev1.Volume, error) {
 			v.EmptyDir.SizeLimit = &sizeLimit
 		}
 	default:
-		return corev1.Volume{}, fmt.Errorf("needs a configMap, secret or emptyDir")
+		return corev1.Volume{}, errors.New("needs a configMap, secret or emptyDir")
 	}
 	return v, nil
 }

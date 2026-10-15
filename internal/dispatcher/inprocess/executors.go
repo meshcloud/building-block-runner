@@ -14,15 +14,15 @@ import (
 
 type executeFunc func(ctx context.Context, run dispatcher.Run, api client.MeshRunnerRunClient) error
 
-type executors map[config.RunnerType]executeFunc
+type executorsByType map[config.RunnerType]executeFunc
 
 // Filled by the executor files the build tags select.
 var executorFactories = map[config.RunnerType]func(cfg config.Config) (executeFunc, error){}
 
 // For ALL, a runner type without executor fails its runs when they start.
-func newExecutors(cfg config.Config) (executors, error) {
+func newExecutors(cfg config.Config) (executorsByType, error) {
 	forAll := slices.Contains(cfg.Dispatcher.ForTypes, config.RunnerTypeAll)
-	executors := executors{}
+	executors := executorsByType{}
 	for _, runnerType := range cfg.Dispatcher.ForTypes.Expand() {
 		newExecutor, ok := executorFactories[runnerType]
 		switch {

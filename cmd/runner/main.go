@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
@@ -25,21 +26,22 @@ func main() {
 	if err != nil {
 		logger.Fatal(err)
 	}
-	if err := serveMetrics(logger, ":"+cmp.Or(os.Getenv("PORT"), "2112")); err != nil {
-		logger.Fatal(err)
-	}
 
 	ctx, stopOnSignal := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	// A second signal ends the process without waiting for the runs.
 	context.AfterFunc(ctx, stopOnSignal)
+
+	if err := serveMetrics(ctx, logger, ":"+cmp.Or(os.Getenv("PORT"), "2112")); err != nil {
+		logger.Fatal(err)
+	}
 
 	if err := dispatcher.Serve(ctx, cfg, logger); err != nil {
 		logger.Fatal(err)
 	}
 }
 
-func serveMetrics(logger *log.Logger, addr string) error {
-	listener, err := net.Listen("tcp", addr)
+func serveMetrics(ctx context.Context, logger *log.Logger, addr string) error {
+	listener, err := new(net.ListenConfig).Listen(ctx, "tcp", addr)
 	if err != nil {
 		return err
 	}
@@ -49,7 +51,8 @@ func serveMetrics(logger *log.Logger, addr string) error {
 	})
 	go func() {
 		logger.Printf("Serving metrics on %s", addr)
-		if err := http.Serve(listener, nil); err != nil {
+		server := &http.Server{ReadHeaderTimeout: 10 * time.Second}
+		if err := server.Serve(listener); err != nil {
 			logger.Printf("Serving metrics failed: %v", err)
 		}
 	}()

@@ -246,7 +246,7 @@ func Test_Load_FailsNamingTheProblem(t *testing.T) {
 
 	t.Run("names the line of an unset placeholder", func(t *testing.T) {
 		_, err := Load([]byte("workspace: ${WORKSPACE_UNSET}\ndisplayName: ${DISPLAY_UNSET}\n"), log.New(io.Discard, "", 0))
-		assert.ErrorContains(t, err, "line 1: environment variable WORKSPACE_UNSET")
+		require.ErrorContains(t, err, "line 1: environment variable WORKSPACE_UNSET")
 		assert.ErrorContains(t, err, "line 2: environment variable DISPLAY_UNSET")
 	})
 }
@@ -285,6 +285,7 @@ func newApi(apiUrl, clientId, clientSecret string) (api Api) {
 }
 
 func parsedPrivateKey(t *testing.T) (key crypto.PrivateKey) {
+	t.Helper()
 	require.NoError(t, key.UnmarshalText([]byte(privateKeyPEM)))
 	return
 }

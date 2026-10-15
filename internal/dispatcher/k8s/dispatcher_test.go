@@ -159,7 +159,8 @@ func Test_Start_CreatesAJobWithItsRunInASecret(t *testing.T) {
 			if jobCreates > 1 {
 				return false, nil, nil
 			}
-			create := action.(k8stesting.CreateAction)
+			create, ok := action.(k8stesting.CreateAction)
+			require.True(t, ok)
 			require.NoError(t, clientset.Tracker().Create(create.GetResource(), create.GetObject(), create.GetNamespace()))
 			return true, nil, apierrors.NewServiceUnavailable("timed out after the create")
 		})
@@ -179,7 +180,7 @@ func Test_Start_CreatesAJobWithItsRunInASecret(t *testing.T) {
 			return true, nil, apierrors.NewForbidden(batchv1.Resource("jobs"), "runner", errors.New("quota exceeded"))
 		})
 
-		assert.ErrorContains(t, d.Start(t.Context(), newTfRun()), "quota exceeded")
+		require.ErrorContains(t, d.Start(t.Context(), newTfRun()), "quota exceeded")
 		assert.Equal(t, 1, jobCreates)
 	})
 }
@@ -191,7 +192,7 @@ func Test_Start_RefusesARunTypeOutsideForTypes(t *testing.T) {
 
 	err := d.Start(t.Context(), newTfRun())
 
-	assert.EqualError(t, err, "this runner does not run tf runs")
+	require.EqualError(t, err, "this runner does not run tf runs")
 	jobs, err := clientset.BatchV1().Jobs(namespace).List(t.Context(), metav1.ListOptions{})
 	require.NoError(t, err)
 	assert.Empty(t, jobs.Items)
@@ -206,11 +207,11 @@ func names[T any](items []T, name func(T) string) []string {
 }
 
 func runningJob(runUuid uuid.UUID) *batchv1.Job {
-	return &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
+	return &batchv1.Job{
 		Name:      "runner-" + runUuid.String(),
 		Namespace: namespace,
 		Labels:    map[string]string{labelRunnerId: runnerUuid.String(), labelRunId: runUuid.String()},
-	}}
+	}
 }
 
 func withCondition(job *batchv1.Job, conditionType batchv1.JobConditionType, reason string) *batchv1.Job {
@@ -261,7 +262,7 @@ func Test_InitAndFinished_ReportTheJobsOfThisRunner(t *testing.T) {
 	t.Run("reports the failed Jobs of a previous process", func(t *testing.T) {
 		failure := receive(t, d)
 		assert.Equal(t, failed, failure.RunUuid)
-		assert.EqualError(t, failure.Err, "the Kubernetes Job runner-"+failed.String()+" failed: DeadlineExceeded: details")
+		require.EqualError(t, failure.Err, "the Kubernetes Job runner-"+failed.String()+" failed: DeadlineExceeded: details")
 		assertNoneFinished(t, d)
 	})
 
@@ -287,7 +288,7 @@ func Test_InitAndFinished_ReportTheJobsOfThisRunner(t *testing.T) {
 		require.NoError(t, err)
 		failure := receive(t, d)
 		assert.Equal(t, ending, failure.RunUuid)
-		assert.ErrorContains(t, failure.Err, "BackoffLimitExceeded")
+		require.ErrorContains(t, failure.Err, "BackoffLimitExceeded")
 		assertNoneFinished(t, d)
 	})
 
@@ -308,7 +309,7 @@ func Test_JobDeletedWhileRunning_FinishesWithAnError(t *testing.T) {
 
 	finished := receive(t, d)
 	assert.Equal(t, running, finished.RunUuid)
-	assert.EqualError(t, finished.Err, "the Kubernetes Job runner-"+running.String()+" was deleted before it finished")
+	require.EqualError(t, finished.Err, "the Kubernetes Job runner-"+running.String()+" was deleted before it finished")
 	assertNoneFinished(t, d)
 }
 

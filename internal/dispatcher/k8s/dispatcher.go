@@ -92,14 +92,14 @@ func (d *Dispatcher) Start(ctx context.Context, run dispatcher.Run) error {
 	}
 
 	jobs := d.clientset.BatchV1().Jobs(d.cfg.K8s.Namespace)
-	if _, err := jobs.Get(ctx, objects.job.Name, metav1.GetOptions{}); err == nil {
+	if _, err = jobs.Get(ctx, objects.job.Name, metav1.GetOptions{}); err == nil {
 		d.logger.Printf("Job %s already exists", objects.job.Name)
 		return nil
 	}
-	if err := d.createServiceAccount(ctx, objects.serviceAccount); err != nil {
+	if err = d.createServiceAccount(ctx, objects.serviceAccount); err != nil {
 		return err
 	}
-	if err := d.createSecret(ctx, objects.secret); err != nil {
+	if err = d.createSecret(ctx, objects.secret); err != nil {
 		return err
 	}
 	job, err := createRetrying(ctx, jobs.Create, objects.job)
@@ -116,6 +116,15 @@ func (d *Dispatcher) Start(ctx context.Context, run dispatcher.Run) error {
 	}
 	d.logger.Printf("Created job %s", job.Name)
 	return nil
+}
+
+// ReadRun reads the run from its Secret, which the Job keeps until its TTL deletes it.
+func (d *Dispatcher) ReadRun(ctx context.Context, runUuid uuid.UUID) (dispatcher.Run, error) {
+	secret, err := d.clientset.CoreV1().Secrets(d.cfg.K8s.Namespace).Get(ctx, secretName(runUuid.String()), metav1.GetOptions{})
+	if err != nil {
+		return dispatcher.Run{}, err
+	}
+	return dispatcher.DecodeRunYaml(secret.Data[runFile])
 }
 
 // createServiceAccount keeps an existing account, as all runs of a building block definition share it.
@@ -149,13 +158,4 @@ func (d *Dispatcher) ownSecret(ctx context.Context, name string, job *batchv1.Jo
 	secret.OwnerReferences = []metav1.OwnerReference{*metav1.NewControllerRef(job, batchv1.SchemeGroupVersion.WithKind("Job"))}
 	_, err = secrets.Update(ctx, secret, metav1.UpdateOptions{})
 	return err
-}
-
-// ReadRun reads the run from its Secret, which the Job keeps until its TTL deletes it.
-func (d *Dispatcher) ReadRun(ctx context.Context, runUuid uuid.UUID) (dispatcher.Run, error) {
-	secret, err := d.clientset.CoreV1().Secrets(d.cfg.K8s.Namespace).Get(ctx, secretName(runUuid.String()), metav1.GetOptions{})
-	if err != nil {
-		return dispatcher.Run{}, err
-	}
-	return dispatcher.DecodeRunYaml(secret.Data[runFile])
 }

@@ -3,7 +3,7 @@
 package config
 
 import (
-	"encoding/json"
+	"encoding/json" //nolint:depguard // strategicpatch merges the encoding/json form of the Kubernetes types
 	"errors"
 	"fmt"
 	"slices"
@@ -84,27 +84,28 @@ func (ts JobSpecTemplates) GetFor(runnerType RunnerType) (JobSpecTemplate, error
 	return merged, json.Unmarshal(mergedJson, &merged)
 }
 
-func k8sFromLegacy(rc legacy.RunController) (*K8s, error) {
+func (cfg *Config) applyLegacyK8s(rc legacy.RunController) error {
 	if rc.Namespace == "" && len(rc.Implementations) == 0 {
-		return nil, nil
+		return nil
 	}
 	byName, err := rc.JobSpecTemplates(string(RunnerTypeAll))
 	if err != nil {
-		return nil, err
+		return err
 	}
 	templates := make(JobSpecTemplates, len(byName))
 	for name, template := range byName {
 		runnerType, err := ParseRunnerType(name)
 		if err != nil {
-			return nil, fmt.Errorf("legacy implementation: %w", err)
+			return fmt.Errorf("legacy implementation: %w", err)
 		}
 		templates[runnerType] = template
 	}
-	return &K8s{Namespace: rc.Namespace, JobSpecTemplates: templates}, nil
+	cfg.K8s = &K8s{Namespace: rc.Namespace, JobSpecTemplates: templates}
+	return nil
 }
 
 // ValidateK8s checks what the k8s dispatcher needs on top of Validate.
-func (cfg Config) ValidateK8s() error {
+func (cfg *Config) ValidateK8s() error {
 	if cfg.K8s == nil {
 		return errors.New("k8s is required for the k8s dispatcher")
 	}

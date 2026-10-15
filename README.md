@@ -65,7 +65,8 @@ task --list
 
 Every runner exposes a `/healthz` endpoint that returns `200 OK` with body `OK`. This is intended for liveness probes in container orchestrators.
 
-The Go runner serves `/healthz` and `/metrics` on port 2112. The JVM runners listen on a dedicated
+The Go runner serves `/healthz` and `/metrics` on the port in `PORT`, and serves neither without it. The
+run-controller image sets `PORT=2112`, the tf and manual images `PORT=8080`. The JVM runners listen on a dedicated
 default port each, to avoid conflicts when running several runners locally alongside meshStack (which
 defaults to port 8080):
 
@@ -75,7 +76,7 @@ defaults to port 8080):
 | `github-block-runner`   | 8102         |
 | `gitlab-block-runner`   | 8103         |
 
-Override the port with the `PORT` environment variable. All images but run-controller set `PORT=8080`.
+Override their port with the `PORT` environment variable.
 
 ## Development
 

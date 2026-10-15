@@ -37,6 +37,7 @@ tasks:
     desc: Run the ALL runner from source. Currently supports TERRAFORM and MANUAL and fails other runs immediately.
     env:
       RUNNER_CONFIG_FILE: run-controller/local/runner-config.yml
+      PORT: "2112"
     vars:
       COVER_ARGS: '{{if .GOCOVERDIR}}-cover -coverpkg=./...{{end}}'
     cmds:

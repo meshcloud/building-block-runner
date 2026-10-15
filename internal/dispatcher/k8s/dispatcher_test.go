@@ -5,8 +5,6 @@ package k8s
 import (
 	"context"
 	"errors"
-	"io"
-	"log"
 	"maps"
 	"slices"
 	"strings"
@@ -30,6 +28,7 @@ import (
 	"github.com/meshcloud/building-block-runner/internal/config/xtime"
 	"github.com/meshcloud/building-block-runner/internal/config/xurl"
 	"github.com/meshcloud/building-block-runner/internal/dispatcher"
+	"github.com/meshcloud/building-block-runner/internal/logctx/logctxtest"
 )
 
 const namespace = "runners"
@@ -68,7 +67,7 @@ func startTestDispatcher(t *testing.T, ctx context.Context, cfg config.Config, j
 		_, err := clientset.BatchV1().Jobs(namespace).Create(ctx, job, metav1.CreateOptions{})
 		require.NoError(t, err)
 	}
-	d, err := newDispatcher(ctx, cfg, clientset, log.New(io.Discard, "", 0))
+	d, err := newDispatcher(ctx, cfg, clientset)
 	require.NoError(t, err)
 	d.fetchOidcIssuer = func(context.Context) (string, error) { return "https://issuer.example.com", nil }
 	state, err := d.Init(ctx)
@@ -314,11 +313,11 @@ func Test_JobDeletedWhileRunning_FinishesWithAnError(t *testing.T) {
 }
 
 func Test_FailureReportedForAJobThatIsGone_LogsNothing(t *testing.T) {
-	var logs strings.Builder
-	d, err := newDispatcher(t.Context(), testConfig(nil), fake.NewClientset(), log.New(&logs, "", 0))
+	ctx, logs := logctxtest.Record(t)
+	d, err := newDispatcher(ctx, testConfig(nil), fake.NewClientset())
 	require.NoError(t, err)
 
-	d.FailureReported(t.Context(), uuid.New())
+	d.FailureReported(ctx, uuid.New())
 
 	assert.Empty(t, logs.String())
 }
@@ -328,4 +327,9 @@ func Test_WorkloadIdentity_MatchesTheServiceAccountAndTokenMounts(t *testing.T) 
 
 	assert.Equal(t, "system:serviceaccount:runners:workspace.{{ workspaceIdentifier }}.buildingblockdefinition.{{ buildingBlockDefinitionUuid }}", *wif.SubjectTemplate)
 	assert.Equal(t, &client.MeshRunnerWifProviderConfig{Audience: "gcp-workload-identity-provider:runners", TokenPath: "/var/run/secrets/workload-identity/gcp/token"}, wif.Gcp)
+}
+
+func TestMain(m *testing.M) {
+	logctxtest.Install()
+	m.Run()
 }

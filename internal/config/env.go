@@ -1,7 +1,8 @@
 package config
 
 import (
-	"log"
+	"context"
+	"log/slog"
 	"os"
 
 	"github.com/caarlos0/env/v11"
@@ -10,7 +11,7 @@ import (
 const envPrefix = "RUNNER_"
 
 // applyEnvironment copies an envFallback value verbatim, as the expand option of env would rewrite a '$' in secrets.
-func applyEnvironment(cfg *Config, logger *log.Logger) error {
+func applyEnvironment(ctx context.Context, cfg *Config) error {
 	environment := env.ToMap(os.Environ())
 	fields, err := env.GetFieldParamsWithOptions(cfg, env.Options{Prefix: envPrefix, DefaultValueTagName: "envFallback"})
 	if err != nil {
@@ -19,9 +20,9 @@ func applyEnvironment(cfg *Config, logger *log.Logger) error {
 	for _, field := range fields {
 		switch {
 		case environment[field.Key] != "":
-			logger.Printf("Using %s from environment", field.Key)
+			slog.InfoContext(ctx, "using environment variable", "name", field.Key)
 		case field.HasDefaultValue && environment[field.DefaultValue] != "":
-			logger.Printf("Using %s from environment for %s", field.DefaultValue, field.Key)
+			slog.InfoContext(ctx, "using environment variable", "name", field.DefaultValue, "for", field.Key)
 			environment[field.Key] = environment[field.DefaultValue]
 		}
 	}

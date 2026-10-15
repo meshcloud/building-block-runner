@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 	"uuid"
 
 	"github.com/meshcloud/meshstack-cli/client"
 
 	"github.com/meshcloud/building-block-runner/internal/config"
+	"github.com/meshcloud/building-block-runner/internal/logctx"
 )
 
 // maxClaimsPerCycleWhenUnlimited guards against an API that never runs out of runs.
@@ -24,19 +25,18 @@ const (
 
 type poller struct {
 	cfg        config.Config
-	logger     *log.Logger
 	api        client.MeshRunnerClient
 	dispatcher Dispatcher
 	// active holds nil for a run that this process did not start.
 	active map[uuid.UUID]*Run
 }
 
-func newPoller(cfg config.Config, logger *log.Logger, api client.MeshRunnerClient, dispatcher Dispatcher, running []uuid.UUID) *poller {
+func newPoller(cfg config.Config, api client.MeshRunnerClient, dispatcher Dispatcher, running []uuid.UUID) *poller {
 	active := map[uuid.UUID]*Run{}
 	for _, runUuid := range running {
 		active[runUuid] = nil
 	}
-	return &poller{cfg: cfg, logger: logger, api: api, dispatcher: dispatcher, active: active}
+	return &poller{cfg: cfg, api: api, dispatcher: dispatcher, active: active}
 }
 
 func (p *poller) poll(ctx context.Context) error {
@@ -45,8 +45,8 @@ func (p *poller) poll(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			p.logger.Printf("Stopped claiming, waiting for %d active runs", len(p.active))
-			p.logErr(p.drainFinished(ctx))
+			slog.InfoContext(ctx, "stopped claiming, waiting for active runs", "active", len(p.active))
+			p.logErr(ctx, p.drainFinished(ctx))
 			return nil
 		case <-ticker.C:
 			loopIterations.Inc()
@@ -55,7 +55,7 @@ func (p *poller) poll(ctx context.Context) error {
 			if !open {
 				return errors.New("the dispatcher stopped before it was asked to")
 			}
-			p.logErr(p.track(ctx, finished))
+			p.logErr(ctx, p.track(ctx, finished))
 			p.claimUpToCapacity(ctx)
 		}
 	}
@@ -72,7 +72,7 @@ func (p *poller) drainFinished(ctx context.Context) error {
 func (p *poller) claimUpToCapacity(ctx context.Context) {
 	capacity := p.capacity()
 	if capacity == 0 {
-		p.logger.Printf("At capacity with %d active runs, claiming no run", len(p.active))
+		slog.InfoContext(ctx, "at capacity, claiming no run", "active", len(p.active))
 		atCapacitySkips.WithLabelValues(p.cfg.Uuid.String()).Inc()
 		return
 	}
@@ -98,16 +98,16 @@ func (p *poller) claimAndStart(ctx context.Context) (claimed bool) {
 	case errors.Is(err, client.ErrNoRunToClaim):
 		return false
 	case err != nil:
-		p.logger.Printf("Claiming a run failed: %v", err)
+		slog.ErrorContext(ctx, "claiming a run failed", "error", err)
 		return false
 	}
 	decrypted, err := p.cfg.Crypto.DecryptRun(run)
 	if err != nil {
 		decryptionErrors.WithLabelValues(p.cfg.Uuid.String()).Inc()
-		p.logErr(p.reportFailure(ctx, run, "Failed to decrypt the run: "+err.Error()))
+		p.logErr(ctx, p.reportFailure(ctx, run, "Failed to decrypt the run: "+err.Error()))
 		return true
 	}
-	p.logErr(p.start(ctx, decrypted))
+	p.logErr(ctx, p.start(ctx, decrypted))
 	return true
 }
 
@@ -121,7 +121,8 @@ func (p *poller) claim(ctx context.Context) (Run, error) {
 }
 
 func (p *poller) start(ctx context.Context, run Run) error {
-	p.logger.Printf("Starting run %s", run.Metadata.Uuid)
+	ctx = withRun(ctx, run)
+	slog.InfoContext(ctx, "starting run")
 	started := time.Now()
 	err := p.dispatcher.Start(ctx, run)
 	observeDuration(startDuration.WithLabelValues(p.cfg.Uuid.String()), started)
@@ -144,8 +145,17 @@ func startErrorType(err error) string {
 func (p *poller) track(ctx context.Context, finished RunFinished) error {
 	run := p.active[finished.RunUuid]
 	delete(p.active, finished.RunUuid)
-	if finished.Err == nil || errors.Is(finished.Err, ErrFailureReported) {
-		p.logger.Printf("Run %s finished: %v", finished.RunUuid, finished.Err)
+	if run != nil {
+		ctx = withRun(ctx, *run)
+	} else {
+		ctx = logctx.With(ctx, slog.Any("run", finished.RunUuid))
+	}
+	switch {
+	case finished.Err == nil:
+		slog.InfoContext(ctx, "run finished")
+		return nil
+	case errors.Is(finished.Err, ErrFailureReported):
+		slog.InfoContext(ctx, "run finished with its failure reported", "error", finished.Err)
 		return nil
 	}
 	ctx = context.WithoutCancel(ctx)
@@ -175,7 +185,8 @@ func (p *poller) readRun(ctx context.Context, runUuid uuid.UUID) (Run, error) {
 
 // reportFailure registers this runner as a source, as no other source may exist for the run.
 func (p *poller) reportFailure(ctx context.Context, run Run, message string) error {
-	p.logger.Printf("Run %s failed: %s", run.Metadata.Uuid, message)
+	ctx = withRun(ctx, run)
+	slog.WarnContext(ctx, "run failed", "message", message)
 	runClient := p.api.ForRun(run)
 	err := runClient.RegisterSource(ctx, client.MeshRunnerRunSourceRegistration{
 		Source: client.MeshRunnerRunSource{Id: p.cfg.Uuid},
@@ -201,8 +212,8 @@ func (p *poller) reportFailure(ctx context.Context, run Run, message string) err
 	return nil
 }
 
-func (p *poller) logErr(err error) {
+func (*poller) logErr(ctx context.Context, err error) {
 	if err != nil {
-		p.logger.Print(err)
+		slog.ErrorContext(ctx, "could not report a failed run", "error", err)
 	}
 }

@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"uuid"
 
 	"github.com/meshcloud/meshstack-cli/client"
 
 	"github.com/meshcloud/building-block-runner/internal/config"
+	"github.com/meshcloud/building-block-runner/internal/logctx"
 )
 
 // Run is a claimed run with its secrets decrypted.
@@ -72,4 +74,16 @@ func RunnerTypeOf(run Run) (config.RunnerType, error) {
 		return "", fmt.Errorf("implementation type %s is unknown", implementationType)
 	}
 	return runnerType, nil
+}
+
+func withRunner(ctx context.Context, cfg config.Config) context.Context {
+	return logctx.With(ctx, slog.Any("runner", cfg.Uuid))
+}
+
+func withRun(ctx context.Context, run Run) context.Context {
+	attrs := []slog.Attr{slog.Any("run", run.Metadata.Uuid), slog.String("behavior", run.Spec.Behavior)}
+	if runnerType, err := RunnerTypeOf(run); err == nil {
+		attrs = append(attrs, slog.Any("runnerType", runnerType))
+	}
+	return logctx.With(ctx, attrs...)
 }

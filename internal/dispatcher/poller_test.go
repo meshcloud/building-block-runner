@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"log"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -171,7 +169,7 @@ func startPolling(t *testing.T, cfg config.Config, api *fakeApi, dispatcher *fak
 	ctx, cancel := context.WithCancel(t.Context())
 	state, err := dispatcher.Init(ctx)
 	require.NoError(t, err)
-	p := newPoller(cfg, log.New(io.Discard, "", 0), api, dispatcher, state.Running)
+	p := newPoller(cfg, api, dispatcher, state.Running)
 	done := make(chan error)
 	go func() { done <- p.poll(ctx) }()
 	return func(afterShutdown ...RunFinished) error {
@@ -315,7 +313,7 @@ func Test_Shutdown_LetsAClaimAndItsFailureReportFinish(t *testing.T) {
 		dispatcher.startErr = errors.New("no executor")
 		ctx, cancel := context.WithCancel(t.Context())
 		done := make(chan error)
-		go func() { done <- newPoller(testConfig(1), log.New(io.Discard, "", 0), api, dispatcher, nil).poll(ctx) }()
+		go func() { done <- newPoller(testConfig(1), api, dispatcher, nil).poll(ctx) }()
 		synctest.Sleep(10 * time.Second)
 
 		cancel()

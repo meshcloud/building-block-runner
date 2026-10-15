@@ -185,3 +185,5 @@ linters:
           deny:
             - pkg: encoding/json$
               desc: Use encoding/json/v2
+            - pkg: log$
+              desc: Use log/slog instead

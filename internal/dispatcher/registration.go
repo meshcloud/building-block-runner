@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/meshcloud/meshstack-cli/client"
@@ -15,16 +15,17 @@ import (
 )
 
 // Register updates the registration of a runner without workload identity.
-func Register(ctx context.Context, cfg config.Config, logger *log.Logger) error {
+func Register(ctx context.Context, cfg config.Config) error {
+	ctx = withRunner(ctx, cfg)
 	settings := setting.SingleSource(cfg.Api)
 	meshStack, err := newClient(ctx, settings)
 	if err != nil {
 		return err
 	}
-	return register(ctx, cfg, logger, settings, meshStack.BuildingBlockRunner, nil)
+	return register(ctx, cfg, settings, meshStack.BuildingBlockRunner, nil)
 }
 
-func register(ctx context.Context, cfg config.Config, logger *log.Logger, settings setting.Sources, runners client.MeshBuildingBlockRunnerClient, workloadIdentity *client.MeshRunnerWorkloadIdentityFed) error {
+func register(ctx context.Context, cfg config.Config, settings setting.Sources, runners client.MeshBuildingBlockRunnerClient, workloadIdentity *client.MeshRunnerWorkloadIdentityFed) error {
 	workspace, err := auth.ResolveWorkspace(ctx, clientOptions(settings))
 	if err != nil {
 		return err
@@ -36,11 +37,11 @@ func register(ctx context.Context, cfg config.Config, logger *log.Logger, settin
 	if err != nil {
 		return err
 	}
-	return updateRegistration(ctx, logger, runners, registration)
+	return updateRegistration(ctx, runners, registration)
 }
 
 // updateRegistration retries, as meshfed-api may still be starting.
-func updateRegistration(ctx context.Context, logger *log.Logger, runners client.MeshBuildingBlockRunnerClient, registration client.MeshBuildingBlockRunner) error {
+func updateRegistration(ctx context.Context, runners client.MeshBuildingBlockRunnerClient, registration client.MeshBuildingBlockRunner) error {
 	ctx, cancel := context.WithTimeoutCause(ctx, meshfedStartTimeout, fmt.Errorf("gave up after %s", meshfedStartTimeout))
 	defer cancel()
 	runnerUuid := *registration.Metadata.Uuid
@@ -48,7 +49,7 @@ func updateRegistration(ctx context.Context, logger *log.Logger, runners client.
 		_, err := runners.Update(ctx, registration)
 		if err == nil {
 			registrationSuccess.WithLabelValues(runnerUuid).Inc()
-			logger.Printf("Updated the registration of runner %s", runnerUuid)
+			slog.InfoContext(ctx, "updated the registration")
 			return nil
 		}
 		if httpErr, ok := errors.AsType[client.HttpError](err); ok && httpErr.IsNotFound() {
@@ -56,7 +57,7 @@ func updateRegistration(ctx context.Context, logger *log.Logger, runners client.
 			err = fmt.Errorf("runner %s does not exist in meshStack, create it in the meshStack UI or API first: %w", runnerUuid, err)
 		}
 		registrationErrors.WithLabelValues(runnerUuid, errorTypeUpdate).Inc()
-		logger.Printf("Updating the registration failed, retrying in %s: %v", meshfedStartRetryInterval, err)
+		slog.WarnContext(ctx, "updating the registration failed, retrying", "retryIn", meshfedStartRetryInterval, "error", err)
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("update the registration of runner %s (%w): %w", runnerUuid, context.Cause(ctx), err)

@@ -4,8 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
-	"os"
+	"log/slog"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -17,7 +16,6 @@ import (
 )
 
 type Dispatcher struct {
-	logger    *log.Logger
 	api       client.MeshRunnerClient
 	executors executorsByType
 	timeout   time.Duration
@@ -38,7 +36,6 @@ func New(ctx context.Context, cfg config.Config, api client.MeshRunnerClient) (d
 
 func newDispatcher(ctx context.Context, api client.MeshRunnerClient, executors executorsByType, timeout time.Duration) *Dispatcher {
 	d := &Dispatcher{
-		logger:    log.New(os.Stdout, "[IN-PROCESS] ", log.LstdFlags),
 		api:       api,
 		executors: executors,
 		timeout:   timeout,
@@ -93,7 +90,7 @@ func (d *Dispatcher) execute(ctx context.Context, execute executeFunc, run dispa
 	defer cancel()
 	defer func() {
 		if r := recover(); r != nil {
-			d.logger.Printf("Run panicked: %v\n%s", r, debug.Stack())
+			slog.ErrorContext(ctx, "run panicked", "dispatcher", "inprocess", "panic", r, "stack", string(debug.Stack()))
 			err = fmt.Errorf("the run panicked: %v", r)
 		}
 	}()

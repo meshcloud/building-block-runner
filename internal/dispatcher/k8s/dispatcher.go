@@ -5,8 +5,7 @@ package k8s
 import (
 	"context"
 	"fmt"
-	"log"
-	"os"
+	"log/slog"
 	"uuid"
 
 	"github.com/meshcloud/meshstack-cli/client"
@@ -26,7 +25,6 @@ import (
 type Dispatcher struct {
 	cfg             config.Config
 	clientset       kubernetes.Interface
-	logger          *log.Logger
 	tokens          workloadIdentityTokens
 	fetchOidcIssuer func(context.Context) (string, error)
 	factory         informers.SharedInformerFactory
@@ -51,14 +49,13 @@ func New(ctx context.Context, cfg config.Config, _ client.MeshRunnerClient) (dis
 	if err != nil {
 		return nil, err
 	}
-	return newDispatcher(ctx, cfg, clientset, log.New(os.Stdout, "[K8S] ", log.LstdFlags))
+	return newDispatcher(ctx, cfg, clientset)
 }
 
-func newDispatcher(ctx context.Context, cfg config.Config, clientset kubernetes.Interface, logger *log.Logger) (*Dispatcher, error) {
+func newDispatcher(ctx context.Context, cfg config.Config, clientset kubernetes.Interface) (*Dispatcher, error) {
 	d := &Dispatcher{
 		cfg:       cfg,
 		clientset: clientset,
-		logger:    logger,
 		tokens:    newWorkloadIdentityTokens(cfg.K8s.Namespace),
 		fetchOidcIssuer: func(ctx context.Context) (string, error) {
 			return fetchOidcIssuer(ctx, clientset)
@@ -93,7 +90,7 @@ func (d *Dispatcher) Start(ctx context.Context, run dispatcher.Run) error {
 
 	jobs := d.clientset.BatchV1().Jobs(d.cfg.K8s.Namespace)
 	if _, err = jobs.Get(ctx, objects.job.Name, metav1.GetOptions{}); err == nil {
-		d.logger.Printf("Job %s already exists", objects.job.Name)
+		slog.InfoContext(ctx, "job already exists", "dispatcher", "k8s", "job", objects.job.Name)
 		return nil
 	}
 	if err = d.createServiceAccount(ctx, objects.serviceAccount); err != nil {
@@ -112,9 +109,9 @@ func (d *Dispatcher) Start(ctx context.Context, run dispatcher.Run) error {
 		return fmt.Errorf("create job %s: %w", objects.job.Name, err)
 	}
 	if err := d.ownSecret(ctx, objects.secret.Name, job); err != nil {
-		d.logger.Printf("Secret %s outlives its Job: %v", objects.secret.Name, err)
+		slog.WarnContext(ctx, "secret outlives its job", "dispatcher", "k8s", "secret", objects.secret.Name, "error", err)
 	}
-	d.logger.Printf("Created job %s", job.Name)
+	slog.InfoContext(ctx, "created job", "dispatcher", "k8s", "job", job.Name)
 	return nil
 }
 

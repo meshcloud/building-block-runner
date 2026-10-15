@@ -5,6 +5,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"uuid"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -31,9 +32,9 @@ func (d *Dispatcher) watchJobs(ctx context.Context) error {
 	)
 	d.jobs = d.factory.Batch().V1().Jobs()
 	if _, err := d.jobs.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    d.observe,
-		UpdateFunc: func(_, obj any) { d.observe(obj) },
-		DeleteFunc: d.observeDeleted,
+		AddFunc:    func(obj any) { d.observe(ctx, obj) },
+		UpdateFunc: func(_, obj any) { d.observe(ctx, obj) },
+		DeleteFunc: func(obj any) { d.observeDeleted(ctx, obj) },
 	}); err != nil {
 		return err
 	}
@@ -55,19 +56,19 @@ func (d *Dispatcher) Init(ctx context.Context) (dispatcher.InitState, error) {
 	}
 	var running []uuid.UUID
 	for _, job := range existing {
-		if runUuid, ok := d.runUuid(job); ok && !isFinished(job) {
+		if runUuid, ok := d.runUuid(ctx, job); ok && !isFinished(job) {
 			running = append(running, runUuid)
 		}
 	}
 	return dispatcher.InitState{Running: running, WorkloadIdentity: d.workloadIdentity(ctx)}, nil
 }
 
-func (d *Dispatcher) observe(obj any) {
+func (d *Dispatcher) observe(ctx context.Context, obj any) {
 	job, ok := obj.(*batchv1.Job)
 	if !ok {
 		return
 	}
-	runUuid, ok := d.runUuid(job)
+	runUuid, ok := d.runUuid(ctx, job)
 	if !ok {
 		return
 	}
@@ -85,16 +86,16 @@ func (d *Dispatcher) observe(obj any) {
 	}
 }
 
-func (d *Dispatcher) observeDeleted(obj any) {
+func (d *Dispatcher) observeDeleted(ctx context.Context, obj any) {
 	if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
 		obj = tombstone.Obj
 	}
-	d.observe(obj)
+	d.observe(ctx, obj)
 	job, ok := obj.(*batchv1.Job)
 	if !ok {
 		return
 	}
-	if runUuid, ok := d.runUuid(job); ok && d.running[runUuid] {
+	if runUuid, ok := d.runUuid(ctx, job); ok && d.running[runUuid] {
 		delete(d.running, runUuid)
 		d.send(dispatcher.RunFinished{RunUuid: runUuid, Err: fmt.Errorf("the Kubernetes Job %s was deleted before it finished", job.Name)})
 	}
@@ -114,14 +115,14 @@ func (d *Dispatcher) FailureReported(ctx context.Context, runUuid uuid.UUID) {
 	patch := fmt.Appendf(nil, `{"metadata":{"annotations":{%q:"true"}}}`, annotationFailureReported)
 	_, err := d.clientset.BatchV1().Jobs(d.cfg.K8s.Namespace).Patch(ctx, name, types.MergePatchType, patch, metav1.PatchOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
-		d.logger.Printf("A later process may report job %s again, annotating it failed: %v", name, err)
+		slog.WarnContext(ctx, "annotating the job failed, a later process may report it again", "dispatcher", "k8s", "job", name, "error", err)
 	}
 }
 
-func (d *Dispatcher) runUuid(job *batchv1.Job) (uuid.UUID, bool) {
+func (*Dispatcher) runUuid(ctx context.Context, job *batchv1.Job) (uuid.UUID, bool) {
 	runUuid, err := uuid.Parse(job.Labels[labelRunId])
 	if err != nil {
-		d.logger.Printf("Job %s has no run uuid in label %s: %v", job.Name, labelRunId, err)
+		slog.WarnContext(ctx, "job has no run uuid in its label", "dispatcher", "k8s", "job", job.Name, "label", labelRunId, "error", err)
 		return uuid.UUID{}, false
 	}
 	return runUuid, true

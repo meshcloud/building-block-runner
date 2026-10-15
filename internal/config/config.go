@@ -2,10 +2,11 @@ package config
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 	"os"
 	"uuid"
 
@@ -38,22 +39,22 @@ func FileFromEnv() string {
 	return cmp.Or(os.Getenv("RUNNER_CONFIG_FILE"), os.Getenv("RUNCONTROLLER_CONFIG_FILE"), "runner-config.yml")
 }
 
-func LoadFile(path string, logger *log.Logger) (Config, error) {
+func LoadFile(ctx context.Context, path string) (Config, error) {
 	data, err := os.ReadFile(path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		logger.Printf("Config file %s does not exist, using defaults and environment", path)
+		slog.InfoContext(ctx, "config file does not exist, using defaults and environment", "path", path)
 	case err != nil:
 		return Config{}, err
 	}
-	cfg, err := Load(data, logger)
+	cfg, err := Load(ctx, data)
 	if err != nil {
 		return Config{}, fmt.Errorf("config file %s: %w", path, err)
 	}
 	return cfg, nil
 }
 
-func Load(data []byte, logger *log.Logger) (Config, error) {
+func Load(ctx context.Context, data []byte) (Config, error) {
 	file, err := parser.ParseBytes(data, 0)
 	if err != nil {
 		return Config{}, err
@@ -67,13 +68,13 @@ func Load(data []byte, logger *log.Logger) (Config, error) {
 			return Config{}, err
 		}
 	}
-	if err := applyEnvironment(&cfg, logger); err != nil {
+	if err := applyEnvironment(ctx, &cfg); err != nil {
 		return Config{}, fmt.Errorf("environment: %w", err)
 	}
 	if added, err := cfg.Crypto.AddImplicitPrivateKeyFile(); err != nil {
 		return Config{}, err
 	} else if added {
-		logger.Printf("Using private key file %s", crypto.ImplicitPrivateKeyFile)
+		slog.InfoContext(ctx, "using private key file", "path", crypto.ImplicitPrivateKeyFile)
 	}
 	return cfg, nil
 }

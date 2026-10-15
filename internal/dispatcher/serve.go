@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -27,7 +27,8 @@ const (
 )
 
 // Serve claims runs until ctx ends, or runs only the run in the file that RUNNER_CLAIM_RUN_YML names.
-func Serve(ctx context.Context, cfg config.Config, logger *log.Logger) error {
+func Serve(ctx context.Context, cfg config.Config) error {
+	ctx = withRunner(ctx, cfg)
 	if len(cfg.Dispatcher.ForTypes) == 0 && DefaultForTypes != nil {
 		cfg.Dispatcher.ForTypes = DefaultForTypes()
 	}
@@ -35,17 +36,17 @@ func Serve(ctx context.Context, cfg config.Config, logger *log.Logger) error {
 		if builtWithK8sTag {
 			return errors.New(claimRunYmlEnv + " needs a binary built without -tags k8s")
 		}
-		return serveRunFile(ctx, cfg, logger, path)
+		return serveRunFile(ctx, cfg, path)
 	}
-	return servePolling(ctx, cfg, logger)
+	return servePolling(ctx, cfg)
 }
 
-func servePolling(ctx context.Context, cfg config.Config, logger *log.Logger) error {
+func servePolling(ctx context.Context, cfg config.Config) error {
 	if err := errors.Join(cfg.Validate(), cfg.ValidateDispatcher()); err != nil {
 		return err
 	}
 	settings := setting.SingleSource(cfg.Api)
-	meshStack, err := newClientOnceMeshfedAnswers(ctx, logger, settings, meshfedStartRetryInterval)
+	meshStack, err := newClientOnceMeshfedAnswers(ctx, settings, meshfedStartRetryInterval)
 	if err != nil {
 		return err
 	}
@@ -63,15 +64,15 @@ func servePolling(ctx context.Context, cfg config.Config, logger *log.Logger) er
 		return err
 	}
 	if cfg.Dispatcher.Register != nil {
-		if err := register(ctx, cfg, logger, settings, meshStack.BuildingBlockRunner, state.WorkloadIdentity); err != nil {
+		if err := register(ctx, cfg, settings, meshStack.BuildingBlockRunner, state.WorkloadIdentity); err != nil {
 			return err
 		}
 	}
-	logger.Printf("Claiming runs every %s", cfg.Dispatcher.PollingInterval)
-	return newPoller(cfg, logger, meshStack.Runner, dispatcher, state.Running).poll(ctx)
+	slog.InfoContext(ctx, "claiming runs", "interval", cfg.Dispatcher.PollingInterval)
+	return newPoller(cfg, meshStack.Runner, dispatcher, state.Running).poll(ctx)
 }
 
-func serveRunFile(ctx context.Context, cfg config.Config, logger *log.Logger, path string) error {
+func serveRunFile(ctx context.Context, cfg config.Config, path string) error {
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
@@ -79,6 +80,7 @@ func serveRunFile(ctx context.Context, cfg config.Config, logger *log.Logger, pa
 	if err != nil {
 		return err
 	}
+	ctx = withRun(ctx, run)
 	meshStack, err := newClient(ctx, runTokenSettings(cfg.Api, run, path))
 	if err != nil {
 		return err
@@ -95,8 +97,8 @@ func serveRunFile(ctx context.Context, cfg config.Config, logger *log.Logger, pa
 	if _, err := dispatcher.Init(ctx); err != nil {
 		return err
 	}
-	logger.Printf("Running the run in %s:\n%s", path, RedactedRunYaml(run))
-	p := newPoller(cfg, logger, meshStack.Runner, dispatcher, nil)
+	slog.InfoContext(ctx, "running the run file", "path", path, "yaml", RedactedRunYaml(run))
+	p := newPoller(cfg, meshStack.Runner, dispatcher, nil)
 	startErr := p.start(ctx, run)
 	stopDispatcher()
 	return errors.Join(startErr, p.drainFinished(ctx))
@@ -116,7 +118,7 @@ func runTokenSettings(api config.Api, run Run, path string) setting.Sources {
 }
 
 // newClientOnceMeshfedAnswers retries, as meshfed-api may still be starting.
-func newClientOnceMeshfedAnswers(ctx context.Context, logger *log.Logger, settings setting.Sources, retryInterval time.Duration) (client.Client, error) {
+func newClientOnceMeshfedAnswers(ctx context.Context, settings setting.Sources, retryInterval time.Duration) (client.Client, error) {
 	ctx, cancel := context.WithTimeoutCause(ctx, meshfedStartTimeout, fmt.Errorf("gave up after %s", meshfedStartTimeout))
 	defer cancel()
 	for {
@@ -124,7 +126,7 @@ func newClientOnceMeshfedAnswers(ctx context.Context, logger *log.Logger, settin
 		if err == nil || !isUnanswered(err) {
 			return meshStack, err
 		}
-		logger.Printf("meshStack does not answer, retrying in %s: %v", retryInterval, err)
+		slog.WarnContext(ctx, "meshStack does not answer, retrying", "retryIn", retryInterval, "error", err)
 		select {
 		case <-ctx.Done():
 			return client.Client{}, fmt.Errorf("build the meshStack client (%w): %w", context.Cause(ctx), err)

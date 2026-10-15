@@ -7,6 +7,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/meshcloud/meshstack-cli/client"
 	"k8s.io/client-go/kubernetes"
@@ -70,10 +71,10 @@ func newWorkloadIdentity(namespace, oidcIssuer string) *client.MeshRunnerWorkloa
 func (d *Dispatcher) workloadIdentity(ctx context.Context) *client.MeshRunnerWorkloadIdentityFed {
 	issuer, err := d.fetchOidcIssuer(ctx)
 	if err != nil {
-		d.logger.Printf("OIDC issuer discovery failed, runs get no workload identity: %v", err)
+		slog.WarnContext(ctx, "OIDC issuer discovery failed, runs get no workload identity", "dispatcher", "k8s", "error", err)
 		return nil
 	}
-	d.logger.Printf("Workload identity uses the OIDC issuer %s", issuer)
+	slog.InfoContext(ctx, "workload identity uses the OIDC issuer", "dispatcher", "k8s", "issuer", issuer)
 	return newWorkloadIdentity(d.cfg.K8s.Namespace, issuer)
 }
 

@@ -38,7 +38,7 @@ func Execute(ctx context.Context, run client.MeshRunnerRun, api client.MeshRunne
 		return fmt.Errorf("report run %s: %w", runId, err)
 	}
 
-	slog.InfoContext(ctx, "reported run as succeeded", "run", runId)
+	slog.InfoContext(ctx, "reported run as succeeded")
 	return nil
 }
 

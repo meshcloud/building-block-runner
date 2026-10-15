@@ -2,8 +2,6 @@ package config
 
 import (
 	"embed"
-	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +14,7 @@ import (
 	"github.com/meshcloud/building-block-runner/internal/config/xtime"
 	"github.com/meshcloud/building-block-runner/internal/config/xurl"
 	"github.com/meshcloud/building-block-runner/internal/crypto"
+	"github.com/meshcloud/building-block-runner/internal/logctx/logctxtest"
 )
 
 //go:embed testdata/*.yml
@@ -31,9 +30,9 @@ func Test_Load_ReadsTheNewAndTheLegacyLayouts(t *testing.T) {
 
 	t.Run("without a file", func(t *testing.T) {
 		t.Setenv("RUNNER_UUID", envUuid.String())
-		var logs strings.Builder
+		ctx, logs := logctxtest.Record(t)
 
-		cfg, err := LoadFile(filepath.Join(t.TempDir(), "missing.yml"), log.New(&logs, "", 0))
+		cfg, err := LoadFile(ctx, filepath.Join(t.TempDir(), "missing.yml"))
 
 		require.NoError(t, err)
 		assert.Equal(t, Config{
@@ -41,7 +40,7 @@ func Test_Load_ReadsTheNewAndTheLegacyLayouts(t *testing.T) {
 			Dispatcher: Dispatcher{PollingInterval: xtime.Seconds(10), MaxConcurrentJobs: 20, Timeout: xtime.Minutes(60)},
 			Tf:         Tf{TfParentWorkingDir: "/tmp/runner/wd", TfInstallDir: "/tmp/runner/tfbin", WsTimeout: xtime.Minutes(5), InitTimeout: xtime.Minutes(3)},
 		}, cfg)
-		assert.Contains(t, logs.String(), "missing.yml does not exist, using defaults and environment")
+		assert.Contains(t, logs.String(), `msg="config file does not exist, using defaults and environment"`)
 	})
 
 	t.Run("env wins over the file and the file over the defaults", func(t *testing.T) {
@@ -97,17 +96,17 @@ func Test_Load_ReadsTheNewAndTheLegacyLayouts(t *testing.T) {
 		assert.Equal(t, "/other/wd", cfg.Tf.TfParentWorkingDir)
 		assert.Equal(t, xtime.Minutes(7), cfg.Tf.WsTimeout)
 		assert.Equal(t, []string{
-			"Using RUNNER_UUID from environment",
-			"Using RUNNER_API_URL from environment",
-			"Using RUNNER_API_USERNAME from environment",
-			"Using RUNNER_API_PASSWORD from environment",
-			"Using RUNNER_API_CLIENT_ID from environment",
-			"Using RUNNER_API_CLIENT_SECRET from environment",
-			"Using RUNNER_PRIVATE_KEY from environment for RUNNER_CRYPTO_PRIVATE_KEYS",
-			"Using RUNNER_PRIVATE_KEY_FILE from environment for RUNNER_CRYPTO_PRIVATE_KEY_FILES",
-			"Using RUNNER_DISPATCHER_MAX_CONCURRENT_JOBS from environment",
-			"Using RUNNER_TF_WORKING_DIR from environment",
-			"Using RUNNER_TF_WS_TIMEOUT from environment",
+			`msg="using environment variable" name=RUNNER_UUID`,
+			`msg="using environment variable" name=RUNNER_API_URL`,
+			`msg="using environment variable" name=RUNNER_API_USERNAME`,
+			`msg="using environment variable" name=RUNNER_API_PASSWORD`,
+			`msg="using environment variable" name=RUNNER_API_CLIENT_ID`,
+			`msg="using environment variable" name=RUNNER_API_CLIENT_SECRET`,
+			`msg="using environment variable" name=RUNNER_PRIVATE_KEY for=RUNNER_CRYPTO_PRIVATE_KEYS`,
+			`msg="using environment variable" name=RUNNER_PRIVATE_KEY_FILE for=RUNNER_CRYPTO_PRIVATE_KEY_FILES`,
+			`msg="using environment variable" name=RUNNER_DISPATCHER_MAX_CONCURRENT_JOBS`,
+			`msg="using environment variable" name=RUNNER_TF_WORKING_DIR`,
+			`msg="using environment variable" name=RUNNER_TF_WS_TIMEOUT`,
 		}, logs)
 	})
 
@@ -118,7 +117,7 @@ func Test_Load_ReadsTheNewAndTheLegacyLayouts(t *testing.T) {
 		cfg, logs := loadFile(t, "runner-config-old-tf.yml")
 
 		assert.Len(t, cfg.Crypto.PrivateKeyFiles, 1)
-		assert.Equal(t, []string{"Using RUNNER_CRYPTO_PRIVATE_KEY_FILES from environment"}, logs)
+		assert.Equal(t, []string{`msg="using environment variable" name=RUNNER_CRYPTO_PRIVATE_KEY_FILES`}, logs)
 	})
 
 	t.Run("legacy tf timeoutMins is the dispatcher timeout", func(t *testing.T) {
@@ -152,7 +151,7 @@ func Test_Load_ReadsTheNewAndTheLegacyLayouts(t *testing.T) {
 		cfg, logs := load(t, nil)
 
 		assert.Equal(t, crypto.PrivateKeyFiles{{Path: crypto.ImplicitPrivateKeyFile, PrivateKey: parsedPrivateKey(t)}}, cfg.Crypto.PrivateKeyFiles)
-		assert.Equal(t, []string{"Using private key file runner-private.pem"}, logs)
+		assert.Equal(t, []string{`msg="using private key file" path=runner-private.pem`}, logs)
 	})
 
 	t.Run("file from env", func(t *testing.T) {
@@ -174,7 +173,7 @@ func Test_Load_SubstitutesEnvIntoTypedValues(t *testing.T) {
 	t.Setenv("INSECURE", "true")
 	t.Setenv("KEY_FILE", "./testdata/private-key.pem")
 
-	cfg, err := Load([]byte(`
+	cfg, err := Load(t.Context(), []byte(`
 dispatcher:
   register:
     displayName: !no-envsubst runner ${NOT_RESOLVED}
@@ -194,7 +193,7 @@ api:
       username: !!str ${API_USER:007}
       password: |
         ${PASSWORD:secret}
-`), log.New(io.Discard, "", 0))
+`))
 
 	require.NoError(t, err)
 	assert.Equal(t, "runner ${NOT_RESOLVED}", cfg.Dispatcher.Register.DisplayName)
@@ -230,7 +229,7 @@ func Test_Load_FailsNamingTheProblem(t *testing.T) {
 		"several documents": {"workspace: a\n---\nworkspace: b\n", []string{"2 yaml documents"}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := Load([]byte(test.yml), log.New(io.Discard, "", 0))
+			_, err := Load(t.Context(), []byte(test.yml))
 			for _, expected := range test.errs {
 				assert.ErrorContains(t, err, expected)
 			}
@@ -240,12 +239,12 @@ func Test_Load_FailsNamingTheProblem(t *testing.T) {
 	t.Run("names the file", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "broken.yml")
 		require.NoError(t, os.WriteFile(path, []byte("unknown: 1\n"), 0o600))
-		_, err := LoadFile(path, log.New(io.Discard, "", 0))
+		_, err := LoadFile(t.Context(), path)
 		assert.ErrorContains(t, err, "config file "+path+": new layout")
 	})
 
 	t.Run("names the line of an unset placeholder", func(t *testing.T) {
-		_, err := Load([]byte("workspace: ${WORKSPACE_UNSET}\ndisplayName: ${DISPLAY_UNSET}\n"), log.New(io.Discard, "", 0))
+		_, err := Load(t.Context(), []byte("workspace: ${WORKSPACE_UNSET}\ndisplayName: ${DISPLAY_UNSET}\n"))
 		require.ErrorContains(t, err, "line 1: environment variable WORKSPACE_UNSET")
 		assert.ErrorContains(t, err, "line 2: environment variable DISPLAY_UNSET")
 	})
@@ -253,10 +252,10 @@ func Test_Load_FailsNamingTheProblem(t *testing.T) {
 
 func load(t *testing.T, data []byte) (Config, []string) {
 	t.Helper()
-	var logs strings.Builder
-	cfg, err := Load(data, log.New(&logs, "", 0))
+	ctx, logs := logctxtest.Record(t)
+	cfg, err := Load(ctx, data)
 	require.NoError(t, err)
-	return cfg, strings.Split(strings.TrimSuffix(logs.String(), "\n"), "\n")
+	return cfg, logs.Lines()
 }
 
 func loadFile(t *testing.T, file string) (Config, []string) {

@@ -2,7 +2,6 @@ package testacc
 
 import (
 	"context"
-	"log"
 	"testing"
 	"uuid"
 
@@ -41,7 +40,7 @@ func TestAccRunner(t *testing.T) {
 func (s localStack) createRunner(t *testing.T) config.Config {
 	t.Helper()
 	// meshStack accepts the key that the dev dump holds for the ALL runner.
-	cfg, err := config.LoadFile("../run-controller/runner-config.yml", log.New(t.Output(), "", 0))
+	cfg, err := config.LoadFile(t.Context(), "../run-controller/runner-config.yml")
 	require.NoError(t, err)
 	publicKey, err := cfg.Crypto.FirstPublicKey()
 	require.NoError(t, err)
@@ -72,7 +71,7 @@ func registrationUpdatesTheRunner(s localStack, cfg config.Config) func(*testing
 	return func(t *testing.T) {
 		t.Helper()
 		cfg.Dispatcher.Register = &config.Register{DisplayName: "building-block-runner TestAcc, registered"}
-		require.NoError(t, dispatcher.Register(t.Context(), cfg, log.New(t.Output(), "", 0)))
+		require.NoError(t, dispatcher.Register(t.Context(), cfg))
 
 		after, err := s.api.BuildingBlockRunner.Read(t.Context(), cfg.Uuid.String())
 		require.NoError(t, err)

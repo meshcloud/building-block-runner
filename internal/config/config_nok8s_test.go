@@ -3,8 +3,6 @@
 package config
 
 import (
-	"io"
-	"log"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -21,7 +19,7 @@ func Test_LoadWithoutK8sSupport_RegistersForAllAndRejectsAK8sSection(t *testing.
 	})
 
 	t.Run("a k8s section fails", func(t *testing.T) {
-		_, err := Load([]byte("k8s:\n  namespace: default\n"), log.New(io.Discard, "", 0))
+		_, err := Load(t.Context(), []byte("k8s:\n  namespace: default\n"))
 		require.ErrorContains(t, err, "k8s needs a binary built with -tags k8s")
 		assert.ErrorIs(t, new(Config).ValidateK8s(), errNoK8sSupport)
 	})

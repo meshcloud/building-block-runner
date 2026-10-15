@@ -3,7 +3,7 @@ package main
 import (
 	"cmp"
 	"context"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -16,31 +16,37 @@ import (
 	"github.com/meshcloud/building-block-runner/internal/build"
 	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/internal/dispatcher"
+	"github.com/meshcloud/building-block-runner/internal/logctx"
 )
 
 func main() {
-	logger := log.New(os.Stdout, "[RUNNER] ", log.LstdFlags)
-	logger.Printf("Build metadata: version=%s", build.Version)
-
-	cfg, err := config.LoadFile(config.FileFromEnv(), logger)
-	if err != nil {
-		logger.Fatal(err)
-	}
+	slog.SetDefault(slog.New(logctx.NewHandler(slog.NewTextHandler(os.Stdout, nil))))
 
 	ctx, stopOnSignal := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	// A second signal ends the process without waiting for the runs.
 	context.AfterFunc(ctx, stopOnSignal)
 
-	if err := serveMetrics(ctx, logger, ":"+cmp.Or(os.Getenv("PORT"), "2112")); err != nil {
-		logger.Fatal(err)
+	slog.InfoContext(ctx, "starting runner", "version", build.Version)
+	cfg, err := config.LoadFile(ctx, config.FileFromEnv())
+	if err != nil {
+		exit(ctx, err)
 	}
 
-	if err := dispatcher.Serve(ctx, cfg, logger); err != nil {
-		logger.Fatal(err)
+	if err := serveMetrics(ctx, ":"+cmp.Or(os.Getenv("PORT"), "2112")); err != nil {
+		exit(ctx, err)
+	}
+
+	if err := dispatcher.Serve(ctx, cfg); err != nil {
+		exit(ctx, err)
 	}
 }
 
-func serveMetrics(ctx context.Context, logger *log.Logger, addr string) error {
+func exit(ctx context.Context, err error) {
+	slog.ErrorContext(ctx, "runner failed", "error", err)
+	os.Exit(1)
+}
+
+func serveMetrics(ctx context.Context, addr string) error {
 	listener, err := new(net.ListenConfig).Listen(ctx, "tcp", addr)
 	if err != nil {
 		return err
@@ -50,10 +56,10 @@ func serveMetrics(ctx context.Context, logger *log.Logger, addr string) error {
 		_, _ = w.Write([]byte("OK"))
 	})
 	go func() {
-		logger.Printf("Serving metrics on %s", addr)
+		slog.InfoContext(ctx, "serving metrics", "addr", addr)
 		server := &http.Server{ReadHeaderTimeout: 10 * time.Second}
 		if err := server.Serve(listener); err != nil {
-			logger.Printf("Serving metrics failed: %v", err)
+			slog.ErrorContext(ctx, "serving metrics failed", "error", err)
 		}
 	}()
 	return nil

@@ -6,8 +6,6 @@ import (
 	"crypto/rsa"
 	"encoding/json/v2"
 	"errors"
-	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -86,7 +84,7 @@ func Test_ServeRunFile_ReportsTheFailureWithTheRunTokenAloneAndNoVersionCheck(t 
 	cfg.Dispatcher.ForTypes = config.RunnerTypes{config.RunnerTypeManual}
 	cfg.Dispatcher.Timeout = xtime.Minutes(60)
 
-	require.NoError(t, serveRunFile(t.Context(), cfg, log.New(io.Discard, "", 0), path))
+	require.NoError(t, serveRunFile(t.Context(), cfg, path))
 
 	bearer := "Bearer " + run.Spec.RunToken
 	assert.Equal(t, map[string]string{http.MethodPost: bearer, http.MethodPatch: bearer}, authorizations)
@@ -107,7 +105,7 @@ func Test_NewClient_RetriesUntilMeshfedAnswers(t *testing.T) {
 	newClient := func(endpoint string) error {
 		api := config.Api{Url: xurl.MustParse(endpoint)}
 		api.Auth.Basic = config.BasicAuth{Username: "user", Password: "password"}
-		_, err := newClientOnceMeshfedAnswers(t.Context(), log.New(io.Discard, "", 0), setting.SingleSource(api), 10*time.Millisecond)
+		_, err := newClientOnceMeshfedAnswers(t.Context(), setting.SingleSource(api), 10*time.Millisecond)
 		return err
 	}
 
@@ -162,7 +160,7 @@ func Test_Serve_FillsAnEmptyForTypesFromTheBuild(t *testing.T) {
 	cfg.Crypto = crypto.Crypto{PrivateKeys: crypto.PrivateKeys{{PrivateKey: key}}}
 	cfg.Dispatcher.Timeout = xtime.Minutes(60)
 
-	err = Serve(t.Context(), cfg, log.New(io.Discard, "", 0))
+	err = Serve(t.Context(), cfg)
 
 	assert.ErrorContains(t, err, "unsupported meshStack version", "the config passed validation and Serve contacted meshStack")
 }

@@ -3,8 +3,6 @@ package dispatcher
 import (
 	"crypto/rand"
 	"crypto/rsa"
-	"io"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -37,7 +35,7 @@ func Test_Register_NeedsAWorkspaceAndAddsTheWorkloadIdentity(t *testing.T) {
 		cfg := cfg
 		cfg.Api.Url = xurl.MustParse(server.URL)
 
-		err := Register(t.Context(), cfg, log.New(io.Discard, "", 0))
+		err := Register(t.Context(), cfg)
 
 		assert.EqualError(t, err, "dispatcher.register needs a workspace: set api.auth.workspace, MESHSTACK_WORKSPACE or the default workspace of the profile")
 	})

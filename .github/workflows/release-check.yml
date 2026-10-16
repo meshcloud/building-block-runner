@@ -2,7 +2,7 @@ name: Check Unreleased Commits
 
 on:
   schedule:
-    - cron: "0 6 * * 1-5" # 06:00 UTC on weekdays (Mon-Fri)
+    - cron: "0 6 * * 2" # 06:00 UTC on Tuesday
 
 jobs:
   check-unreleased:

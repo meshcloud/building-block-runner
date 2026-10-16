@@ -1,4 +1,4 @@
-# Go Testing for tf-block-runner
+# Go Testing
 
 ## Mandatory
 
@@ -10,21 +10,18 @@
 
 - Assertions: `github.com/stretchr/testify/assert` + `require`
 - Suite pattern: `github.com/stretchr/testify/suite` — use for tests that need shared setup (follow the existing `WorkerTestSuite` pattern)
-- Snapshot tests: `github.com/sebdah/goldie/v2` — for complex expected outputs; golden files live in `testdata/`, regenerate with `go test ./tfrun/... -update`
-- Mocks: hand-rolled fakes in `mockedtffacade.go` / `mockedgitfacade.go` — do NOT introduce new mock libraries
+- Snapshot tests: `github.com/sebdah/goldie/v2` — for complex expected outputs; golden files live in `testdata/`, regenerate with `go test ./<package>/... -update`
+- Mocks: hand-rolled fakes, such as `tfrun/mockedtffacade.go` / `tfrun/mockedgitfacade.go` — do NOT introduce new mock libraries
 
 ## Running Tests
 
 ```bash
-# All tests in the module
+# All tests, once per build tag an image uses
+task test
 
-cd tf-block-runner && go test ./...
 # Specific package with verbose output
-go test ./tfrun/... -v
+go test ./tf-block-runner/tfrun/... -v
 
 # Single test by name
-go test ./tfrun/... -run Test_PlanSucceeded -v
-
-# With race detector (recommended for concurrent code)
-go test -race ./...
+go test ./tf-block-runner/tfrun/... -run Test_PlanSucceeded -v
 ```

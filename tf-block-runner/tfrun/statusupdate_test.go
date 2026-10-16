@@ -11,8 +11,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-
-	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
 )
 
 var shortRetry = retrySchedule{initialDelay: time.Millisecond, maxDelay: 5 * time.Millisecond, attemptTimeout: 50 * time.Millisecond, giveUpAfter: 200 * time.Millisecond}
@@ -27,8 +25,7 @@ func runApiAnswering(t *testing.T, statuses ...int) (RunApi, *atomic.Int32) {
 	}))
 	t.Cleanup(server.Close)
 
-	auth := &runApiAuth{baseAuth: meshapi.BasicAuth{Username: "test-user", Password: "test-pass"}}
-	return &RunApiClient{auth: auth, client: meshapi.NewClient(server.URL, "test-runner", auth)}, &calls
+	return newTestRunApi(t, testRun(server.URL)), &calls
 }
 
 func TestUpdateStateWithRetry_DeliversOnceMeshfedIsBackAfterATransientStatus(t *testing.T) {
@@ -94,8 +91,7 @@ func TestUpdateStateWithRetry_GivesUpWhileMeshfedStaysDown(t *testing.T) {
 func TestUpdateStateWithRetry_RetriesWhenMeshfedIsUnreachable(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	server.Close()
-	auth := &runApiAuth{}
-	api := &RunApiClient{auth: auth, client: meshapi.NewClient(server.URL, "test-runner", auth)}
+	api := newTestRunApi(t, testRun(server.URL))
 
 	start := time.Now()
 	err := updateStateWithRetry(api, &RunStatus{RunId: "run", Status: FAILED}, shortRetry, log.New(io.Discard, "", 0))
@@ -114,8 +110,7 @@ func TestUpdateStateWithRetry_RetriesAnAttemptThatGetsNoAnswer(t *testing.T) {
 		w.Write([]byte("{}"))
 	}))
 	t.Cleanup(server.Close)
-	auth := &runApiAuth{}
-	api := &RunApiClient{auth: auth, client: meshapi.NewClient(server.URL, "test-runner", auth)}
+	api := newTestRunApi(t, testRun(server.URL))
 
 	err := updateStateWithRetry(api, &RunStatus{RunId: "run", Status: FAILED}, shortRetry, log.New(io.Discard, "", 0))
 
@@ -130,8 +125,7 @@ func TestUpdateStateWithRetry_GivesUpInTimeWhenNoAttemptGetsAnAnswer(t *testing.
 		stallUntilTestEnds(t)
 	}))
 	t.Cleanup(server.Close)
-	auth := &runApiAuth{}
-	api := &RunApiClient{auth: auth, client: meshapi.NewClient(server.URL, "test-runner", auth)}
+	api := newTestRunApi(t, testRun(server.URL))
 
 	start := time.Now()
 	err := updateStateWithRetry(api, &RunStatus{RunId: "run", Status: FAILED}, schedule, log.New(io.Discard, "", 0))

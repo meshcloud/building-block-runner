@@ -13,10 +13,11 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-exec/tfexec"
-	meshcrypto "github.com/meshcloud/building-block-runner/go-meshapi-client/crypto"
 	"github.com/sebdah/goldie/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/meshcloud/building-block-runner/internal/config/xurl"
 )
 
 //go:embed testdata/custom_meshStack_run_vars.tf
@@ -351,26 +352,13 @@ func Test_vars_WithSpecialCharacters(t *testing.T) {
 	assertContainsHCL(t, contentStr, `description = "This is a \"quoted\" string with \\backslashes\\"`)
 }
 
-func Test_vars_SensitiveCodeInputThatIsNoValidHcl_ValueNotInLog(t *testing.T) {
-	pubKey, err := os.ReadFile("../../go-meshapi-client/resources/test.pem")
-	require.NoError(t, err)
-	crypto, pubKeyErr, privKeyErr := meshcrypto.NewCertBasedCrypto("../../go-meshapi-client/resources/test.key", pubKey)
-	require.NoError(t, pubKeyErr)
-	require.NoError(t, privKeyErr)
-	previousCrypto := meshcrypto.Crypto
-	meshcrypto.Crypto = crypto
-	t.Cleanup(func() { meshcrypto.Crypto = previousCrypto })
-
-	encrypted, err := crypto.EncryptMeshCertBased(codeInputPlainText)
-	require.NoError(t, err)
-
+func Test_vars_CodeInputThatIsNoValidHcl_ValueNotInLog(t *testing.T) {
 	uut := makeTestGenericTfCmd(t)
 	updateLogPath := path.Join(t.TempDir(), "update.log")
 	uut.runContextInfo.logwrap = NewLogWrap(log.New(io.Discard, "[tfCmd_test] ", log.LstdFlags), updateLogPath)
 	uut.params.vars["secret_code"] = &Variable{
-		value:       encrypted,
-		Type:        DATA_TYPE_CODE,
-		isSensitive: true,
+		value: codeInputPlainText,
+		Type:  DATA_TYPE_CODE,
 	}
 
 	require.NoError(t, uut.vars())
@@ -666,17 +654,8 @@ func Test_buildTfEnv_WithoutMeshBackendFallback_DoesNotSetTfHttpBasicAuthEnv(t *
 }
 
 func Test_createMeshStackHttpBackendFile_MissingRunToken_ReturnsError(t *testing.T) {
-	originalConfig := AppConfig
-	AppConfig = TfRunnerConfig{
-		RunApiBackend: RunApiConfig{
-			Url:      "http://localhost:8080",
-			User:     "some-user",
-			Password: "top-secret",
-		},
-	}
-	t.Cleanup(func() { AppConfig = originalConfig })
-
 	uut := makeTestGenericTfCmd(t)
+	uut.params.cfg.Api.Url = xurl.MustParse("http://localhost:8080")
 	uut.runContextInfo.bbId = "test-bb-id"
 	uut.runContextInfo.workspaceIdentifier = "test-workspace"
 	// runToken deliberately left empty — simulates missing token from server
@@ -702,16 +681,8 @@ func Test_createMeshStackHttpBackendFile_MissingRunToken_ReturnsError(t *testing
 // buildTfEnv), so nothing secret is baked into a saved plan.
 // It also verifies that meshstackBaseUrl from the run links is used as the backend base URL.
 func Test_createMeshStackHttpBackendFile_WithRunToken(t *testing.T) {
-	originalConfig := AppConfig
-	// No credentials configured – simulates Kubernetes mode where none are injected.
-	AppConfig = TfRunnerConfig{
-		RunApiBackend: RunApiConfig{
-			Url: "http://fallback-url-should-not-be-used:8080",
-		},
-	}
-	t.Cleanup(func() { AppConfig = originalConfig })
-
 	uut := makeTestGenericTfCmd(t)
+	uut.params.cfg.Api.Url = xurl.MustParse("http://fallback-url-should-not-be-used:8080")
 	uut.runContextInfo.bbId = "test-bb-id"
 	uut.runContextInfo.workspaceIdentifier = "test-workspace"
 	uut.runContextInfo.runToken = "ephemeral-run-token"
@@ -749,4 +720,23 @@ func readGeneratedBackendFile(t *testing.T, workingDirectory string) []byte {
 	content, err := os.ReadFile(path.Join(workingDirectory, matches[0]))
 	require.NoError(t, err)
 	return content
+}
+
+func Test_RunnerCredentialsInTheProcessEnvironment_ReachNeitherTofuNorThePreRunScript(t *testing.T) {
+	credentials := []string{
+		"MESHSTACK_API_KEY", "MESHSTACK_API_SECRET", "MESHSTACK_API_TOKEN", "MESHSTACK_API_USERNAME", "MESHSTACK_API_PASSWORD",
+		"MESHSTACK_PROFILE", "MESHSTACK_WORKSPACE", "MESHSTACK_CONFIG_DIR", "RUNNER_API_CLIENT_SECRET", "RUNNER_API_PASSWORD",
+	}
+	for _, key := range credentials {
+		t.Setenv(key, "secret")
+	}
+
+	tfEnv, err := makeTestGenericTfCmd(t).buildTfEnv()
+	require.NoError(t, err)
+	scriptEnv := buildScriptEnvironmentVariables("/tf/bin", "/user-message.txt", tfEnv)
+
+	for _, key := range credentials {
+		assert.NotContains(t, tfEnv, key)
+		assert.NotContains(t, scriptEnv, key+"=secret")
+	}
 }

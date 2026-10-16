@@ -2,153 +2,83 @@ package tfrun
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"io"
 	"log"
-	"net/http"
+	"time"
+	"uuid"
 
-	meshapi "github.com/meshcloud/building-block-runner/go-meshapi-client/meshapi"
+	"github.com/meshcloud/meshstack-cli/client"
 )
 
-// runApiAuth implements meshapi.AuthProvider with Bearer token priority over a fallback AuthProvider.
-// The runToken pointer is updated by SetRunToken / ClearRunToken so the shared meshapi.Client
-// automatically picks up the latest auth value on every request.
-type runApiAuth struct {
-	runToken *string
-	baseAuth meshapi.AuthProvider
+const EP_State = "%s/api/terraform/state/workspace/%s/buildingBlock/%s"
+
+type RunApi struct {
+	client   client.MeshRunnerRunClient
+	runUuid  uuid.UUID
+	sourceId uuid.UUID
 }
 
-func (a *runApiAuth) AuthHeader() string {
-	if a.runToken != nil && *a.runToken != "" {
-		log.Printf("[AUTH] Using Bearer token for run-specific operations")
-		return "Bearer " + *a.runToken
-	}
-	if a.baseAuth != nil {
-		log.Printf("[AUTH] Using configured auth for API requests")
-		return a.baseAuth.AuthHeader()
-	}
-	return ""
+func NewRunApi(client client.MeshRunnerRunClient, runUuid, sourceId uuid.UUID) RunApi {
+	return RunApi{client: client, runUuid: runUuid, sourceId: sourceId}
 }
 
-type RunApiClient struct {
-	rid        string
-	baseURL    string
-	auth       *runApiAuth
-	client     *meshapi.Client
-	httpClient *http.Client
+func (api RunApi) DownloadPredecessorArtifact(ctx context.Context, w io.Writer) error {
+	return api.client.DownloadPlanArtifact(ctx, w)
 }
 
-const (
-	EP_State = "%s/api/terraform/state/workspace/%s/buildingBlock/%s"
-)
-
-type RunApi interface {
-	FetchRunDetails(nodePostfix string) (*Run, error)
-	UpdateState(ctx context.Context, status *RunStatus) (bool, error)
-	Register(status *RunStatus) error
-	SetRunToken(token string) // Set the runToken from the fetched run
-	ClearRunToken()           // Clear the runToken to force basic auth for next fetch
-	// DownloadPredecessorArtifact streams the bytes referenced by the given absolute URL
-	// (the runner-facing _links.planArtifact.href) into w using the current run authentication.
-	DownloadPredecessorArtifact(url string, w io.Writer) error
-	// UploadArtifact PUTs the raw plan bytes to the given absolute URL
-	// (the runner-facing _links.artifactUpload.href) using the current run authentication.
-	UploadArtifact(url string, artifact []byte) error
+func (api RunApi) UploadArtifact(ctx context.Context, path string) error {
+	return api.client.UploadArtifact(ctx, path)
 }
 
-func NewRunApi() RunApi {
-	auth := &runApiAuth{
-		runToken: nil,
-		baseAuth: AppConfig.RunApiBackend.NewAuthProvider(),
-	}
-
-	httpClient := &http.Client{}
-	return &RunApiClient{
-		rid:        AppConfig.RunnerUuid,
-		baseURL:    AppConfig.RunApiBackend.Url,
-		auth:       auth,
-		client:     meshapi.NewClient(AppConfig.RunApiBackend.Url, AppConfig.RunnerUuid, auth),
-		httpClient: httpClient,
-	}
-}
-
-// SetRunToken sets the runToken from the fetched run for subsequent API calls
-func (api *RunApiClient) SetRunToken(token string) {
-	api.auth.runToken = &token
-}
-
-// ClearRunToken clears the runToken to force basic auth for the next fetch.
-func (api *RunApiClient) ClearRunToken() {
-	api.auth.runToken = nil
-}
-
-func (api *RunApiClient) DownloadPredecessorArtifact(url string, w io.Writer) error {
-	return api.client.DownloadArtifact(url, w)
-}
-
-func (api *RunApiClient) UploadArtifact(url string, artifact []byte) error {
-	return api.client.UploadArtifact(url, artifact)
-}
-
-func (api *RunApiClient) FetchRunDetails(nodePostfix string) (*Run, error) {
-	requester := fmt.Sprintf("%s-%s", api.rid, nodePostfix)
-
-	// Use a client with the current auth but override the node ID
-	client := meshapi.NewClientWithHTTP(api.baseURL, requester, api.auth, api.httpClient)
-
-	dto, _, err := client.FetchRun(AppConfig.RunnerUuid)
-	if err != nil {
-		return nil, err
-	}
-
-	// Extract and store the runToken for subsequent API calls
-	api.SetRunToken(dto.Spec.RunToken)
-
-	return runDTOToInternal(dto)
-}
-
-func (api *RunApiClient) Register(runStatus *RunStatus) error {
-	steps := make([]meshapi.StepRegistrationDTO, 0)
+func (api RunApi) Register(ctx context.Context, runStatus *RunStatus) error {
+	steps := make([]client.MeshRunnerRunStepRegistration, 0, len(runStatus.Steps))
 	for _, s := range runStatus.Steps {
-		steps = append(steps, meshapi.StepRegistrationDTO{
-			Id:          s.Name,
-			DisplayName: s.DisplayName,
-			Status:      nil,
-		})
+		steps = append(steps, client.MeshRunnerRunStepRegistration{Id: s.Name, DisplayName: s.DisplayName})
 	}
-
-	registration := meshapi.RegistrationDTO{
-		Source: meshapi.SourceDTO{
-			Id: AppConfig.RunnerUuid,
-		},
-		Steps: steps,
-	}
-
-	if err := api.client.RegisterSource(runStatus.RunId, registration); err != nil {
+	err := api.client.RegisterSource(ctx, client.MeshRunnerRunSourceRegistration{
+		Source: client.MeshRunnerRunSource{Id: api.sourceId},
+		Steps:  steps,
+	})
+	if err != nil {
 		return err
 	}
-
-	// 409 Conflict is handled inside the shared client (treated as success).
-	log.Printf("[RUNNER] Registered source for run %s", runStatus.RunId)
+	log.Printf("[RUNNER] Registered source for run %s", api.runUuid)
 	return nil
 }
 
-func (api *RunApiClient) UpdateState(ctx context.Context, status *RunStatus) (bool, error) {
-	dto, err := status.toExternal()
+func (api RunApi) UpdateState(ctx context.Context, status *RunStatus) (abort bool, err error) {
+	result, err := api.client.PatchStatus(ctx, api.sourceId, api.statusUpdate(status))
 	if err != nil {
 		return false, err
 	}
+	return result.Abort, nil
+}
 
-	data, err := api.client.PatchStatus(ctx, status.RunId, AppConfig.RunnerUuid, dto)
-	if err != nil {
-		return false, err
+// statusUpdate sends steps as null when there are none, which keeps the steps meshStack has.
+func (api RunApi) statusUpdate(status *RunStatus) client.MeshRunnerRunStatusUpdate {
+	var steps []client.MeshRunnerRunStepStatusUpdate
+	for _, step := range status.Steps {
+		outputs := make(map[string]client.MeshRunnerRunOutput, len(step.Outputs))
+		for name, output := range step.Outputs {
+			outputs[name] = client.MeshRunnerRunOutput{Value: output.Value, Type: string(output.Type), Sensitive: output.Sensitive}
+		}
+		steps = append(steps, client.MeshRunnerRunStepStatusUpdate{
+			Id:            step.Name,
+			DisplayName:   step.DisplayName,
+			Status:        new(step.Status.str()),
+			UserMessage:   step.UserMessage,
+			SystemMessage: step.SystemMessage,
+			Outputs:       outputs,
+		})
 	}
-
-	var runUpdateResponse meshapi.RunUpdateResponseDTO
-	if err := json.Unmarshal(data, &runUpdateResponse); err != nil {
-		return false, err
+	return client.MeshRunnerRunStatusUpdate{
+		BlockRunId:      api.runUuid,
+		Source:          api.sourceId,
+		Type:            client.MeshRunnerImplementationTypeTerraform,
+		Status:          new(status.Status.str()),
+		CreatedOn:       time.Now(),
+		Summary:         status.Summary,
+		Steps:           steps,
+		ChangesDetected: status.ChangesDetected,
 	}
-
-	return runUpdateResponse.Abort, nil
 }

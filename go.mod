@@ -4,21 +4,21 @@ go 1.27
 
 require (
 	github.com/PaesslerAG/jsonpath v0.1.1
+	github.com/caarlos0/env/v11 v11.4.0
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/go-git/go-git/v5 v5.19.1
+	github.com/goccy/go-yaml v1.19.2
 	github.com/hashicorp/go-version v1.9.0
 	github.com/hashicorp/hc-install v0.9.5
 	github.com/hashicorp/hcl/v2 v2.24.0
 	github.com/hashicorp/terraform-exec v0.25.2
-	github.com/meshcloud/meshstack-cli v0.3.1-0.20261005102654-64c94ed4af09
+	github.com/meshcloud/meshstack-cli v0.4.2-0.20261013173635-9ab69a782f78
 	github.com/opentofu/tofudl v0.0.1
 	github.com/prometheus/client_golang v1.20.5
 	github.com/sebdah/goldie/v2 v2.8.0
 	github.com/stretchr/testify v1.12.1
 	github.com/zclconf/go-cty v1.18.1
 	golang.org/x/crypto v0.57.0
-	gopkg.in/yaml.v2 v2.4.0
-	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.34.1
 	k8s.io/apimachinery v0.34.1
 	k8s.io/client-go v0.34.1
@@ -283,6 +283,8 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gotest.tools/gotestsum v1.13.0 // indirect
 	honnef.co/go/tools v0.8.1 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect

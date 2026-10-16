@@ -5,14 +5,14 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-COPY go-meshapi-client/ ./go-meshapi-client/
+COPY internal/ ./internal/
+COPY cmd/ ./cmd/
 COPY tf-block-runner/ ./tf-block-runner/
 
-WORKDIR /app/tf-block-runner
 ARG VERSION=dev
 ARG TARGETOS
 ARG TARGETARCH
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -buildvcs=false -ldflags "-s -w -X 'github.com/meshcloud/building-block-runner/tf-block-runner/build.Version=${VERSION}'" -o tfrunner .
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -tags tf -trimpath -buildvcs=false -ldflags "-s -w -X 'github.com/meshcloud/building-block-runner/internal/build.Version=${VERSION}'" -o runner ./cmd/runner
 
 FROM alpine:3.22.4@sha256:310c62b5e7ca5b08167e4384c68db0fd2905dd9c7493756d356e893909057601
 
@@ -49,9 +49,9 @@ RUN set -eux; \
 ENV PATH="/home/meshcloud/.nix-profile/bin:${PATH}"
 ENV NIX_CONFIG="experimental-features = nix-command flakes"
 
-COPY --from=builder --chown=meshcloud:meshcloud --chmod=755 /app/tf-block-runner/tfrunner /app/tfrunner
-COPY --from=builder --chown=meshcloud:meshcloud /app/tf-block-runner/runner-config.yml /app/.
-COPY --from=builder --chown=meshcloud:meshcloud --chmod=644 /app/tf-block-runner/resources/known_hosts /app/known_hosts
+COPY --from=builder --chown=meshcloud:meshcloud --chmod=755 /app/runner /app/runner
+COPY --chown=meshcloud:meshcloud tf-block-runner/runner-config.yml /app/.
+COPY --chown=meshcloud:meshcloud --chmod=644 tf-block-runner/resources/known_hosts /app/known_hosts
 COPY --chown=meshcloud:meshcloud --chmod=755 containers/entrypoint-go.sh /app/entrypoint.sh
 
 ENV SSH_KNOWN_HOSTS=/app/known_hosts
@@ -59,4 +59,4 @@ ENV PORT=8080
 EXPOSE 8080
 
 WORKDIR /app
-ENTRYPOINT ["/app/entrypoint.sh", "/app/tfrunner"]
+ENTRYPOINT ["/app/entrypoint.sh", "/app/runner"]

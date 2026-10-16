@@ -23,6 +23,8 @@ type GitSource struct {
 	auth      auth
 	log       *logwrap
 	gitFacade GitFacade
+
+	skipHostKeyValidation bool
 }
 
 func (g *GitSource) setLog(log *logwrap) {
@@ -32,7 +34,7 @@ func (g *GitSource) setLog(log *logwrap) {
 
 func (g *GitSource) CopyToTargetDir(dir string) error {
 	securityStr := ""
-	if AppConfig.SkipHostKeyValidation {
+	if g.skipHostKeyValidation {
 		securityStr = "(insecure)"
 	}
 

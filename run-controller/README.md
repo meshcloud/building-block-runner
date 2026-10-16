@@ -24,3 +24,10 @@ go run .
 ```bash
 go test -tags inprocess ./...
 ```
+
+The meshStack workload identity token needs a real Keycloak to test. This starts one in Docker and tests against it:
+
+```bash
+task test:keycloak                          # Keycloak 26.8.1
+task test:keycloak KEYCLOAK_VERSION=26.4.7  # another version
+```

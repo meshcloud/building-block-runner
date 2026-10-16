@@ -34,7 +34,7 @@ func main() {
 
 	ctx, stopOnSignal := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 
-	dispatcher := newDispatcher(logger)
+	dispatcher := newDispatcher(ctx, logger)
 	registerController(ctx, logger)
 
 	http.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -68,10 +68,10 @@ func registerController(ctx context.Context, logger *log.Logger) {
 	}
 }
 
-func newDispatcher(logger *log.Logger) build.Dispatcher {
+func newDispatcher(ctx context.Context, logger *log.Logger) build.Dispatcher {
 	name := os.Getenv("RUNCONTROLLER_DISPATCHER")
 	if name == "" {
-		return controller.NewKubernetesDispatcher()
+		return controller.NewKubernetesDispatcher(ctx)
 	}
 	newNamedDispatcher, found := build.Dispatchers[name]
 	if !found {

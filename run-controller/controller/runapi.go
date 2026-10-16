@@ -25,6 +25,10 @@ type RunApi interface {
 }
 
 func newApi() RunApi {
+	return newRunApiClient()
+}
+
+func newRunApiClient() *RunApiClient {
 	return &RunApiClient{
 		url:     AppConfig.Api.Url,
 		metrics: NewMetricsCollector(),
@@ -109,5 +113,38 @@ func (api *RunApiClient) UpdateRunStatus(ctx context.Context, runId string, stat
 	}
 
 	log.Printf("Successfully reported %s status for run %s", status, runId)
+	return nil
+}
+
+const wifTokenStepId = "meshstack-wif-token"
+
+// A source of its own, because a runner whose source already exists does not register its steps.
+func (api *RunApiClient) ReportWifTokenMissing(ctx context.Context, runId string, reason string) error {
+	sourceId := AppConfig.Uuid + "-wif-token"
+	client := api.newMeshClient(fmt.Sprintf("%s-%s", requesterPrefix, AppConfig.Uuid))
+
+	registration := meshapi.RegistrationDTO{
+		Source: meshapi.SourceDTO{Id: sourceId},
+		Steps:  []meshapi.StepRegistrationDTO{{Id: wifTokenStepId, DisplayName: "meshStack workload identity token"}},
+	}
+	if err := client.RegisterSourceAt(ctx, fmt.Sprintf(meshapi.EPRunSourceRegistration, api.url, runId), registration); err != nil {
+		return fmt.Errorf("register source: %w", err)
+	}
+
+	status := "FAILED"
+	message := fmt.Sprintf("meshStack could not issue the workload identity token for this run: %s\n\n"+
+		"The run continues without %s. A step that signs in to a cloud with this file fails. "+
+		"The other workload identity tokens of this run are not affected.", reason, wifTokenPath)
+	update := meshapi.StatusUpdateDTO{
+		Steps: []meshapi.StepStatusUpdateDTO{{
+			Id:            wifTokenStepId,
+			DisplayName:   "meshStack workload identity token",
+			Status:        &status,
+			SystemMessage: &message,
+		}},
+	}
+	if _, err := client.PatchStatus(ctx, runId, sourceId, update); err != nil {
+		return fmt.Errorf("update status: %w", err)
+	}
 	return nil
 }

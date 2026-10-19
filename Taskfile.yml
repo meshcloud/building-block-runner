@@ -2,6 +2,7 @@ version: '3'
 
 vars:
   PACKAGES: ./...
+  BUILD_TAGS: ['', k8s, tf, manual]
 
 env:
   CGO_ENABLED: "0" # like the images, so building needs no C compiler
@@ -26,14 +27,11 @@ tasks:
       - go test -tags keycloak -count=1 -run Test_Keycloak ./run-controller/keycloakwif/
 
   lint:
-    desc: Run golangci-lint. Set PACKAGES to lint fewer, `-- --fix` to fix.
+    # Also formats, with the go/format of the Go release that `go tool` builds the linter with.
+    desc: Run golangci-lint for each build tag an image or `start:runner` uses. Set PACKAGES to lint fewer, `-- --fix` to fix.
     cmds:
-      - 'go tool golangci-lint run --build-tags inprocess {{.CLI_ARGS}} {{.PACKAGES}}'
-
-  fmt:
-    desc: Format the Go code
-    cmds:
-      - 'go tool golangci-lint fmt ./...'
+      - for: { var: BUILD_TAGS }
+        cmd: go tool golangci-lint run --build-tags '{{.ITEM}}' {{.CLI_ARGS}} {{.PACKAGES}}
 
   tidy:
     desc: Tidy go.mod and go.sum

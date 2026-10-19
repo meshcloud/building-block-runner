@@ -9,8 +9,7 @@ description: Go development conventions for the tf-block-runner service — load
 ## Mandatory Steps After Every Change
 
 ```bash
-task fmt
-task lint
+task lint -- --fix
 task test
 ```
 

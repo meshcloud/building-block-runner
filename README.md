@@ -99,8 +99,7 @@ If you are running a runner through a Docker image, it will default to PORT=8080
 
 ```bash
 task test          # run all Go tests
-task lint          # run golangci-lint, including the format check
-task fmt           # format Go code
+task lint          # run golangci-lint, including the format check; -- --fix formats and fixes
 task tidy          # tidy go.mod and go.sum
 ```
 

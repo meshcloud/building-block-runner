@@ -41,3 +41,7 @@ override.tf.json
 # CLI configuration files
 .terraformrc
 terraform.rc
+
+# Per-developer direnv setup, e.g. "use flake" with nix-direnv
+.envrc
+.direnv/

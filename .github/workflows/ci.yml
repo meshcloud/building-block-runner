@@ -164,7 +164,29 @@ jobs:
           # The step above already installed it; the action is here for the annotations it puts on
           # the pull request diff, which a bare `run:` does not produce.
           install-mode: none
-          args: --build-tags inprocess
+
+      - name: Lint with the k8s tag
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          install-mode: none
+          args: --build-tags k8s
+
+      - name: Lint with the tf tag
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          install-mode: none
+          args: --build-tags tf
+
+      - name: Lint with the manual tag
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          install-mode: none
+          args: --build-tags manual
+
+      - name: Suggest fix command on failure
+        if: failure()
+        run: |
+          echo "::error::Linting or formatting issues detected. Run 'task lint -- --fix' locally to automatically fix these issues, then commit the changes."
 
       # Binary coverage data (GOCOVERDIR format) rather than a text profile, because only the binary
       # form merges with the acceptance run's coverage. `-coverpkg=./...` matches what meshfed-release

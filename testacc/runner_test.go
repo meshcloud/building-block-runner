@@ -64,6 +64,7 @@ func (s localStack) createRunner(t *testing.T) string {
 
 func registrationUpdatesTheRunner(s localStack, runnerUuid string) func(*testing.T) {
 	return func(t *testing.T) {
+		t.Helper()
 		before, err := s.api.BuildingBlockRunner.Read(t.Context(), runnerUuid)
 		require.NoError(t, err)
 
@@ -87,6 +88,7 @@ func registrationUpdatesTheRunner(s localStack, runnerUuid string) func(*testing
 
 func claimWithoutWorkFindsNoRun(s localStack, runnerUuid string) func(*testing.T) {
 	return func(t *testing.T) {
+		t.Helper()
 		runnerAuth := meshapi.NewApiKeyAuth(s.endpoint, s.runnerKey, s.runnerSecret)
 		_, _, err := meshapi.NewClient(s.endpoint, runnerUuid, runnerAuth).FetchRun(runnerUuid)
 

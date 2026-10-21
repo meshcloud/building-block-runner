@@ -13,6 +13,7 @@ crypto:
 
 k8s:
   namespace: default
+  jobTtl: 90s
   jobSpecTemplates:
     ALL: # or '*'
       spec:

@@ -20,7 +20,7 @@ func newExecutor(cfg tfconfig.Config) (executor.Executor, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	tfBinaries, err := NewBinaries(filepath.Join(cfg.CacheDir, "bin"), cfg.AbortGrace.Duration, slog.NewLogLogger(slog.Default().Handler(), slog.LevelInfo).Writer())
+	tfBinaries, err := NewBinaries(filepath.Join(cfg.CacheDir, "bin"), cfg.AbortGrace.Duration)
 	if err != nil {
 		return nil, err
 	}
@@ -29,7 +29,7 @@ func newExecutor(cfg tfconfig.Config) (executor.Executor, error) {
 	}, nil
 }
 
-func Execute(ctx context.Context, executorRun executor.Run, cfg tfconfig.Config, tfBinaries *Binaries) error {
+func Execute(ctx context.Context, executorRun executor.Run, cfg tfconfig.Config, tfBinaries Binaries) error {
 	run, err := newRun(executorRun)
 	if err != nil {
 		return err

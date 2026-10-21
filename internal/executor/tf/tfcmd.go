@@ -54,7 +54,7 @@ type GenericCmd struct {
 	moduleDir            string
 	useWorkspaces        bool
 	keycloakWifTokenFile string
-	bin                  *Binaries
+	bin                  Binaries
 	reporter             *executor.Reporter
 	steps                tfSteps
 }
@@ -138,8 +138,7 @@ func (tfcmd *GenericCmd) selectWorkspace(ctx context.Context, tf Facade) (string
 			if err := tf.WorkspaceSelect(ctx, ws); err != nil {
 				return "", fmt.Errorf("select the workspace %s: %w", ws, timedOut(ctx, "tf workspace select", err))
 			}
-
-			return tfcmd.run.Spec.BuildingBlock.Uuid, nil
+			return ws, nil
 		}
 	}
 
@@ -157,6 +156,10 @@ func (tfcmd *GenericCmd) deleteWorkspaceIfNeeded(tf Facade) {
 	workspace, err := tfcmd.selectWorkspace(ctx, tf)
 	if err != nil {
 		slog.WarnContext(ctx, "finding the workspace to delete failed", "error", err)
+	}
+	if workspace == "" {
+		slog.InfoContext(ctx, "found no workspace to delete", "suggestedWorkspace", tfcmd.run.workspaceName(), "buildingBlockId", tfcmd.run.Spec.BuildingBlock.Uuid)
+		return
 	}
 
 	slog.InfoContext(ctx, "deleting the workspace", "workspace", workspace)

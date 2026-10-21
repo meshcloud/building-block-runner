@@ -1,0 +1,15 @@
+Host *
+  ConnectTimeout 30
+  ServerAliveInterval 15
+  ServerAliveCountMax 4
+{{- with .IdentityFile }}
+  IdentityFile {{ quote . }}
+  IdentitiesOnly yes
+{{- end }}
+{{- if .Insecure }}
+  UserKnownHostsFile /dev/null
+  StrictHostKeyChecking no
+{{- else }}
+  UserKnownHostsFile {{ range $i, $f := .KnownHostsFiles }}{{ if $i }} {{ end }}{{ quote $f }}{{ else }}none{{ end }}
+  StrictHostKeyChecking yes
+{{- end }}

@@ -153,7 +153,13 @@ jobs:
           go-version-file: go.mod
 
       - name: Build
-        run: go build ./...
+        run: |
+          for tags in '' k8s tf manual; do
+            go build -tags "$tags" ./...
+          done
+          for goos in darwin windows; do
+            GOOS="$goos" go build ./...
+          done
 
       - name: Check that go.mod and go.sum are tidy
         run: |
@@ -206,7 +212,9 @@ jobs:
       - name: Test
         run: |
           mkdir -p covdata/unit
-          go test -race -tags inprocess -coverpkg=./... ./... -args -test.gocoverdir="$PWD/covdata/unit"
+          for tags in '' k8s tf manual; do
+            go test -race -tags "$tags" -coverpkg=./... ./... -args -test.gocoverdir="$PWD/covdata/unit"
+          done
         env:
           CGO_ENABLED: "1" # the race detector needs cgo
 

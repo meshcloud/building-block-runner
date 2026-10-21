@@ -1,0 +1,5 @@
+tf:
+  initTimeout: 7
+  initRetries: 7
+dispatcher:
+  forTypes: [github]

@@ -2,7 +2,6 @@ package tf
 
 import (
 	"context"
-	"io"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -29,12 +28,12 @@ func makePreRunScriptCmd(t *testing.T, preRunScript *string, downloadTfBinaries 
 		steps:     steps,
 		run:       tfRun,
 		moduleDir: t.TempDir(),
-		bin:       &Binaries{dir: "/tmp/terraform-bin"},
+		bin:       Binaries{dir: "/tmp/terraform-bin"},
 	}
 
 	if downloadTfBinaries {
 		var err error
-		sut.bin, err = NewBinaries(t.TempDir(), time.Minute, io.Discard)
+		sut.bin, err = NewBinaries(t.TempDir(), time.Minute)
 		require.NoError(t, err)
 		_, err = sut.bin.install(t.Context(), tofuVersion)
 		require.NoError(t, err)

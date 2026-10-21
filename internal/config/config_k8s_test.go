@@ -5,6 +5,7 @@ package config
 import (
 	"maps"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -59,7 +60,7 @@ func Test_LoadK8s_ReadsTheNewAndTheLegacyLayouts(t *testing.T) {
 				Timeout:           xtime.Minutes(45),
 				KillGrace:         xtime.Seconds(150),
 			},
-			K8s: &K8s{Namespace: "default", JobSpecTemplates: templates},
+			K8s: &K8s{Namespace: "default", JobTtl: &xtime.Duration[xtime.Minute]{Duration: 90 * time.Second}, JobSpecTemplates: templates},
 			Tf:  tfConfig,
 		}, cfg)
 	})
@@ -169,6 +170,14 @@ func Test_ValidateK8s_NeedsANamespaceAndAnImagePerType(t *testing.T) {
 		require.NoError(t, cfg.ValidateK8s())
 		delete(cfg.K8s.JobSpecTemplates, RunnerTypeManual)
 		assert.EqualError(t, cfg.ValidateK8s(), "a job spec template needs a container runner with an image")
+	})
+
+	t.Run("fails with a negative jobTtl", func(t *testing.T) {
+		cfg := valid()
+		cfg.K8s.JobTtl = new(xtime.Minutes(-1))
+		require.EqualError(t, cfg.ValidateK8s(), "k8s.jobTtl must not be negative")
+		cfg.K8s.JobTtl = new(xtime.Minutes(0))
+		require.NoError(t, cfg.ValidateK8s())
 	})
 
 	t.Run("fails without image for a single type", func(t *testing.T) {

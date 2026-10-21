@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"time"
 
 	"github.com/meshcloud/meshstack-cli/client"
 
@@ -19,6 +20,9 @@ type Finished struct {
 	Failure  string
 	// Reported is called once meshStack accepted the failure report of the poller.
 	Reported func(context.Context)
+	// Started and RunnerType are known to k8s for a run of an earlier process.
+	Started    time.Time
+	RunnerType config.RunnerType
 }
 
 type InitState struct {

@@ -72,7 +72,8 @@ step log, which holds the tofu output of the customer, is logged at `debug` only
 
 Every runner exposes a `/healthz` endpoint that returns `200 OK` with body `OK`. This is intended for liveness probes in container orchestrators.
 
-The JVM runners listen on a dedicated
+The Go runner serves `/healthz` and `/metrics` on the port in `RUNNER_METRICS_PORT`, or in `PORT` when that is not set,
+and serves neither without them. The run-controller image sets `PORT=2112`, the tf and manual images `PORT=8080`. The JVM runners listen on a dedicated
 default port each, to avoid conflicts when running several runners locally alongside meshStack (which
 defaults to port 8080):
 

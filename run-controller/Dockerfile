@@ -24,6 +24,7 @@ RUN addgroup -S meshcloud -g 2000 && adduser -SD meshcloud -u 2000 -G meshcloud 
     chmod 0777 /etc/ssl/certs /usr/local/share/ca-certificates
 
 ENV CUSTOM_CA_CERTS_PATH=/usr/local/share/ca-certificates
+ENV PORT=2112
 
 COPY --from=builder --chown=meshcloud:meshcloud --chmod=755 /app/runner /app/runner
 COPY --chown=meshcloud:meshcloud run-controller/runner-config.yml /app/.

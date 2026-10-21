@@ -22,6 +22,7 @@ import (
 	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/internal/dispatcher"
 	"github.com/meshcloud/building-block-runner/internal/executor"
+	"github.com/meshcloud/building-block-runner/internal/metrics"
 )
 
 type Dispatcher struct {
@@ -127,7 +128,11 @@ func (d *Dispatcher) Dispatch(ctx context.Context, run dispatcher.Run, wifToken 
 func (d *Dispatcher) createServiceAccount(ctx context.Context, serviceAccount *corev1.ServiceAccount) error {
 	_, err := createRetrying(ctx, d.clientset.CoreV1().ServiceAccounts(d.cfg.K8s.Namespace).Create, serviceAccount)
 	if err != nil && !apierrors.IsAlreadyExists(err) {
+		metrics.ServiceAccountErrors.Inc()
 		return fmt.Errorf("create service account %s: %w", serviceAccount.Name, err)
+	}
+	if err == nil {
+		metrics.ServiceAccountsCreated.Inc()
 	}
 	return nil
 }

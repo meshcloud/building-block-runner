@@ -3,6 +3,7 @@ package main
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,6 +17,7 @@ import (
 	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/internal/dispatcher"
 	"github.com/meshcloud/building-block-runner/internal/executor"
+	"github.com/meshcloud/building-block-runner/internal/metrics"
 	"github.com/meshcloud/building-block-runner/internal/poller"
 )
 
@@ -86,5 +88,32 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return poller.Poll(ctx, cfg)
+	if cfg.Metrics == nil {
+		slog.InfoContext(ctx, "serving no metrics, as metrics.port is not set")
+		return poller.Poll(ctx, cfg)
+	}
+
+	metricsServer, err := metrics.Listen(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	// Metrics stay up while the poller waits for its runs after a signal.
+	metricsCtx, stopMetrics := context.WithCancel(context.WithoutCancel(ctx))
+	defer stopMetrics()
+	metricsStopped := make(chan error, 1)
+	go func() { metricsStopped <- metricsServer.Serve(metricsCtx) }()
+
+	serveCtx, stopServing := context.WithCancelCause(ctx)
+	defer stopServing(nil)
+	served := make(chan error, 1)
+	go func() { served <- poller.Poll(serveCtx, cfg) }()
+	select {
+	case err := <-metricsStopped:
+		metricsErr := fmt.Errorf("serve metrics: %w", err)
+		stopServing(metricsErr)
+		return errors.Join(metricsErr, <-served)
+	case err := <-served:
+		stopMetrics()
+		return errors.Join(err, <-metricsStopped)
+	}
 }

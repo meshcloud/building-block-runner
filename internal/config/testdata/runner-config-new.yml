@@ -106,6 +106,7 @@ tf:
   wsTimeout: 5m # timeout of each tofu workspace command
   initTimeout: 3m # timeout of tofu init
   cacheDir: /tmp/runner/tfcache
+  gitCloneAttempts: 3 # a clone retries only a network failure
   registryRetries: 3 # retries of each tofu registry request and provider download
   insecureHostKeys: false
   stopGrace: 90s # time tofu gets after SIGINT to save its state

@@ -150,7 +150,10 @@ jobs:
           go-version-file: go.mod
 
       - name: Build
-        run: go build ./...
+        run: |
+          for tags in '' k8s tf manual; do
+            go build -tags "$tags" ./...
+          done
 
       # Built here rather than downloaded by the action below: golangci-lint's formatters use the
       # go/format compiled into the binary, so the formatting they enforce comes from the Go release
@@ -194,7 +197,9 @@ jobs:
       - name: Test
         run: |
           mkdir -p covdata/unit
-          go test -race -tags inprocess -coverpkg=./... ./... -args -test.gocoverdir="$PWD/covdata/unit"
+          for tags in '' k8s tf manual; do
+            go test -race -tags "$tags" -coverpkg=./... ./... -args -test.gocoverdir="$PWD/covdata/unit"
+          done
         env:
           CGO_ENABLED: "1" # the race detector needs cgo
 

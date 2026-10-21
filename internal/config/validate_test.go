@@ -38,6 +38,7 @@ dispatcher.maxConcurrentJobs must not be 0, a negative value means unlimited`)
 		assert.EqualError(t, new(Config).Tf.Validate(), `tf.cacheDir is required
 tf.wsTimeout must be positive
 tf.initTimeout must be positive
+tf.gitCloneAttempts must be at least 1
 tf.stopGrace must be positive`)
 	})
 

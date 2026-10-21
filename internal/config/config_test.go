@@ -46,7 +46,7 @@ func Test_Load_ReadsTheNewAndTheLegacyLayouts(t *testing.T) {
 
 		cfg := load(t, []byte("tf:\n  wsTimeout: 7\ndispatcher:\n  forTypes: [github]\n"))
 
-		assert.Equal(t, tf.Config{CacheDir: filepath.Join(cfg.RunnerDir(), "tfcache"), WsTimeout: xtime.Minutes(7), InitTimeout: xtime.Minutes(1), RegistryRetries: 3, StopGrace: xtime.Seconds(60)}, cfg.Tf)
+		assert.Equal(t, tf.Config{CacheDir: filepath.Join(cfg.RunnerDir(), "tfcache"), WsTimeout: xtime.Minutes(7), InitTimeout: xtime.Minutes(1), GitCloneAttempts: 3, RegistryRetries: 3, StopGrace: xtime.Seconds(60)}, cfg.Tf)
 		assert.Equal(t, RunnerTypes{RunnerTypeTf, RunnerTypeManual, RunnerTypeAll}, cfg.Dispatcher.ForTypes)
 	})
 
@@ -61,7 +61,7 @@ func Test_Load_ReadsTheNewAndTheLegacyLayouts(t *testing.T) {
 				PrivateKeyFiles: crypto.PrivateKeyFiles{{Path: "./testdata/private-key.pem", PrivateKey: parsedPrivateKey(t)}},
 			},
 			Dispatcher: Dispatcher{ForTypes: RunnerTypes{RunnerTypeTf}, PollingInterval: xtime.Seconds(10), MaxConcurrentJobs: 1, Timeout: xtime.Minutes(60), KillGrace: xtime.Seconds(120)},
-			Tf:         tf.Config{CacheDir: "/tmp/runner/tfbin", WsTimeout: xtime.Minutes(5), InitTimeout: xtime.Minutes(3), RegistryRetries: 3, StopGrace: xtime.Seconds(60)},
+			Tf:         tf.Config{CacheDir: "/tmp/runner/tfbin", WsTimeout: xtime.Minutes(5), InitTimeout: xtime.Minutes(3), GitCloneAttempts: 3, RegistryRetries: 3, StopGrace: xtime.Seconds(60)},
 		}, cfg)
 	})
 

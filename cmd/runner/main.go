@@ -47,7 +47,7 @@ func main() {
 	}
 	slog.SetDefault(slog.New(dispatcher.NewLogHandler(handler)))
 
-	slog.InfoContext(ctx, "starting runner", "version", build.Version)
+	slog.InfoContext(ctx, "starting runner", "version", build.Version, "revision", build.Revision)
 	if err := run(ctx); err != nil {
 		slog.ErrorContext(ctx, "runner failed", "error", err)
 		os.Exit(1)

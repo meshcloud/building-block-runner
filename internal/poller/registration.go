@@ -12,6 +12,7 @@ import (
 	"github.com/meshcloud/meshstack-cli/pkg/setting"
 
 	"github.com/meshcloud/building-block-runner/internal/config"
+	"github.com/meshcloud/building-block-runner/internal/metrics"
 )
 
 var errCannotRegister = errors.New("cannot register the runner")
@@ -30,8 +31,10 @@ func register(ctx context.Context, cfg config.Config, sources setting.Sources, r
 		err = fmt.Errorf("%w: runner %s does not exist in meshStack, create it in the meshStack UI or API first: %w", errCannotRegister, cfg.Uuid, err)
 	}
 	if err != nil {
+		metrics.RegistrationErrors.Inc()
 		return fmt.Errorf("update the registration: %w", err)
 	}
+	metrics.RegistrationSuccess.Inc()
 	slog.InfoContext(ctx, "updated the registration", "runner", cfg.Uuid, "workspace", workspace)
 	return nil
 }

@@ -13,11 +13,12 @@ tasks:
       - task --list
 
   test:
-    desc: Run the Go tests. Set PACKAGES to test fewer.
+    desc: Run the Go tests for each build tag an image or `start:runner` uses. Set PACKAGES to test fewer.
     env:
       CGO_ENABLED: "1" # the race detector needs cgo
     cmds:
-      - go test -race -tags inprocess {{.CLI_ARGS}} {{.PACKAGES}}
+      - for: { var: BUILD_TAGS }
+        cmd: go test -race -tags '{{.ITEM}}' {{.CLI_ARGS}} {{.PACKAGES}}
 
   test:keycloak:
     desc: Test the meshStack WIF token against a real Keycloak in Docker. Set KEYCLOAK_VERSION to test another version.
@@ -39,14 +40,11 @@ tasks:
       - go mod tidy
 
   start:runner:
-    # The goal is to support every run type in process.
     desc: Run the ALL runner from source. Currently supports TERRAFORM and MANUAL and fails other runs immediately.
     env:
-      RUNCONTROLLER_CONFIG_FILE: run-controller/runner-config.yml
-      RUNCONTROLLER_DISPATCHER: inprocess
-      RUNNER_API_URL: http://127.0.0.1:8080
+      RUNNER_CONFIG_FILE: run-controller/local/runner-config.yml
     vars:
       COVER_ARGS: '{{if .GOCOVERDIR}}-cover -coverpkg=./...{{end}}'
     cmds:
-      - go build -tags inprocess {{.COVER_ARGS}} -o bin/run-controller ./run-controller
-      - bin/run-controller {{.CLI_ARGS}}
+      - go build {{.COVER_ARGS}} -o bin/runner ./cmd/runner
+      - bin/runner {{.CLI_ARGS}}

@@ -10,7 +10,7 @@ satellite {
                 RUNNER_API_URL: 'http://127.0.0.1:8080',
                 GOCOVERDIR: coverageDir()
     health 'http://127.0.0.1:2112/healthz'
-    // The task compiles run-controller first, and a cold go build cache takes minutes.
+    // The task compiles the runner first, and a cold go build cache takes minutes.
     startupMinutes = 10
     files 'Taskfile.yml', '**/runner-config.yml'
   }

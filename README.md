@@ -47,14 +47,13 @@ For general information about the meshStack platform and Building Blocks, see th
 
 This repository uses two separate build systems in parallel:
 
-- **Go** (`run-controller`, `tf-block-runner`, `manual-block-runner`, `go-meshapi-client`) shares one [Go module](go.mod) at the repository root.
+- **Go** shares one [Go module](go.mod) at the repository root. Its one binary, [`cmd/runner`](cmd/runner/), runs in the `run-controller`, `tf-block-runner` and `manual-block-runner` images.
 - **JVM modules** (`block-runner-core`, `github-block-runner`, `gitlab-block-runner`, `azure-devops-block-runner`) are managed via [Gradle](build.gradle). Each runner locks its dependency versions in a `gradle.lockfile`. Run `./gradlew resolveRunners --write-locks` after you change a dependency.
 
 Alongside the runners, the repository contains shared modules:
 
 - [`run-controller`](run-controller/) — Kubernetes controller that executes Building Block Runs via Kubernetes Jobs, supporting all runner implementations with parallel execution
 - [`block-runner-core`](block-runner-core/) — shared Kotlin library used by all JVM-based runners
-- [`go-meshapi-client`](go-meshapi-client/) — shared Go client for the meshcloud API
 
 Common tasks are available via [Task](https://taskfile.dev), which the [Nix](flake.nix) dev shell provides:
 
@@ -62,28 +61,28 @@ Common tasks are available via [Task](https://taskfile.dev), which the [Nix](fla
 task --list
 ```
 
+## Logs
+
+The Go runner logs at the level in `RUNNER_LOG_LEVEL`: `debug`, `info` (default), `warn` or `error`, and in the
+format in `RUNNER_LOG_FORMAT`: `text` (default) or `json`. A run process gets both, and `GOCOVERDIR` for a binary
+built with `-cover`. Each line of a
+step log, which holds the tofu output of the customer, is logged at `debug` only.
+
 ## Health endpoint
 
 Every runner exposes a `/healthz` endpoint that returns `200 OK` with body `OK`. This is intended for liveness probes in container orchestrators.
 
-Each runner listens on a dedicated default port to avoid conflicts when running multiple runners locally alongside meshStack (which defaults to port 8080):
+The JVM runners listen on a dedicated
+default port each, to avoid conflicts when running several runners locally alongside meshStack (which
+defaults to port 8080):
 
 | Runner                  | Default port |
 |-------------------------|--------------|
-| `tf-block-runner`       | 8100         |
 | `azure-devops-runner`   | 8101         |
 | `github-block-runner`   | 8102         |
 | `gitlab-block-runner`   | 8103         |
-| `manual-block-runner`   | 8104         |
 
-Override the port with the `PORT` environment variable:
-
-```bash
-PORT=9000 go run .           # tf-block-runner
-PORT=9000 ./gradlew bootRun  # JVM runners
-```
-
-If you are running a runner through a Docker image, it will default to PORT=8080 as well. You can still decide to override the `PORT` environment variable in your environment.
+Override their port with the `PORT` environment variable.
 
 ## Development
 
@@ -120,7 +119,7 @@ task start:runner
 
 ### Acceptance tests
 
-`testacc/` drives the runners' Go code in process against a live meshStack: run-controller's
+`testacc/` drives the runners' Go code in process against a live meshStack: the runner's
 registration and a claim on an empty queue, for a runner the suite creates with the hosted-runner
 API key. A whole meshStack only exists in the meshcloud-internal mono repo `meshfed-release`, so CI
 here does not run the suite. `.github/workflows/test-acceptance.yml` asks that repository for the

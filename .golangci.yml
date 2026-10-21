@@ -16,10 +16,7 @@ formatters:
         - localmodule
   exclusions:
     paths:
-      - ^tf-block-runner/
-      - ^go-meshapi-client/
-      - ^run-controller/
-      - ^manual-block-runner/
+      - ^run-controller/keycloakwif/
 
 linters:
   # Every linter, minus the list below, so a rejection is a line here with a reason.
@@ -73,11 +70,8 @@ linters:
 
   exclusions:
     paths:
-      # These predate this linter set; each gets the same rules once it is reworked.
-      - ^tf-block-runner/
-      - ^go-meshapi-client/
-      - ^run-controller/
-      - ^manual-block-runner/
+      # They predate this linter set.
+      - ^run-controller/keycloakwif/
     rules:
       # In test code the testing.T comes first, before a context.
       - linters:
@@ -147,6 +141,14 @@ linters:
     godoclint:
       default: basic
 
+    unused:
+      field-writes-are-uses: false
+      exported-fields-are-used: false
+      local-variables-are-used: false
+
+    errcheck:
+      check-type-assertions: true
+
     exhaustive:
       default-signifies-exhaustive: true
 
@@ -187,7 +189,9 @@ linters:
         main:
           files:
             - $all
-            - "!**/tf-block-runner/**/*.go"
+            - "!**/internal/executor/tf/*.go"
           deny:
             - pkg: encoding/json$
               desc: Use encoding/json/v2
+            - pkg: log$
+              desc: Use log/slog instead

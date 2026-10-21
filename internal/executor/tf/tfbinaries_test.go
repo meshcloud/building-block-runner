@@ -2,10 +2,12 @@ package tf
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -65,7 +67,94 @@ func TestAccGetTF(t *testing.T) {
 		_, err = uut.GetTF(context.Background(), t.TempDir(), opentofuVersion)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, listTfBinariesInstallDir(t, uut, opentofuVersion), []string{"terraform", "tofu"})
+		_, err = os.Stat(filepath.Join(uut.dir, opentofuVersion, "terraform"))
+		assert.NoError(t, err, "the terraform link does not resolve")
 	})
+}
+
+func Test_Lock_HoldsTheInstallOfAVersionAgainstAnotherHolder(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		uut, err := NewTfBin(t.TempDir(), time.Minute, io.Discard)
+		require.NoError(t, err)
+		unlock, err := uut.lock(t.Context(), "1.11.0")
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+		defer cancel()
+		_, err = uut.lock(ctx, "1.11.0")
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+
+		unlock()
+		unlockAgain, err := uut.lock(t.Context(), "1.11.0")
+		require.NoError(t, err)
+		unlockAgain()
+	})
+}
+
+func Test_Install_UsesOnlyCompleteVersionDirs(t *testing.T) {
+	uut, err := NewTfBin(t.TempDir(), time.Minute, io.Discard)
+	require.NoError(t, err)
+	var downloads []string
+	uut.download = func(_ context.Context, ver, dir string) (string, error) {
+		downloads = append(downloads, ver)
+		if ver == "1.12.0" {
+			return "", errors.New("connection reset")
+		}
+		return tofuBinaryName, os.WriteFile(filepath.Join(dir, tofuBinaryName), nil, 0o600)
+	}
+	binDirEntries := func(t *testing.T) []string {
+		t.Helper()
+		entries, err := os.ReadDir(uut.dir)
+		require.NoError(t, err)
+		var names []string
+		for _, entry := range entries {
+			names = append(names, entry.Name())
+		}
+		return names
+	}
+
+	t.Run("removes an interrupted install and installs again", func(t *testing.T) {
+		require.NoError(t, os.MkdirAll(filepath.Join(uut.dir, "1.11.0.tmp-123", tofuBinaryName), 0o700))
+
+		execPath, err := uut.install(t.Context(), "1.11.0")
+
+		require.NoError(t, err)
+		assert.Equal(t, filepath.Join(uut.dir, "1.11.0", tofuBinaryName), execPath)
+		assert.FileExists(t, execPath)
+		assert.Equal(t, []string{"1.11.0"}, binDirEntries(t))
+	})
+
+	t.Run("a failed download leaves nothing behind", func(t *testing.T) {
+		_, err := uut.install(t.Context(), "1.12.0")
+
+		require.EqualError(t, err, "download tf 1.12.0: connection reset")
+		assert.Equal(t, []string{"1.11.0"}, binDirEntries(t))
+	})
+
+	t.Run("uses tofu from the older layout", func(t *testing.T) {
+		versionDir := filepath.Join(uut.dir, "1.10.0")
+		require.NoError(t, os.Mkdir(versionDir, 0o700))
+		require.NoError(t, os.WriteFile(filepath.Join(versionDir, "terraform"), nil, 0o600))
+		require.NoError(t, os.Symlink(filepath.Join(versionDir, "terraform"), filepath.Join(versionDir, tofuBinaryName)))
+
+		execPath, err := uut.install(t.Context(), "1.10.0")
+
+		require.NoError(t, err)
+		assert.Equal(t, filepath.Join(versionDir, tofuBinaryName), execPath)
+	})
+
+	t.Run("uses an installed Terraform", func(t *testing.T) {
+		versionDir := filepath.Join(uut.dir, "1.5.5")
+		require.NoError(t, os.Mkdir(versionDir, 0o700))
+		require.NoError(t, os.WriteFile(filepath.Join(versionDir, "terraform"), nil, 0o600))
+
+		execPath, err := uut.install(t.Context(), "1.5.5")
+
+		require.NoError(t, err)
+		assert.Equal(t, filepath.Join(versionDir, "terraform"), execPath)
+	})
+
+	assert.Equal(t, []string{"1.11.0", "1.12.0"}, downloads)
 }
 
 func listTfBinariesInstallDir(t *testing.T, uut *TfBinaries, version string) (names []string) {

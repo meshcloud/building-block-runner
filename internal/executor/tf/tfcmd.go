@@ -138,12 +138,10 @@ func (tfcmd *GenericTfCmd) selectWorkspace(tf TfFacade) (string, error) {
 	for _, ws := range available {
 		if strings.HasSuffix(ws, tfcmd.run.Spec.BuildingBlock.Uuid) {
 			slog.InfoContext(tfcmd.ctx, "switching to the existing workspace", "workspace", ws)
-			err = tf.WorkspaceSelect(wsCtx, ws)
-			if err != nil {
-				return "", nil
+			if err := tf.WorkspaceSelect(wsCtx, ws); err != nil {
+				return "", fmt.Errorf("select the workspace %s: %w", ws, err)
 			}
-
-			return tfcmd.run.Spec.BuildingBlock.Uuid, nil
+			return ws, nil
 		}
 	}
 
@@ -161,6 +159,10 @@ func (tfcmd *GenericTfCmd) deleteWorkspaceIfNeeded(tf TfFacade) {
 	workspace, err := tfcmd.selectWorkspace(tf)
 	if err != nil {
 		slog.WarnContext(tfcmd.ctx, "finding the workspace to delete failed", "error", err)
+	}
+	if workspace == "" {
+		slog.InfoContext(tfcmd.ctx, "found no workspace to delete", "suggestedWorkspace", tfcmd.run.workspaceName(), "buildingBlockId", tfcmd.run.Spec.BuildingBlock.Uuid)
+		return
 	}
 
 	slog.InfoContext(tfcmd.ctx, "deleting the workspace", "workspace", workspace)

@@ -29,7 +29,8 @@ type Config struct {
 	Crypto     crypto.Crypto `yaml:"crypto" envPrefix:"CRYPTO_"`
 	Dispatcher Dispatcher    `yaml:"dispatcher" envPrefix:"DISPATCHER_"`
 
-	K8s *K8s `yaml:"k8s" envPrefix:"K8S_"`
+	Metrics *Metrics `yaml:"metrics" env:",init" envPrefix:"METRICS_"`
+	K8s     *K8s     `yaml:"k8s" envPrefix:"K8S_"`
 
 	Tf tf.Config `yaml:"tf" envPrefix:"TF_"`
 }
@@ -77,6 +78,10 @@ func Load(ctx context.Context, data []byte) (Config, error) {
 	}
 	if err := applyEnvironment(ctx, &cfg); err != nil {
 		return Config{}, fmt.Errorf("environment: %w", err)
+	}
+	// env always allocates Metrics and KeycloakWif, so nil must be restored for a runner without them.
+	if *cfg.Metrics == (Metrics{}) {
+		cfg.Metrics = nil
 	}
 	if wif := cfg.Dispatcher.KeycloakWif; *wif == (KeycloakWif{}) {
 		cfg.Dispatcher.KeycloakWif = nil

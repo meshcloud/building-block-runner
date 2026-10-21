@@ -10,10 +10,12 @@ import (
 	"uuid"
 
 	"github.com/meshcloud/meshstack-cli/client"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/internal/dispatcher"
 	"github.com/meshcloud/building-block-runner/internal/executor"
+	"github.com/meshcloud/building-block-runner/internal/metrics"
 )
 
 // maxClaimsPerCycleWhenUnlimited guards against an API that never runs out of runs.
@@ -33,7 +35,9 @@ type poller struct {
 
 // activeRun is zero for a run that an earlier process started.
 type activeRun struct {
-	run dispatcher.Run
+	run        dispatcher.Run
+	started    time.Time
+	runnerType config.RunnerType
 }
 
 func newPoller(cfg config.Config, api client.MeshRunnerClient, runs dispatcher.Dispatcher, stopDispatcher context.CancelFunc, running []uuid.UUID, keycloakWif *dispatcher.KeycloakWif) *poller {
@@ -41,6 +45,7 @@ func newPoller(cfg config.Config, api client.MeshRunnerClient, runs dispatcher.D
 	for _, runUuid := range running {
 		active[runUuid] = activeRun{}
 	}
+	metrics.ActiveRuns.Set(float64(len(active)))
 	return &poller{cfg: cfg, api: api, dispatcher: runs, stopDispatcher: stopDispatcher, keycloakWif: keycloakWif, active: active}
 }
 
@@ -101,7 +106,7 @@ func (p *poller) capacity() int {
 }
 
 func (p *poller) claimAndStart(ctx context.Context) (claimed bool) {
-	run, err := p.api.ClaimRun(ctx, p.cfg.Uuid)
+	run, err := p.claim(ctx)
 	switch {
 	case errors.Is(err, client.ErrNoRunToClaim):
 		return false
@@ -111,6 +116,7 @@ func (p *poller) claimAndStart(ctx context.Context) (claimed bool) {
 	}
 	decrypted, err := p.cfg.Crypto.DecryptRun(run)
 	if err != nil {
+		metrics.StartErrors.WithLabelValues(metrics.ErrorTypeDecryption).Inc()
 		p.noteUnreported(ctx, p.reportFailure(dispatcher.WithRun(ctx, run), run.Metadata.Uuid, "Failed to decrypt the run: "+err.Error()))
 		return true
 	}
@@ -118,19 +124,35 @@ func (p *poller) claimAndStart(ctx context.Context) (claimed bool) {
 	return true
 }
 
+func (p *poller) claim(ctx context.Context) (dispatcher.Run, error) {
+	defer prometheus.NewTimer(metrics.ClaimDuration).ObserveDuration()
+	run, err := p.api.ClaimRun(ctx, p.cfg.Uuid)
+	if err != nil && !errors.Is(err, client.ErrNoRunToClaim) {
+		metrics.ClaimErrors.Inc()
+	}
+	return run, err
+}
+
 func (p *poller) start(ctx context.Context, run dispatcher.Run) error {
 	ctx = dispatcher.WithRun(ctx, run)
 	runnerType, _ := executor.RunnerTypeOf(run)
 	slog.InfoContext(ctx, "starting run", "behavior", run.Spec.Behavior, "runnerType", runnerType)
+	timer := prometheus.NewTimer(metrics.StartDuration)
 	wifToken, err := p.issueWifToken(ctx, run)
 	if err != nil {
 		slog.ErrorContext(ctx, "issuing the workload identity token failed", "error", err)
+		metrics.StartErrors.WithLabelValues(metrics.ErrorTypeWifToken).Inc()
 		return p.reportFailure(ctx, run.Metadata.Uuid, wifTokenFailure)
 	}
-	if err = p.dispatcher.Dispatch(ctx, run, wifToken); err != nil {
+	err = p.dispatcher.Dispatch(ctx, run, wifToken)
+	timer.ObserveDuration()
+	if err != nil {
+		metrics.StartErrors.WithLabelValues(startErrorType(err)).Inc()
 		return p.reportFailure(ctx, run.Metadata.Uuid, "Failed to start the run: "+err.Error())
 	}
-	p.active[run.Metadata.Uuid] = activeRun{run: run}
+	metrics.RunsStarted.Inc()
+	p.active[run.Metadata.Uuid] = activeRun{run: run, started: time.Now(), runnerType: runnerType}
+	metrics.ActiveRuns.Set(float64(len(p.active)))
 	return nil
 }
 
@@ -141,9 +163,18 @@ func (p *poller) issueWifToken(ctx context.Context, run dispatcher.Run) (string,
 	return p.keycloakWif.Issue(ctx, run)
 }
 
+func startErrorType(err error) string {
+	if errors.Is(err, dispatcher.ErrRunTooLarge) {
+		return metrics.ErrorTypeRunTooLarge
+	}
+	return metrics.ErrorTypeStart
+}
+
 func (p *poller) track(ctx context.Context, finished dispatcher.Finished) error {
 	active := p.active[finished.RunUuid]
 	delete(p.active, finished.RunUuid)
+	metrics.ActiveRuns.Set(float64(len(p.active)))
+	observeRunDuration(finished, active)
 	run := active.run
 	run.Metadata.Uuid = finished.RunUuid
 	ctx = dispatcher.WithRun(ctx, run)
@@ -164,6 +195,19 @@ func (p *poller) track(ctx context.Context, finished dispatcher.Finished) error 
 		finished.Reported(ctx)
 	}
 	return nil
+}
+
+func observeRunDuration(finished dispatcher.Finished, active activeRun) {
+	started := cmp.Or(finished.Started, active.started)
+	runnerType := cmp.Or(finished.RunnerType, active.runnerType)
+	if started.IsZero() || runnerType == "" {
+		return
+	}
+	result := metrics.ResultSucceeded
+	if finished.ExitCode != executor.ExitStatusDelivered {
+		result = metrics.ResultFailed
+	}
+	metrics.RunDuration.WithLabelValues(runnerType.ForApi(), result).Observe(time.Since(started).Seconds())
 }
 
 // reportFailure registers this runner as a source, as no other source may exist for the run.

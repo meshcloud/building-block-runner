@@ -17,6 +17,7 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 
+	"github.com/meshcloud/building-block-runner/internal/config"
 	"github.com/meshcloud/building-block-runner/internal/dispatcher"
 	"github.com/meshcloud/building-block-runner/internal/executor"
 )
@@ -79,12 +80,12 @@ func (d *Dispatcher) observe(ctx context.Context, obj any) {
 		d.running[runUuid] = true
 	case exitCode == executor.ExitUndelivered && !d.reported[runUuid]:
 		delete(d.running, runUuid)
-		if d.send(d.failed(runUuid, failureOf(job))) {
+		if d.send(d.failed(job, runUuid, failureOf(job))) {
 			d.reported[runUuid] = true
 		}
 	case d.running[runUuid]:
 		delete(d.running, runUuid)
-		d.send(dispatcher.Finished{RunUuid: runUuid, ExitCode: exitCode})
+		d.send(finishedFrom(job, runUuid, exitCode))
 	}
 }
 
@@ -99,7 +100,7 @@ func (d *Dispatcher) observeDeleted(ctx context.Context, obj any) {
 	}
 	if runUuid, ok := d.runUuid(ctx, job); ok && d.running[runUuid] {
 		delete(d.running, runUuid)
-		d.send(d.failed(runUuid, fmt.Sprintf("The Kubernetes Job %s was deleted before it finished.", job.Name)))
+		d.send(d.failed(job, runUuid, fmt.Sprintf("The Kubernetes Job %s was deleted before it finished.", job.Name)))
 	}
 }
 
@@ -112,13 +113,21 @@ func (d *Dispatcher) send(finished dispatcher.Finished) bool {
 	}
 }
 
-func (d *Dispatcher) failed(runUuid uuid.UUID, failure string) dispatcher.Finished {
-	return dispatcher.Finished{
-		RunUuid:  runUuid,
-		ExitCode: executor.ExitUndelivered,
-		Failure:  failure,
-		Reported: func(ctx context.Context) { d.markReported(ctx, runUuid) },
+func (d *Dispatcher) failed(job *batchv1.Job, runUuid uuid.UUID, failure string) dispatcher.Finished {
+	finished := finishedFrom(job, runUuid, executor.ExitUndelivered)
+	finished.Failure = failure
+	finished.Reported = func(ctx context.Context) { d.markReported(ctx, runUuid) }
+	return finished
+}
+
+// finishedFrom takes the start from the Job, which also knows it for a run of an earlier process.
+func finishedFrom(job *batchv1.Job, runUuid uuid.UUID, exitCode int) dispatcher.Finished {
+	started := job.CreationTimestamp.Time
+	if job.Status.StartTime != nil {
+		started = job.Status.StartTime.Time
 	}
+	runnerType, _ := config.ParseRunnerType(job.Labels[labelRunnerType])
+	return dispatcher.Finished{RunUuid: runUuid, ExitCode: exitCode, Started: started, RunnerType: runnerType}
 }
 
 func (d *Dispatcher) markReported(ctx context.Context, runUuid uuid.UUID) {

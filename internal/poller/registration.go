@@ -12,6 +12,7 @@ import (
 	"github.com/meshcloud/meshstack-cli/pkg/setting"
 
 	"github.com/meshcloud/building-block-runner/internal/config"
+	"github.com/meshcloud/building-block-runner/internal/metrics"
 )
 
 // Register updates the registration of a runner without workload identity.
@@ -47,6 +48,7 @@ func updateRegistration(ctx context.Context, runners client.MeshBuildingBlockRun
 	for {
 		_, err := runners.Update(ctx, registration)
 		if err == nil {
+			metrics.RegistrationSuccess.Inc()
 			slog.InfoContext(ctx, "updated the registration")
 			return nil
 		}
@@ -54,6 +56,7 @@ func updateRegistration(ctx context.Context, runners client.MeshBuildingBlockRun
 			// meshStack rejects a client-chosen uuid, so the runner cannot create itself.
 			err = fmt.Errorf("runner %s does not exist in meshStack, create it in the meshStack UI or API first: %w", runnerUuid, err)
 		}
+		metrics.RegistrationErrors.Inc()
 		slog.WarnContext(ctx, "updating the registration failed, retrying", "retryIn", meshfedStartRetryInterval, "error", err)
 		select {
 		case <-ctx.Done():

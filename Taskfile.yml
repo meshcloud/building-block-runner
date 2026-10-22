@@ -32,6 +32,15 @@ tasks:
     cmds:
       - go mod tidy
 
+  debug:minikube:
+    desc: Run the k8s dispatcher on this machine against the local stack, starting each run as a Job in minikube.
+    env:
+      RUNNER_CONFIG_FILE: run-controller/runner-config.yml
+    cmds:
+      - minikube start
+      - kubectl config use-context minikube
+      - go run -tags k8s ./cmd/runner {{.CLI_ARGS}}
+
   start:runner:
     desc: Run the ALL runner from source. Currently supports TERRAFORM and MANUAL and fails other runs immediately.
     env:

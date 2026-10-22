@@ -10,7 +10,7 @@ require (
 	github.com/hashicorp/hc-install v0.9.5
 	github.com/hashicorp/hcl/v2 v2.24.0
 	github.com/hashicorp/terraform-exec v0.25.2
-	github.com/meshcloud/meshstack-cli v0.6.1-0.20261022142745-125648be7ac5
+	github.com/meshcloud/meshstack-cli v0.6.1-0.20261022160859-da601364acb8
 	github.com/opentofu/tofudl v0.0.1
 	github.com/prometheus/client_golang v1.20.5
 	github.com/sebdah/goldie/v2 v2.8.0

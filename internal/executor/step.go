@@ -45,6 +45,13 @@ func (s *Step) Run(fn func() error) error {
 	return err
 }
 
+// SetStatus leaves the status of the run alone, so a step can mirror the job of an external pipeline.
+func (s *Step) SetStatus(status Status) {
+	s.r.mu.Lock()
+	defer s.r.mu.Unlock()
+	s.status = status
+}
+
 // Write logs each line at debug only, as the step log holds the customer's tofu output.
 func (s *Step) Write(p []byte) (int, error) {
 	s.r.mu.Lock()
@@ -76,6 +83,10 @@ func (s *Step) SetOutputs(outputs map[string]client.MeshRunnerRunOutput) {
 	s.r.mu.Lock()
 	defer s.r.mu.Unlock()
 	s.outputs = outputs
+}
+
+func (s *Step) running() bool {
+	return s.status == StatusPending || s.status == StatusInProgress
 }
 
 func line(format string, args ...any) string {

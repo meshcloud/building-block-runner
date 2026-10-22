@@ -131,6 +131,70 @@ func Test_StepRun_FailsTheRunKeepingAnEarlierUserMessage(t *testing.T) {
 	}
 }
 
+func Test_Step_AddedAfterRegisterGoesOutWithTheNextUpdate(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		api := &recordingRunApi{}
+		r := NewReporter(api, runnerUuid)
+		trigger := r.Step("trigger", "Trigger")
+		require.NoError(t, r.Register(t.Context()))
+		stop := r.observe(t.Context(), func(error) {})
+		defer stop()
+
+		require.NoError(t, trigger.Run(func() error {
+			r.Step("job-1", "GitHub Job: deploy").SetStatus(StatusInProgress)
+			synctest.Sleep(statusUpdateInterval)
+			return nil
+		}))
+
+		require.Len(t, api.last.Steps, 2)
+		job := api.last.Steps[1]
+		assert.Equal(t, "job-1", job.Id)
+		assert.Equal(t, "GitHub Job: deploy", job.DisplayName)
+		assert.Equal(t, "IN_PROGRESS", *job.Status)
+	})
+}
+
+func Test_StepSetStatus_LeavesTheRunStatusAlone(t *testing.T) {
+	api := &recordingRunApi{}
+	r := NewReporter(api, runnerUuid)
+	trigger := r.Step("trigger", "Trigger")
+	require.NoError(t, r.Register(t.Context()))
+
+	require.NoError(t, trigger.Run(func() error {
+		r.Step("job-1", "Build").SetStatus(StatusSucceeded)
+		r.Step("job-2", "Optional check").SetStatus(StatusFailed)
+		return nil
+	}))
+	status, err := r.Finish(t.Context())
+
+	require.NoError(t, err)
+	assert.Equal(t, StatusSucceeded, status)
+	assert.Equal(t, "SUCCEEDED", *api.last.Status)
+	var statuses []string
+	for _, step := range api.last.Steps {
+		statuses = append(statuses, *step.Status)
+	}
+	assert.Equal(t, []string{"SUCCEEDED", "SUCCEEDED", "FAILED"}, statuses)
+}
+
+func Test_Finish_FailsTheFirstStepThatDidNotEnd(t *testing.T) {
+	api := &recordingRunApi{}
+	r := NewReporter(api, runnerUuid)
+	r.Step("trigger", "Trigger").SetStatus(StatusSucceeded)
+	r.Step("job-1", "Optional check").SetStatus(StatusFailed)
+	r.Step("job-2", "Deploy").SetStatus(StatusInProgress)
+	require.NoError(t, r.Register(t.Context()))
+
+	status, err := r.Finish(t.Context())
+
+	require.NoError(t, err)
+	assert.Equal(t, StatusFailed, status)
+	steps := api.last.Steps
+	assert.Equal(t, []string{"SUCCEEDED", "FAILED", "FAILED"}, []string{*steps[0].Status, *steps[1].Status, *steps[2].Status})
+	assert.Nil(t, steps[1].UserMessage)
+	assert.Equal(t, "The run ended without a final status.\n", *steps[2].UserMessage)
+}
+
 type countingRunApi struct {
 	acceptingRunApi
 

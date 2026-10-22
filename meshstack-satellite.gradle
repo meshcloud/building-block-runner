@@ -18,8 +18,14 @@ satellite {
   acceptance {
     run = 'TestAcc'
     services 'meshfed-api', 'block-coordinator-api'
+    files 'internal/testacc/testdata/**'
     environment BUILDING_BLOCK_RUNNER_TEST_ACC: '1',
-                MESHSTACK_API_KEY: fromBackendConfig('auth.openid.apiKeys.meshcloud-hosted-runner.clientId'),
-                MESHSTACK_API_SECRET: fromBackendConfig('auth.openid.apiKeys.meshcloud-hosted-runner.clientSecret')
+                MESHSTACK_API_KEY: fromBackendConfig('auth.openid.apiKeys.terraform-provider-acceptance.clientId'),
+                MESHSTACK_API_SECRET: fromBackendConfig('auth.openid.apiKeys.terraform-provider-acceptance.clientSecret'),
+                RUNNER_API_CLIENT_ID: fromBackendConfig('auth.openid.apiKeys.meshcloud-hosted-runner.clientId'),
+                RUNNER_API_CLIENT_SECRET: fromBackendConfig('auth.openid.apiKeys.meshcloud-hosted-runner.clientSecret'),
+                KEYCLOAK_ADMIN_URL: fromBackendConfig('cloud.keycloak.endpoint'),
+                KEYCLOAK_ADMIN_USERNAME: fromBackendConfig('cloud.keycloak.username'),
+                KEYCLOAK_ADMIN_PASSWORD: fromBackendConfig('cloud.keycloak.password')
   }
 }

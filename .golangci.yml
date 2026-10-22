@@ -85,7 +85,7 @@ linters:
       - linters:
           - gosec
         text: G304|G703
-      # testacc launches the binary it built and waits for its health endpoint.
+      # testacc launches the binaries it built and waits for meshStack.
       - path: testacc/
         linters:
           - forbidigo

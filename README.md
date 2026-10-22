@@ -120,9 +120,11 @@ task start:runner
 
 ### Acceptance tests
 
-`testacc/` drives the runners' Go code in process against a live meshStack: the runner's
-registration and a claim on an empty queue, for a runner the suite creates with the hosted-runner
-API key. A whole meshStack only exists in the meshcloud-internal mono repo `meshfed-release`, so CI
+`internal/testacc/` builds `cmd/runner` with coverage and starts it once per test against a live
+meshStack, as a private runner that the test bootstraps with OpenTofu and the meshStack provider of
+`../terraform-provider-meshstack`, or of the registry when that checkout is missing. The runner
+claims with the hosted-runner API key, the harness uses the provider's acceptance key, and each test
+asserts the runner's JSON log and what meshStack shows of the run. A whole meshStack only exists in the meshcloud-internal mono repo `meshfed-release`, so CI
 here does not run the suite. `.github/workflows/test-acceptance.yml` asks that repository for the
 run, and `meshstack-satellite.gradle` is everything the run reads from here. The workflow also
 requests the terraform provider's suite against the same branch, which drives real terraform and
@@ -134,10 +136,12 @@ skill); `./gradlew :building-block-runner:satelliteEnv` there writes
 
 ```bash
 set -a; . ../.env-testacc-building-block-runner; set +a
-go test ./testacc/... -run TestAcc
+go test -count=1 -timeout 60m ./internal/testacc/ -run TestAcc
 ```
 
-Without `BUILDING_BLOCK_RUNNER_TEST_ACC=1`, which that file sets, the suite skips.
+Without `BUILDING_BLOCK_RUNNER_TEST_ACC=1`, which that file sets, the suite skips. With
+`RUNNER_TESTACC_KEEP=1` it keeps the objects in meshStack and the dirs of each test.
+`task test:acc:coverage` runs the unit tests and the suite and reports their merged coverage.
 
 See the individual module READMEs for module-specific instructions:
 

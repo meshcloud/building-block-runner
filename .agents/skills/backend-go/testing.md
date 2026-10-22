@@ -5,7 +5,7 @@
 - **Always write or extend tests** for any behaviour you add or modify — not as a follow-up, but alongside the implementation.
 - Test naming: `Test_<Condition>_<ExpectedOutcome>` (e.g. `Test_PlanSucceeded_ArtifactInStatusUpdate`).
 - **Test observable outcomes, not implementation details.** Assert on externally visible results (e.g. HTTP request bodies sent, status update payloads, files written) rather than on internal function call sequences or private state. Avoid mocking just to verify that a method was called; verify the effect instead.
-- **Acceptance tests first.** `testacc/` and the terraform provider's suite run real runs. A unit test pins only what
+- **Acceptance tests first.** `internal/testacc` and the terraform provider's suite run real runs. A unit test pins only what
   they cannot reach reliably, such as type mapping, config precedence and exit codes.
 - A test that starts a run process starts the test binary. Its `TestMain` acts as the run with a fake executor when
   `RUNNER_RUN_YML` is set, as in `internal/dispatcher/process`.

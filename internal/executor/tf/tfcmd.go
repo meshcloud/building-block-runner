@@ -47,15 +47,16 @@ func stateLockTimeout() *tfexec.LockTimeoutOption {
 }
 
 type GenericCmd struct {
-	ctx           context.Context //nolint:containedctx // a command lives for one run and is cancelled with it.
-	run           run
-	cfg           tfconfig.Config
-	source        GitSource
-	moduleDir     string
-	useWorkspaces bool
-	bin           *Binaries
-	reporter      *executor.Reporter
-	steps         tfSteps
+	ctx                  context.Context //nolint:containedctx // a command lives for one run and is cancelled with it.
+	run                  run
+	cfg                  tfconfig.Config
+	source               GitSource
+	moduleDir            string
+	useWorkspaces        bool
+	keycloakWifTokenFile string
+	bin                  *Binaries
+	reporter             *executor.Reporter
+	steps                tfSteps
 }
 
 func (tfcmd *GenericCmd) tfVersion() string {
@@ -428,15 +429,18 @@ func (tfcmd *GenericCmd) vars() error {
 		Name      string
 		Value     string
 		RunScoped bool
+		Nullable  bool
 	}{
 		{Name: "meshstack_building_block_id", Value: tfcmd.run.Spec.BuildingBlock.Uuid},
-		{Name: "meshstack_building_block_run_b64", Value: tfcmd.run.jsonBase64(), RunScoped: true},
-		{Name: "meshstack_building_block_run_id", Value: tfcmd.run.Metadata.Uuid.String(), RunScoped: true},
+		{Name: "meshstack_building_block_run_b64", Value: tfcmd.run.jsonBase64(), RunScoped: true, Nullable: true},
+		{Name: "meshstack_building_block_run_id", Value: tfcmd.run.Metadata.Uuid.String(), RunScoped: true, Nullable: true},
+		{Name: "meshstack_keycloak_wif_token_file", Value: tfcmd.keycloakWifTokenFile, Nullable: true},
 	}
 	meshStackVarsFile := hclwrite.NewEmptyFile()
 	for _, variable := range meshStackVars {
-		includeRunScopedVars := tfcmd.run.behavior != behaviorDetect && tfcmd.run.Links.Artifact.Href == ""
-		if !variable.RunScoped || includeRunScopedVars {
+		includeRunScopedVars := tfcmd.run.behavior != behaviorDetect && !tfcmd.run.approvedPlan()
+		omitted := variable.RunScoped && !includeRunScopedVars || variable.Nullable && variable.Value == ""
+		if !omitted {
 			diags = varsFile.AddVariable(variable.Name, variable.Value, AddVariableOptions{})
 			if diags.HasErrors() {
 				for _, diag := range diags {
@@ -453,8 +457,7 @@ func (tfcmd *GenericCmd) vars() error {
 		}
 		variableBlockBody := meshStackVarsFile.Body().AppendNewBlock("variable", []string{variable.Name}).Body()
 		variableBlockBody.SetAttributeTraversal("type", hcl.Traversal{hcl.TraverseRoot{Name: "string"}})
-		if variable.RunScoped {
-			// Deprecated run-scoped variable: optional so it can be omitted on dry-runs and saved-plan replays.
+		if variable.Nullable {
 			variableBlockBody.SetAttributeValue("nullable", cty.BoolVal(true))
 			variableBlockBody.SetAttributeValue("default", cty.NullVal(cty.String))
 		} else {

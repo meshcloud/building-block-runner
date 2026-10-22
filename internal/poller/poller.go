@@ -19,11 +19,14 @@ import (
 // maxClaimsPerCycleWhenUnlimited guards against an API that never runs out of runs.
 const maxClaimsPerCycleWhenUnlimited = 10
 
+const wifTokenFailure = "meshStack could not issue the workload identity token for this run."
+
 type poller struct {
 	cfg            config.Config
 	api            client.MeshRunnerClient
 	dispatcher     dispatcher.Dispatcher
 	stopDispatcher context.CancelFunc
+	keycloakWif    *dispatcher.KeycloakWif
 	active         map[uuid.UUID]activeRun
 	unreported     int
 }
@@ -33,12 +36,12 @@ type activeRun struct {
 	run dispatcher.Run
 }
 
-func newPoller(cfg config.Config, api client.MeshRunnerClient, runs dispatcher.Dispatcher, stopDispatcher context.CancelFunc, running []uuid.UUID) *poller {
+func newPoller(cfg config.Config, api client.MeshRunnerClient, runs dispatcher.Dispatcher, stopDispatcher context.CancelFunc, running []uuid.UUID, keycloakWif *dispatcher.KeycloakWif) *poller {
 	active := map[uuid.UUID]activeRun{}
 	for _, runUuid := range running {
 		active[runUuid] = activeRun{}
 	}
-	return &poller{cfg: cfg, api: api, dispatcher: runs, stopDispatcher: stopDispatcher, active: active}
+	return &poller{cfg: cfg, api: api, dispatcher: runs, stopDispatcher: stopDispatcher, keycloakWif: keycloakWif, active: active}
 }
 
 func (p *poller) poll(ctx context.Context) error {
@@ -117,11 +120,23 @@ func (p *poller) start(ctx context.Context, run dispatcher.Run) error {
 	ctx = dispatcher.WithRun(ctx, run)
 	runnerType, _ := executor.RunnerTypeOf(run)
 	slog.InfoContext(ctx, "starting run", "behavior", run.Spec.Behavior, "runnerType", runnerType)
-	if err := p.dispatcher.Dispatch(ctx, run, ""); err != nil {
+	wifToken, err := p.issueWifToken(ctx, run)
+	if err != nil {
+		slog.ErrorContext(ctx, "issuing the workload identity token failed", "error", err)
+		return p.reportFailure(ctx, run.Metadata.Uuid, wifTokenFailure)
+	}
+	if err = p.dispatcher.Dispatch(ctx, run, wifToken); err != nil {
 		return p.reportFailure(ctx, run.Metadata.Uuid, "Failed to start the run: "+err.Error())
 	}
 	p.active[run.Metadata.Uuid] = activeRun{run: run}
 	return nil
+}
+
+func (p *poller) issueWifToken(ctx context.Context, run dispatcher.Run) (string, error) {
+	if runnerType, _ := executor.RunnerTypeOf(run); p.keycloakWif == nil || runnerType != config.RunnerTypeTf {
+		return "", nil
+	}
+	return p.keycloakWif.Issue(ctx, run)
 }
 
 func (p *poller) track(ctx context.Context, finished dispatcher.Finished) error {

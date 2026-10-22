@@ -18,6 +18,7 @@ import (
 	"github.com/meshcloud/building-block-runner/internal/config/internal/envsubst"
 	"github.com/meshcloud/building-block-runner/internal/config/internal/legacy"
 	"github.com/meshcloud/building-block-runner/internal/config/tf"
+	"github.com/meshcloud/building-block-runner/internal/config/xtime"
 	"github.com/meshcloud/building-block-runner/internal/crypto"
 )
 
@@ -80,6 +81,11 @@ func Load(ctx context.Context, data []byte) (Config, error) {
 	}
 	if err := applyEnvironment(ctx, &cfg); err != nil {
 		return Config{}, fmt.Errorf("environment: %w", err)
+	}
+	if wif := cfg.Dispatcher.KeycloakWif; *wif == (KeycloakWif{}) {
+		cfg.Dispatcher.KeycloakWif = nil
+	} else {
+		wif.TokenLifetime = cmp.Or(wif.TokenLifetime, xtime.Minutes(defaultKeycloakWifTokenLifetimeMinutes))
 	}
 	cfg.Tf.CacheDir = cmp.Or(cfg.Tf.CacheDir, cfg.defaultTfCacheDir())
 	if added, err := cfg.Crypto.AddImplicitPrivateKeyFile(); err != nil {

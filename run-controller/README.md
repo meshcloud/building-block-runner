@@ -11,15 +11,12 @@ task start:runner
 
 ## Debug the Kubernetes dispatcher
 
-Use minikube only to investigate Kubernetes-specific bugs. run-controller runs on your machine and
-starts the runner Jobs in minikube. `runner-config.yml` here already points at
-`http://host.minikube.internal:8080`. Run from the repository root:
+Use minikube only to investigate Kubernetes-specific bugs. The runner runs on your machine and starts the runner Jobs
+in minikube, where a sidecar forwards each Job's `localhost:8080` to meshfed-api on your machine. Run from the
+repository root:
 
 ```bash
-minikube start
-kubectl config use-context minikube
-echo "127.0.0.1 host.minikube.internal" | sudo tee -a /etc/hosts  # once
-RUNNER_CONFIG_FILE=run-controller/runner-config.yml go run -tags k8s ./cmd/runner
+task debug:minikube
 ```
 
 ## Test

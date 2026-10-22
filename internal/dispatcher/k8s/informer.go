@@ -61,7 +61,7 @@ func (d *Dispatcher) Init(ctx context.Context) (dispatcher.InitState, error) {
 			running = append(running, runUuid)
 		}
 	}
-	return dispatcher.InitState{Running: running, WorkloadIdentity: d.workloadIdentity(ctx)}, nil
+	return dispatcher.InitState{Running: running, WorkloadIdentity: d.workloadIdentity(ctx), KeycloakWifTokenPath: keycloakWifTokenPath}, nil
 }
 
 func (d *Dispatcher) observe(ctx context.Context, obj any) {

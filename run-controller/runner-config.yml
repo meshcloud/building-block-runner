@@ -160,12 +160,3 @@ implementations:
     image: ghcr.io/meshcloud/tf-block-runner:main
     env:
       EXECUTION_MODE: single-run
-
-# workloadIdentityFederation:
-#   issuer: keycloak # kubernetes (default), keycloak or off
-#   keycloak:
-#     url: https://id-dev.meshstack.io
-#     realm: meshcloud-dev-wif
-#     clientId: run-controller # needs the realm-management role manage-clients
-#     clientSecret: your-client-secret
-#     tokenLifetimeMinutes: 90 # must outlive the run, because token refresh is not implemented yet; the realm's SSO Session Max must be at least this long

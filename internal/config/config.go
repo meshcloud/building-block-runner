@@ -18,6 +18,7 @@ import (
 	"github.com/meshcloud/building-block-runner/internal/config/internal/envsubst"
 	"github.com/meshcloud/building-block-runner/internal/config/internal/legacy"
 	"github.com/meshcloud/building-block-runner/internal/config/tf"
+	"github.com/meshcloud/building-block-runner/internal/config/xtime"
 	"github.com/meshcloud/building-block-runner/internal/crypto"
 )
 
@@ -77,6 +78,11 @@ func Load(ctx context.Context, data []byte) (Config, error) {
 	if err := applyEnvironment(ctx, &cfg); err != nil {
 		return Config{}, fmt.Errorf("environment: %w", err)
 	}
+	if wif := cfg.Dispatcher.KeycloakWif; *wif == (KeycloakWif{}) {
+		cfg.Dispatcher.KeycloakWif = nil
+	} else {
+		wif.TokenLifetime = cmp.Or(wif.TokenLifetime, xtime.Minutes(defaultKeycloakWifTokenLifetimeMinutes))
+	}
 	cfg.Tf.CacheDir = cmp.Or(cfg.Tf.CacheDir, filepath.Join(cfg.RunnerDir(), "tfcache"))
 	if added, err := cfg.Crypto.AddImplicitPrivateKeyFile(); err != nil {
 		return Config{}, err
@@ -91,6 +97,9 @@ func (cfg *Config) decode(root ast.Node) error {
 	if err := envsubst.Apply(root); err != nil {
 		return fmt.Errorf("environment placeholders: %w", err)
 	}
+	if err := rejectMovedKeys(root); err != nil {
+		return err
+	}
 	decoded := *cfg
 	newErr := yaml.NodeToValue(root, &decoded, yaml.UseJSONUnmarshaler(), yaml.DisallowUnknownField())
 	if newErr == nil {
@@ -102,4 +111,12 @@ func (cfg *Config) decode(root ast.Node) error {
 		return errors.Join(fmt.Errorf("new layout: %w", newErr), fmt.Errorf("legacy layout: %w", legacyErr))
 	}
 	return cfg.applyLegacy(legacyConfig)
+}
+
+func rejectMovedKeys(root ast.Node) error {
+	moved, err := (&yaml.PathBuilder{}).Root().Child("workloadIdentityFederation").Build().FilterNode(root)
+	if err != nil || moved == nil {
+		return err
+	}
+	return errors.New("workloadIdentityFederation moved to dispatcher.keycloakWif, which takes url, realm, clientId, clientSecret and tokenLifetime")
 }

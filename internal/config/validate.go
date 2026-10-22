@@ -30,6 +30,13 @@ func (cfg *Config) ValidateDispatcher() error {
 	if cfg.Dispatcher.Register != nil {
 		errs.require(cfg.Dispatcher.Register.DisplayName != "", "dispatcher.register.displayName is required")
 	}
+	if wif := cfg.Dispatcher.KeycloakWif; wif != nil {
+		errs.require(wif.Url.URL != nil, "dispatcher.keycloakWif.url is required")
+		errs.require(wif.Realm != "", "dispatcher.keycloakWif.realm is required")
+		errs.require(wif.ClientId != "", "dispatcher.keycloakWif.clientId is required")
+		errs.require(wif.ClientSecret != "", "dispatcher.keycloakWif.clientSecret is required")
+		errs.require(wif.TokenLifetime.Duration > 0, "dispatcher.keycloakWif.tokenLifetime must be positive")
+	}
 	return errors.Join(errs...)
 }
 

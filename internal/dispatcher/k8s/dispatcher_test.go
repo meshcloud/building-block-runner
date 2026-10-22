@@ -158,6 +158,25 @@ func Test_Dispatch_CreatesAJobWithItsRunInASecret(t *testing.T) {
 		assert.Equal(t, "a-run-token", string(secret.Data[runTokenKey]))
 	})
 
+	t.Run("mounts the Keycloak token from the Secret next to the service account tokens", func(t *testing.T) {
+		withToken := newTfRun()
+
+		require.NoError(t, d.Dispatch(t.Context(), withToken, "a-wif-token"))
+
+		assert.Equal(t, "a-wif-token", string(getSecret(withToken).Data[wifTokenKey]))
+		job, err := clientset.BatchV1().Jobs(namespace).Get(t.Context(), "runner-"+withToken.Metadata.Uuid.String(), metav1.GetOptions{})
+		require.NoError(t, err)
+		pod := job.Spec.Template.Spec
+		assert.Equal(t, []string{"trusted-certs", runVolumeName, workVolumeName, keycloakWifVolumeName, "service-account-token-azure", "service-account-token-gcp", "service-account-token-aws"}, names(pod.Volumes, volumeName))
+		assert.Equal(t, &corev1.SecretVolumeSource{
+			SecretName: "run-json-" + withToken.Metadata.Uuid.String(),
+			Items:      []corev1.KeyToPath{{Key: wifTokenKey, Path: "token"}},
+		}, pod.Volumes[3].Secret)
+		container := pod.Containers[0]
+		assert.Contains(t, container.VolumeMounts, corev1.VolumeMount{Name: keycloakWifVolumeName, MountPath: "/var/run/secrets/workload-identity/meshstack", ReadOnly: true})
+		assert.Contains(t, container.Env, corev1.EnvVar{Name: dispatcher.EnvKeycloakWifToken, Value: "/var/run/secrets/workload-identity/meshstack/token"})
+	})
+
 	t.Run("fails for a run too large for a Secret", func(t *testing.T) {
 		large := newTfRun()
 		large.Spec.BuildingBlock.Spec.Inputs = []client.MeshRunnerRunInput{{Key: "large", Value: strings.Repeat("x", 1<<20)}}

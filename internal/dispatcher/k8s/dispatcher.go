@@ -75,7 +75,7 @@ func (d *Dispatcher) Finished() <-chan dispatcher.Finished {
 	return d.finished
 }
 
-func (d *Dispatcher) Dispatch(ctx context.Context, run dispatcher.Run, _ string) error {
+func (d *Dispatcher) Dispatch(ctx context.Context, run dispatcher.Run, wifToken string) error {
 	runnerType, err := executor.RunnerTypeOf(run)
 	if err != nil {
 		return err
@@ -83,7 +83,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, run dispatcher.Run, _ string)
 	if !d.cfg.Dispatcher.ForTypes.Contains(runnerType) {
 		return fmt.Errorf("this runner does not run %s runs", runnerType)
 	}
-	objects, err := d.newRunObjects(run, runnerType)
+	objects, err := d.newRunObjects(run, runnerType, wifToken)
 	if err != nil {
 		return err
 	}
@@ -124,9 +124,14 @@ func (d *Dispatcher) createServiceAccount(ctx context.Context, serviceAccount *c
 	return nil
 }
 
+// createSecret updates a Secret of an earlier dispatch of the run, so that the Job never mounts an old token.
 func (d *Dispatcher) createSecret(ctx context.Context, secret *corev1.Secret) error {
-	_, err := createRetrying(ctx, d.clientset.CoreV1().Secrets(d.cfg.K8s.Namespace).Create, secret)
-	if err != nil && !apierrors.IsAlreadyExists(err) {
+	secrets := d.clientset.CoreV1().Secrets(d.cfg.K8s.Namespace)
+	_, err := createRetrying(ctx, secrets.Create, secret)
+	if apierrors.IsAlreadyExists(err) {
+		_, err = secrets.Update(ctx, secret, metav1.UpdateOptions{})
+	}
+	if err != nil {
 		return fmt.Errorf("create secret %s: %w", secret.Name, err)
 	}
 	return nil

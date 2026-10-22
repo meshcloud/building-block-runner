@@ -34,6 +34,7 @@ const (
 
 	runFile     = "run.json"
 	runTokenKey = "run-token"
+	wifTokenKey = "wif-token"
 
 	// maxSecretBytes leaves room for the metadata of a Secret within the 1 MiB that Kubernetes allows.
 	maxSecretBytes = 1<<20 - 10<<10
@@ -48,17 +49,17 @@ type runObjects struct {
 	job            *batchv1.Job
 }
 
-func (d *Dispatcher) newRunObjects(run dispatcher.Run, runnerType config.RunnerType) (runObjects, error) {
+func (d *Dispatcher) newRunObjects(run dispatcher.Run, runnerType config.RunnerType, wifToken string) (runObjects, error) {
 	template, err := d.cfg.K8s.JobSpecTemplates.GetFor(runnerType)
 	if err != nil {
 		return runObjects{}, err
 	}
-	secret, err := d.newSecret(run)
+	secret, err := d.newSecret(run, wifToken)
 	if err != nil {
 		return runObjects{}, err
 	}
 	serviceAccount := d.newServiceAccount(run)
-	job, err := d.newJob(run, runnerType, template, secret.Name, serviceAccount.Name)
+	job, err := d.newJob(run, runnerType, template, secret, serviceAccount.Name)
 	if err != nil {
 		return runObjects{}, err
 	}
@@ -82,18 +83,24 @@ func (d *Dispatcher) newServiceAccount(run dispatcher.Run) *corev1.ServiceAccoun
 	return &corev1.ServiceAccount{ObjectMeta: d.objectMeta(name, run)}
 }
 
-func (d *Dispatcher) newSecret(run dispatcher.Run) (*corev1.Secret, error) {
+func (d *Dispatcher) newSecret(run dispatcher.Run, wifToken string) (*corev1.Secret, error) {
 	runJson, err := json.Marshal(run)
 	if err != nil {
 		return nil, err
 	}
-	if len(runJson) > maxSecretBytes {
-		return nil, fmt.Errorf("%w: it has %d bytes, a Kubernetes Secret holds %d", dispatcher.ErrRunTooLarge, len(runJson), maxSecretBytes)
+	if size := len(runJson) + len(wifToken); size > maxSecretBytes {
+		return nil, fmt.Errorf("%w: it has %d bytes, a Kubernetes Secret holds %d", dispatcher.ErrRunTooLarge, size, maxSecretBytes)
 	}
-	return &corev1.Secret{
-		ObjectMeta: d.objectMeta(secretName(run.Metadata.Uuid.String()), run),
-		Data:       map[string][]byte{runFile: runJson, runTokenKey: []byte(run.Spec.RunToken)},
-	}, nil
+	data := map[string][]byte{runFile: runJson, runTokenKey: []byte(run.Spec.RunToken)}
+	if wifToken != "" {
+		data[wifTokenKey] = []byte(wifToken)
+	}
+	return &corev1.Secret{ObjectMeta: d.objectMeta(secretName(run.Metadata.Uuid.String()), run), Data: data}, nil
+}
+
+func hasWifToken(secret *corev1.Secret) bool {
+	_, ok := secret.Data[wifTokenKey]
+	return ok
 }
 
 func secretName(runUuid string) string {
@@ -105,7 +112,7 @@ func jobName(runUuid string) string {
 }
 
 // newJob merges the settings the dispatcher relies on over the template, so that a template cannot override them.
-func (d *Dispatcher) newJob(run dispatcher.Run, runnerType config.RunnerType, template config.JobSpecTemplate, secretName, serviceAccountName string) (*batchv1.Job, error) {
+func (d *Dispatcher) newJob(run dispatcher.Run, runnerType config.RunnerType, template config.JobSpecTemplate, secret *corev1.Secret, serviceAccountName string) (*batchv1.Job, error) {
 	template = *template.DeepCopy()
 	job := &batchv1.Job{ObjectMeta: template.ObjectMeta, Spec: template.Spec}
 	labels := d.labels(run)
@@ -127,8 +134,8 @@ func (d *Dispatcher) newJob(run dispatcher.Run, runnerType config.RunnerType, te
 	// The runner mounts only the projected tokens of the per-run service account.
 	pod.Spec.AutomountServiceAccountToken = new(false)
 	pod.Spec.EnableServiceLinks = new(false)
-	pod.Spec.Volumes = replaceByName(pod.Spec.Volumes, volumeName, d.volumes(secretName)...)
-	env, err := d.env(run, runnerType, secretName)
+	pod.Spec.Volumes = replaceByName(pod.Spec.Volumes, volumeName, d.volumes(secret)...)
+	env, err := d.env(run, runnerType, secret)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +149,7 @@ func (d *Dispatcher) newJob(run dispatcher.Run, runnerType config.RunnerType, te
 	container := &pod.Spec.Containers[runner]
 	container.SecurityContext = restrictedSecurityContext()
 	container.Env = replaceByName(container.Env, envVarName, env...)
-	container.VolumeMounts = replaceByName(container.VolumeMounts, volumeMountName, d.volumeMounts()...)
+	container.VolumeMounts = replaceByName(container.VolumeMounts, volumeMountName, d.volumeMounts(hasWifToken(secret))...)
 	container.WorkingDir = workDir
 	container.Resources.Requests = withDefaults(container.Resources.Requests, corev1.ResourceList{
 		corev1.ResourceCPU:    resource.MustParse("100m"),
@@ -155,11 +162,17 @@ func (d *Dispatcher) newJob(run dispatcher.Run, runnerType config.RunnerType, te
 	return job, nil
 }
 
-func (d *Dispatcher) volumes(secretName string) []corev1.Volume {
+func (d *Dispatcher) volumes(secret *corev1.Secret) []corev1.Volume {
 	const tokenExpirationSeconds = 7200
 	volumes := []corev1.Volume{
-		{Name: runVolumeName, Secret: &corev1.SecretVolumeSource{SecretName: secretName}},
+		{Name: runVolumeName, Secret: &corev1.SecretVolumeSource{SecretName: secret.Name}},
 		{Name: workVolumeName, EmptyDir: &corev1.EmptyDirVolumeSource{}},
+	}
+	if hasWifToken(secret) {
+		volumes = append(volumes, corev1.Volume{Name: keycloakWifVolumeName, Secret: &corev1.SecretVolumeSource{
+			SecretName: secret.Name,
+			Items:      []corev1.KeyToPath{{Key: wifTokenKey, Path: "token"}},
+		}})
 	}
 	for _, token := range d.tokens.all() {
 		volumes = append(volumes, corev1.Volume{
@@ -176,10 +189,13 @@ func (d *Dispatcher) volumes(secretName string) []corev1.Volume {
 	return volumes
 }
 
-func (d *Dispatcher) volumeMounts() []corev1.VolumeMount {
+func (d *Dispatcher) volumeMounts(withWifToken bool) []corev1.VolumeMount {
 	mounts := []corev1.VolumeMount{
 		{Name: runVolumeName, MountPath: runDir, ReadOnly: true},
 		{Name: workVolumeName, MountPath: workDir},
+	}
+	if withWifToken {
+		mounts = append(mounts, corev1.VolumeMount{Name: keycloakWifVolumeName, MountPath: keycloakWifTokenDir, ReadOnly: true})
 	}
 	for _, token := range d.tokens.all() {
 		mounts = append(mounts, corev1.VolumeMount{Name: token.volumeName(), MountPath: token.mountPath(), ReadOnly: true})
@@ -187,21 +203,25 @@ func (d *Dispatcher) volumeMounts() []corev1.VolumeMount {
 	return mounts
 }
 
-func (d *Dispatcher) env(run dispatcher.Run, runnerType config.RunnerType, secretName string) ([]corev1.EnvVar, error) {
+func (d *Dispatcher) env(run dispatcher.Run, runnerType config.RunnerType, secret *corev1.Secret) ([]corev1.EnvVar, error) {
 	executorConfig, err := d.cfg.ExecutorConfig(runnerType)
 	if err != nil {
 		return nil, fmt.Errorf("encode the %s config: %w", runnerType, err)
 	}
 	runPath := runDir + "/" + runFile
-	return []corev1.EnvVar{
+	env := []corev1.EnvVar{
 		{Name: executor.EnvRunYml, Value: runPath},
 		{Name: "RUN_JSON_FILE_PATH", Value: runPath},
 		{Name: executor.EnvConfig, Value: executorConfig},
 		{Name: executor.EnvRunnerUuid, Value: d.cfg.Uuid.String()},
 		{Name: "RUNNER_API_URL", Value: d.cfg.Api.Url.String()},
 		{Name: setting.Endpoint.EnvKey(), Value: dispatcher.MeshStackEndpoint(d.cfg, run)},
-		{Name: setting.ApiToken.EnvKey(), ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{Name: secretName, Key: runTokenKey}}},
-	}, nil
+		{Name: setting.ApiToken.EnvKey(), ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{Name: secret.Name, Key: runTokenKey}}},
+	}
+	if hasWifToken(secret) {
+		env = append(env, corev1.EnvVar{Name: dispatcher.EnvKeycloakWifToken, Value: keycloakWifTokenPath})
+	}
+	return env, nil
 }
 
 func failJobOnReportedFailure() *batchv1.PodFailurePolicy {

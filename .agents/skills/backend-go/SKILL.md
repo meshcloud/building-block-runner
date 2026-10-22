@@ -18,14 +18,16 @@ One Go module at the repository root builds one binary, `cmd/runner`.
   from a Secret. It reads the exit code from the Job conditions.
 - `internal/executor` runs the run in `RUNNER_RUN_JSON` in this process, builds its meshStack client with
   `auth.ResolveClient` from the run token in its env, and reports through the `Step`s it declares on a
-  `Reporter`; `Step.Run` sets a step's status, and its log goes to meshStack and to slog at debug. Its exit code is 0 when it delivered a final or handed-over status, 3 when it
+  `Reporter`, also after it registered; `Step.Run` sets a step's status and fails the run on an error, `Step.SetStatus` sets it
+  alone, and a step's log goes to meshStack and to slog at debug. Its exit code is 0 when it delivered a final or handed-over status, 3 when it
   delivered FAILED, and anything else otherwise. The run logs through `slog.Default()` with the run's attributes; the
   poller adds the run to its context with `dispatcher.WithRun`.
 - `internal/testmeshstack` isolates that client in tests and answers the status calls of a run process.
 - `internal/build` holds the version, set with `-ldflags -X`.
-- `internal/executor/tf` and `internal/executor/manual` are the executors. Each registers itself with
-  `executor.Register`, linked by `cmd/runner/executor_<type>.go` behind its build tag; a build with neither `tf` nor
-  `manual` links both.
+- `internal/executor/tf`, `internal/executor/manual`, `internal/executor/gitlab`, `internal/executor/azuredevops` and
+  `internal/executor/github` are the executors. Each registers itself with `executor.Register`, linked by
+  `cmd/runner/executor_<type>.go` behind its build tag; a build without an executor tag links all of them.
+  The pipeline executors call their service with meshstack-cli's `http.Client` and `http.WithoutRedirects()`.
 
 All images build `./cmd/runner`: run-controller with `-tags k8s` (no executor), tf with `-tags tf`, manual with
 `-tags manual`. `cmd/runner/deps_test.go` pins what each build links.
@@ -41,4 +43,5 @@ task lint -- --fix
 task test
 ```
 
-`task lint` and `task test` run once per build tag an image uses: none, `k8s`, `tf` and `manual`. Never skip formatting or tests. Fix all failures before finishing.
+`task lint` and `task test` run once per build tag an image uses: none, `k8s`, `tf`, `manual`, `gitlab`, `azuredevops` and
+`github`. Never skip formatting or tests. Fix all failures before finishing.

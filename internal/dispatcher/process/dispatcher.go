@@ -56,14 +56,14 @@ func checkExecutors(forTypes config.RunnerTypes) error {
 }
 
 func (*Dispatcher) Init(context.Context) (dispatcher.InitState, error) {
-	return dispatcher.InitState{}, nil
+	return dispatcher.InitState{KeycloakWifTokenPath: dispatcher.KeycloakWifTokenModulePath}, nil
 }
 
 func (d *Dispatcher) Finished() <-chan dispatcher.Finished {
 	return d.finished
 }
 
-func (d *Dispatcher) Dispatch(ctx context.Context, run dispatcher.Run, _ string) error {
+func (d *Dispatcher) Dispatch(ctx context.Context, run dispatcher.Run, wifToken string) error {
 	runnerType, err := executor.RunnerTypeOf(run)
 	if err != nil {
 		return err
@@ -83,7 +83,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, run dispatcher.Run, _ string)
 	}
 	runCtx, cancelRun := d.withTimeout(ctx)
 	c := &child{run: run, root: d.runnerDir, killGrace: d.cfg.Dispatcher.KillGrace.Duration}
-	if err := c.start(runCtx, d.executable, env); err != nil {
+	if err := c.start(runCtx, d.executable, env, wifToken); err != nil {
 		c.removeDirs(ctx)
 		cancelRun()
 		return err

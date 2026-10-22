@@ -46,6 +46,16 @@ tf.abortGrace must be positive`)
 		assert.EqualError(t, cfg.ValidateDispatcher(), "dispatcher.forTypes needs exactly one runner type\ndispatcher.register.displayName is required")
 	})
 
+	t.Run("fails on an incomplete keycloakWif", func(t *testing.T) {
+		cfg := valid()
+		cfg.Dispatcher.KeycloakWif = &KeycloakWif{TokenLifetime: xtime.Minutes(-1)}
+		assert.EqualError(t, cfg.ValidateDispatcher(), `dispatcher.keycloakWif.url is required
+dispatcher.keycloakWif.realm is required
+dispatcher.keycloakWif.clientId is required
+dispatcher.keycloakWif.clientSecret is required
+dispatcher.keycloakWif.tokenLifetime must be positive`)
+	})
+
 	t.Run("fails on a kill grace that leaves no time for the final status", func(t *testing.T) {
 		cfg := valid()
 		cfg.Tf.AbortGrace = xtime.Seconds(100)

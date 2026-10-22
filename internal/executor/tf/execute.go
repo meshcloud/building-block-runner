@@ -10,6 +10,7 @@ import (
 
 	"github.com/meshcloud/building-block-runner/internal/config"
 	tfconfig "github.com/meshcloud/building-block-runner/internal/config/tf"
+	"github.com/meshcloud/building-block-runner/internal/dispatcher"
 	"github.com/meshcloud/building-block-runner/internal/executor"
 )
 
@@ -42,15 +43,16 @@ func Execute(ctx context.Context, executorRun executor.Run, cfg tfconfig.Config,
 	steps := declareSteps(r, run.behavior, async)
 	source := GitSource{repository: run.terraform(), runDir: runDir, step: steps.sources}
 	tfCommand := newCmd(GenericCmd{
-		ctx:           ctx,
-		run:           run,
-		cfg:           cfg,
-		source:        source,
-		moduleDir:     source.ModuleDir(),
-		useWorkspaces: true,
-		bin:           tfBinaries,
-		reporter:      r,
-		steps:         steps,
+		ctx:                  ctx,
+		run:                  run,
+		cfg:                  cfg,
+		source:               source,
+		moduleDir:            source.ModuleDir(),
+		useWorkspaces:        true,
+		keycloakWifTokenFile: os.Getenv(dispatcher.EnvKeycloakWifToken),
+		bin:                  tfBinaries,
+		reporter:             r,
+		steps:                steps,
 	}, run.behavior, run.Api)
 
 	if err := r.Register(ctx); err != nil {

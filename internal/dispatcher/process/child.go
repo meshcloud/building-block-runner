@@ -26,7 +26,14 @@ type child struct {
 	killGrace time.Duration
 }
 
-func (c *child) start(ctx context.Context, executable string, env []string) error {
+func (c *child) start(ctx context.Context, executable string, env []string, wifToken string) error {
+	if wifToken != "" {
+		tokenFile, err := c.writeWifToken(wifToken)
+		if err != nil {
+			return err
+		}
+		env = append(env, dispatcher.EnvKeycloakWifToken+"="+tokenFile)
+	}
 	runDir := filepath.Join("runs", c.run.Metadata.Uuid)
 	if err := c.freshDir(runDir); err != nil {
 		return err
@@ -57,6 +64,20 @@ func (c *child) start(ctx context.Context, executable string, env []string) erro
 	}
 	c.cmd = cmd
 	return nil
+}
+
+// writeWifToken keeps the token path of a building block the same across its runs, as a saved plan holds it.
+func (c *child) writeWifToken(token string) (string, error) {
+	tokenDir := filepath.Join("meshstack-wif", c.run.Spec.BuildingBlock.Uuid)
+	if err := c.root.MkdirAll(tokenDir, 0o700); err != nil {
+		return "", err
+	}
+	tokenFile := filepath.Join(tokenDir, "token")
+	written := tokenFile + "-" + c.run.Metadata.Uuid
+	if err := c.root.WriteFile(written, []byte(token), 0o600); err != nil {
+		return "", err
+	}
+	return c.path(tokenFile), c.root.Rename(written, tokenFile)
 }
 
 func (c *child) freshDir(name string) error {

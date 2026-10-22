@@ -16,6 +16,10 @@ import (
 const (
 	azureAudience       = "api://AzureADTokenExchange"
 	workloadIdentityDir = "/var/run/secrets/workload-identity/"
+
+	keycloakWifVolumeName = "meshstack-wif-token"
+	keycloakWifTokenDir   = workloadIdentityDir + "meshstack"
+	keycloakWifTokenPath  = keycloakWifTokenDir + "/token"
 )
 
 type workloadIdentityToken struct {

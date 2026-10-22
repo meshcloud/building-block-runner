@@ -165,7 +165,7 @@ func startPolling(t *testing.T, cfg config.Config, api *fakeApi, runs *fakeDispa
 	ctx, cancel := context.WithCancel(t.Context())
 	state, err := runs.Init(ctx)
 	require.NoError(t, err)
-	p := newPoller(cfg, api, runnerAuth, runs, func() {}, state.Running)
+	p := newPoller(cfg, api, runnerAuth, runs, func() {}, state.Running, nil)
 	done := make(chan error)
 	go func() { done <- p.poll(ctx) }()
 	return func(afterShutdown ...dispatcher.Finished) error {
@@ -266,7 +266,7 @@ func Test_Shutdown_LetsAClaimAndItsFailureReportFinish(t *testing.T) {
 		runs.startErr = errors.New("no executor")
 		ctx, cancel := context.WithCancel(t.Context())
 		done := make(chan error)
-		go func() { done <- newPoller(testConfig(1), api, runnerAuth, runs, func() {}, nil).poll(ctx) }()
+		go func() { done <- newPoller(testConfig(1), api, runnerAuth, runs, func() {}, nil, nil).poll(ctx) }()
 		synctest.Sleep(10 * time.Second)
 
 		cancel()

@@ -13,11 +13,15 @@ const module = "github.com/meshcloud/building-block-runner/"
 
 func Test_EachImageBuild_LinksOnlyWhatItRuns(t *testing.T) {
 	t.Parallel()
+	const executor = module + "internal/executor/"
 	forbiddenByTags := map[string][]string{
-		"":       {"k8s.io/"},
-		"tf":     {"k8s.io/", module + "internal/executor/manual"},
-		"manual": {"k8s.io/", module + "internal/executor/tf"},
-		"k8s":    {module + "internal/dispatcher/process", module + "internal/executor/manual", module + "internal/executor/tf"},
+		"":            {"k8s.io/"},
+		"tf":          {"k8s.io/", executor + "manual", executor + "gitlab", executor + "azuredevops", executor + "github"},
+		"manual":      {"k8s.io/", executor + "tf", executor + "gitlab", executor + "azuredevops", executor + "github"},
+		"gitlab":      {"k8s.io/", executor + "tf", executor + "manual", executor + "azuredevops", executor + "github"},
+		"azuredevops": {"k8s.io/", executor + "tf", executor + "manual", executor + "gitlab", executor + "github"},
+		"github":      {"k8s.io/", executor + "tf", executor + "manual", executor + "gitlab", executor + "azuredevops"},
+		"k8s":         {module + "internal/dispatcher/process", executor + "manual", executor + "tf", executor + "gitlab", executor + "azuredevops", executor + "github"},
 	}
 	for tags, forbidden := range forbiddenByTags {
 		t.Run("tags="+tags, func(t *testing.T) {

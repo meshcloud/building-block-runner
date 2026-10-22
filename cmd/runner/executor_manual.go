@@ -1,4 +1,4 @@
-//go:build !k8s && (manual || !tf)
+//go:build !k8s && (manual || !(tf || github || gitlab || azuredevops))
 
 package main
 

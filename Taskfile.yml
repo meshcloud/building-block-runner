@@ -2,7 +2,7 @@ version: '3'
 
 vars:
   PACKAGES: ./...
-  BUILD_TAGS: ['', k8s, tf, manual]
+  BUILD_TAGS: ['', k8s, tf, manual, gitlab, azuredevops, github]
 
 env:
   CGO_ENABLED: "0" # like the images, so building needs no C compiler

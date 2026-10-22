@@ -45,6 +45,7 @@ type accSuite struct {
 	api       client.Client
 	runnerKey config.ApiKey
 	keycloak  *keycloakClient
+	pipelines *pipelineMock
 	keep      bool
 
 	runnerBinary string
@@ -77,6 +78,7 @@ func runSuite(m *testing.M) int {
 	}
 	suite = s
 	code := m.Run()
+	s.pipelines.server.Close()
 	s.reportCoverage(dir)
 	if s.keep {
 		_, _ = fmt.Fprintln(os.Stderr, "kept the suite dir", dir, "and the Keycloak client", s.keycloak.clientId)
@@ -113,6 +115,7 @@ func setUpSuite(ctx context.Context, dir string) (*accSuite, error) {
 	if s.keycloak, err = setUpKeycloakClient(ctx); err != nil {
 		return nil, err
 	}
+	s.pipelines = newPipelineMock(s.api.Runner)
 	if s.runnerBinary, err = buildRunner(ctx, dir); err != nil {
 		return nil, err
 	}

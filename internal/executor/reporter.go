@@ -93,7 +93,7 @@ func (r *Reporter) Finish(ctx context.Context) (Status, error) {
 	for _, step := range r.steps {
 		step.flushPartialLine(ctx)
 	}
-	if r.status != StatusFailed && !r.allSucceeded() {
+	if r.status != StatusFailed && !r.allEnded() {
 		r.fail("The run ended without a final status.")
 	}
 	if !r.registered {
@@ -117,15 +117,15 @@ func (r *Reporter) Finish(ctx context.Context) (Status, error) {
 	return status, fmt.Errorf("send the final status %s: %w", status, err)
 }
 
-func (r *Reporter) allSucceeded() bool {
-	return len(r.steps) > 0 && !slices.ContainsFunc(r.steps, func(step *Step) bool { return step.status != StatusSucceeded })
+func (r *Reporter) allEnded() bool {
+	return len(r.steps) > 0 && !slices.ContainsFunc(r.steps, (*Step).running)
 }
 
-// fail fails the first step that did not succeed, or none when the run declared none.
+// fail fails the first step that did not end, or none when the run declared none.
 func (r *Reporter) fail(userMessage string) {
 	r.status = StatusFailed
 	r.failure = userMessage
-	if first := slices.IndexFunc(r.steps, func(step *Step) bool { return step.status != StatusSucceeded }); first >= 0 {
+	if first := slices.IndexFunc(r.steps, (*Step).running); first >= 0 {
 		r.steps[first].failLocked(userMessage)
 	}
 }

@@ -96,6 +96,7 @@ func claimWithoutWorkFindsNoRun(s localStack, runnerUuid string) func(*testing.T
 
 		runner, err := s.api.BuildingBlockRunner.Read(t.Context(), runnerUuid)
 		require.NoError(t, err)
-		assert.NotNil(t, runner.Metadata.LastSeen, "meshStack shows a runner that claims as online through lastSeen")
+		require.NotNil(t, runner.Status)
+		assert.NotNil(t, runner.Status.LastSeen, "meshStack shows a runner that claims as online through lastSeen")
 	}
 }

@@ -5,8 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/meshcloud/building-block-runner/internal/dispatcher"
 	"github.com/meshcloud/building-block-runner/internal/executor"
 )
 
@@ -123,7 +126,22 @@ func (tfcmd *GenericCmd) prepareInputs() error {
 	if _, err := tfcmd.saveInputFiles(); err != nil {
 		return err
 	}
+	if err := tfcmd.linkKeycloakWifToken(); err != nil {
+		return err
+	}
 	return tfcmd.vars()
+}
+
+func (tfcmd *GenericCmd) linkKeycloakWifToken() error {
+	tokenFile := tfcmd.keycloakWifTokenFile
+	if tokenFile == "" {
+		return nil
+	}
+	link := filepath.Join(tfcmd.moduleDir, dispatcher.KeycloakWifTokenModulePath)
+	if err := os.MkdirAll(filepath.Dir(link), 0o700); err != nil {
+		return err
+	}
+	return os.Symlink(tokenFile, link)
 }
 
 func (tfcmd *GenericCmd) initWorkspace(ctx context.Context, tf Facade) error {

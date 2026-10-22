@@ -20,13 +20,6 @@ tasks:
       - for: { var: BUILD_TAGS }
         cmd: go test -race -tags '{{.ITEM}}' {{.CLI_ARGS}} {{.PACKAGES}}
 
-  test:keycloak:
-    desc: Test the meshStack WIF token against a real Keycloak in Docker. Set KEYCLOAK_VERSION to test another version.
-    env:
-      KEYCLOAK_VERSION: '{{.KEYCLOAK_VERSION}}'
-    cmds:
-      - go test -tags keycloak -count=1 -run Test_Keycloak ./run-controller/keycloakwif/
-
   lint:
     # Also formats, with the go/format of the Go release that `go tool` builds the linter with.
     desc: Run golangci-lint for each build tag an image or `start:runner` uses. Set PACKAGES to lint fewer, `-- --fix` to fix.

@@ -27,13 +27,3 @@ RUNNER_CONFIG_FILE=run-controller/runner-config.yml go run -tags k8s ./cmd/runne
 ```bash
 task test
 ```
-
-The command above skips the tests that need a real Keycloak. These tests start Keycloak in Docker, so Docker must be
-running. If Docker does not use `/var/run/docker.sock` (for example with Colima), set `DOCKER_HOST` (see the
-[Testcontainers configuration](https://golang.testcontainers.org/features/configuration/)). In CI, the step
-"Test against Keycloak" runs them, because GitHub's Ubuntu runners have Docker.
-
-```bash
-task test:keycloak                          # Keycloak 26.8.1
-task test:keycloak KEYCLOAK_VERSION=26.4.7  # another version
-```

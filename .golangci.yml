@@ -14,10 +14,6 @@ formatters:
         - standard
         - default
         - localmodule
-  exclusions:
-    paths:
-      - ^run-controller/keycloakwif/
-
 linters:
   # Every linter, minus the list below, so a rejection is a line here with a reason.
   default: all
@@ -69,9 +65,6 @@ linters:
     - interfacebloat
 
   exclusions:
-    paths:
-      # They predate this linter set.
-      - ^run-controller/keycloakwif/
     rules:
       # In test code the testing.T comes first, before a context.
       - linters:

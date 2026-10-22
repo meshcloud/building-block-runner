@@ -2,6 +2,7 @@ package poller
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/meshcloud/meshstack-cli/pkg/setting"
 
@@ -20,6 +21,7 @@ func Poll(ctx context.Context, cfg config.Config) error {
 		return err
 	}
 	cfg.Meshstack.Endpoint = meshStack.Endpoint
+	keycloakWif := newKeycloakWif(ctx, cfg.Dispatcher)
 
 	// Only drain stops the dispatcher, as its closed Finished would otherwise race the poller's ctx.Done.
 	dispatcherCtx, stopDispatcher := context.WithCancel(context.WithoutCancel(ctx))
@@ -32,7 +34,10 @@ func Poll(ctx context.Context, cfg config.Config) error {
 	if err != nil {
 		return err
 	}
-	p := newPoller(cfg, meshStack.BuildingBlockRun, runs, stopDispatcher, state.Running)
+	if keycloakWif != nil {
+		state.WorkloadIdentity = keycloakWif.Registration(state.KeycloakWifTokenPath)
+	}
+	p := newPoller(cfg, meshStack.BuildingBlockRun, runs, stopDispatcher, state.Running, keycloakWif)
 	p.register = func(context.Context) error { return nil }
 	if cfg.Dispatcher.Register != nil {
 		p.register = func(ctx context.Context) error {
@@ -40,4 +45,15 @@ func Poll(ctx context.Context, cfg config.Config) error {
 		}
 	}
 	return p.poll(ctx)
+}
+
+func newKeycloakWif(ctx context.Context, cfg config.Dispatcher) *dispatcher.KeycloakWif {
+	if cfg.KeycloakWif == nil {
+		return nil
+	}
+	if cfg.KeycloakWif.TokenLifetime.Duration < cfg.Timeout.Duration {
+		slog.WarnContext(ctx, "dispatcher.keycloakWif.tokenLifetime is shorter than dispatcher.timeout, so a long run may use an expired token",
+			"tokenLifetime", cfg.KeycloakWif.TokenLifetime, "timeout", cfg.Timeout)
+	}
+	return dispatcher.NewKeycloakWif(*cfg.KeycloakWif)
 }

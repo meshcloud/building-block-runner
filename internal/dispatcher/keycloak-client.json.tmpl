@@ -1,0 +1,60 @@
+{
+  "clientId": "{{ .ClientId }}",
+  "enabled": true,
+  "protocol": "openid-connect",
+  "publicClient": false,
+  "clientAuthenticatorType": "client-secret",
+  "secret": "{{ .ClientSecret }}",
+  "standardFlowEnabled": false,
+  "implicitFlowEnabled": false,
+  "directAccessGrantsEnabled": false,
+  "serviceAccountsEnabled": true,
+  "fullScopeAllowed": false,
+  "defaultClientScopes": [],
+  "optionalClientScopes": [],
+  "attributes": {
+    "access.token.lifespan": "{{ .LifespanSeconds }}",
+    "client.use.lightweight.access.token.enabled": "false"
+  },
+  "protocolMappers": [
+    {
+      "name": "sub",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-hardcoded-claim-mapper",
+      "config": {
+        "claim.name": "sub",
+        "claim.value": "{{ .Subject }}",
+        "jsonType.label": "String",
+        "access.token.claim": "true",
+        "id.token.claim": "false",
+        "userinfo.token.claim": "false",
+        "introspection.token.claim": "false"
+      }
+    },
+    {
+      "name": "azp",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-hardcoded-claim-mapper",
+      "config": {
+        "claim.name": "azp",
+        "claim.value": "{{ .Audience }}",
+        "jsonType.label": "String",
+        "access.token.claim": "true",
+        "id.token.claim": "false",
+        "userinfo.token.claim": "false",
+        "introspection.token.claim": "false"
+      }
+    },
+    {
+      "name": "aud",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-audience-mapper",
+      "config": {
+        "included.custom.audience": "{{ .Audience }}",
+        "access.token.claim": "true",
+        "id.token.claim": "false",
+        "introspection.token.claim": "false"
+      }
+    }
+  ]
+}

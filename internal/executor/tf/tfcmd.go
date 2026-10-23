@@ -27,8 +27,8 @@ import (
 	"github.com/meshcloud/meshstack-cli/pkg/setting"
 	"github.com/zclconf/go-cty/cty"
 
-	tfconfig "github.com/meshcloud/building-block-runner/internal/config/tf"
-	"github.com/meshcloud/building-block-runner/internal/executor"
+	tfconfig "github.com/meshcloud/building-block-runner/v2/internal/config/tf"
+	"github.com/meshcloud/building-block-runner/v2/internal/executor"
 )
 
 const (

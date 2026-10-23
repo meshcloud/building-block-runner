@@ -16,10 +16,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/meshcloud/building-block-runner/internal/config"
-	"github.com/meshcloud/building-block-runner/internal/config/tf"
-	"github.com/meshcloud/building-block-runner/internal/config/xtime"
-	"github.com/meshcloud/building-block-runner/internal/testmeshstack"
+	"github.com/meshcloud/building-block-runner/v2/internal/config"
+	"github.com/meshcloud/building-block-runner/v2/internal/config/tf"
+	"github.com/meshcloud/building-block-runner/v2/internal/config/xtime"
+	"github.com/meshcloud/building-block-runner/v2/internal/testmeshstack"
 )
 
 var runnerUuid = uuid.MustParse("98520496-627d-43e6-82da-ce499179ff3f")

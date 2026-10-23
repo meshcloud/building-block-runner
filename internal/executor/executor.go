@@ -8,7 +8,7 @@ import (
 	"github.com/meshcloud/meshstack-cli/client"
 	"github.com/meshcloud/meshstack-cli/client/types/enum"
 
-	"github.com/meshcloud/building-block-runner/internal/config"
+	"github.com/meshcloud/building-block-runner/v2/internal/config"
 )
 
 const (

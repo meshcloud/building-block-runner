@@ -8,9 +8,9 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/meshcloud/building-block-runner/internal/config/internal/legacy"
-	"github.com/meshcloud/building-block-runner/internal/config/xtime"
-	"github.com/meshcloud/building-block-runner/internal/crypto"
+	"github.com/meshcloud/building-block-runner/v2/internal/config/internal/legacy"
+	"github.com/meshcloud/building-block-runner/v2/internal/config/xtime"
+	"github.com/meshcloud/building-block-runner/v2/internal/crypto"
 )
 
 func (cfg *Config) applyLegacy(ctx context.Context, l legacy.Config) (err error) {

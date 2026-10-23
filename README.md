@@ -9,15 +9,19 @@ meshStack ships with managed runners that work out of the box — no setup requi
 operate runners yourself on your own infrastructure. We believe it is important that you can inspect exactly what runs
 in your environment and deploy it on your own terms — full sovereignty over the execution layer, with no black boxes.
 
-This repository contains multiple runners, one for each supported tool:
+This repository builds one Go binary, [`cmd/runner`](cmd/runner/), and one image per supported tool, each with the
+executor of that tool:
 
-| Runner                                                    | Language | Description                                       |
-|-----------------------------------------------------------|----------|---------------------------------------------------|
-| [`tf-block-runner`](tf-block-runner/)                     | Go       | Executes OpenTofu plans and applies               |
-| [`github-block-runner`](github-block-runner/)             | Kotlin   | Triggers GitHub Actions workflows                 |
-| [`gitlab-block-runner`](gitlab-block-runner/)             | Kotlin   | Triggers GitLab CI pipelines                      |
-| [`azure-devops-block-runner`](azure-devops-block-runner/) | Kotlin   | Triggers Azure DevOps pipelines                   |
-| [`manual-block-runner`](manual-block-runner/)             | Go       | No-op runner for manually managed building blocks |
+| Image                       | Build tag     | Description                                       |
+|-----------------------------|---------------|---------------------------------------------------|
+| `tf-block-runner`           | `tf`          | Executes OpenTofu plans and applies               |
+| `github-block-runner`       | `github`      | Triggers GitHub Actions workflows                 |
+| `gitlab-block-runner`       | `gitlab`      | Triggers GitLab CI pipelines                      |
+| `azure-devops-block-runner` | `azuredevops` | Triggers Azure DevOps pipelines                   |
+| `manual-block-runner`       | `manual`      | No-op runner for manually managed building blocks |
+
+[`tf-block-runner/Dockerfile`](tf-block-runner/Dockerfile) builds the tf image, and
+[`containers/go.Dockerfile`](containers/go.Dockerfile) the others, with the build tag in the build arg `TAGS`.
 
 ## Running a runner
 
@@ -45,16 +49,8 @@ For general information about the meshStack platform and Building Blocks, see th
 
 ## Repository structure
 
-This repository uses two separate build systems in parallel:
-
-- **Go** (`run-controller`, `tf-block-runner`, `manual-block-runner`, `go-meshapi-client`) shares one [Go module](go.mod) at the repository root.
-- **JVM modules** (`block-runner-core`, `github-block-runner`, `gitlab-block-runner`, `azure-devops-block-runner`) are managed via [Gradle](build.gradle). Each runner locks its dependency versions in a `gradle.lockfile`. Run `./gradlew resolveRunners --write-locks` after you change a dependency.
-
-Alongside the runners, the repository contains shared modules:
-
-- [`run-controller`](run-controller/) — Kubernetes controller that executes Building Block Runs via Kubernetes Jobs, supporting all runner implementations with parallel execution
-- [`block-runner-core`](block-runner-core/) — shared Kotlin library used by all JVM-based runners
-- [`go-meshapi-client`](go-meshapi-client/) — shared Go client for the meshcloud API
+One [Go module](go.mod) at the repository root holds everything. Its one binary, [`cmd/runner`](cmd/runner/), runs in every image.
+[`run-controller`](run-controller/) holds the image of the Kubernetes controller, which starts each run as a Kubernetes Job on the image of its runner type.
 
 Common tasks are available via [Task](https://taskfile.dev), which the [Nix](flake.nix) dev shell provides:
 
@@ -62,28 +58,19 @@ Common tasks are available via [Task](https://taskfile.dev), which the [Nix](fla
 task --list
 ```
 
+## Logs
+
+The Go runner logs at the level in `RUNNER_LOG_LEVEL`: `debug`, `info` (default), `warn` or `error`, and in the
+format in `RUNNER_LOG_FORMAT`: `text` (default) or `json`. A run process gets both, and `GOCOVERDIR` for a binary
+built with `-cover`. Each line of a
+step log, which holds the tofu output of the customer, is logged at `debug` only.
+
 ## Health endpoint
 
 Every runner exposes a `/healthz` endpoint that returns `200 OK` with body `OK`. This is intended for liveness probes in container orchestrators.
 
-Each runner listens on a dedicated default port to avoid conflicts when running multiple runners locally alongside meshStack (which defaults to port 8080):
-
-| Runner                  | Default port |
-|-------------------------|--------------|
-| `tf-block-runner`       | 8100         |
-| `azure-devops-runner`   | 8101         |
-| `github-block-runner`   | 8102         |
-| `gitlab-block-runner`   | 8103         |
-| `manual-block-runner`   | 8104         |
-
-Override the port with the `PORT` environment variable:
-
-```bash
-PORT=9000 go run .           # tf-block-runner
-PORT=9000 ./gradlew bootRun  # JVM runners
-```
-
-If you are running a runner through a Docker image, it will default to PORT=8080 as well. You can still decide to override the `PORT` environment variable in your environment.
+The Go runner serves `/healthz` and `/metrics` on the port in `RUNNER_METRICS_PORT`, or in `PORT` when that is not set,
+and serves neither without them. The run-controller image sets `PORT=2112`, the other images `PORT=8080`.
 
 ## Development
 
@@ -93,25 +80,16 @@ If you are running a runner through a Docker image, it will default to PORT=8080
 
 - Go 1.27+
 - [Task](https://taskfile.dev)
-- JDK 21+
 
-### Build and test (Go)
+### Build and test
 
 ```bash
 task test          # run all Go tests
-task lint          # run golangci-lint, including the format check
-task fmt           # format Go code
+task lint          # run golangci-lint, including the format check; -- --fix formats and fixes
 task tidy          # tidy go.mod and go.sum
 ```
 
 CI runs the equivalent plain `go` commands rather than these tasks.
-
-### Build and test (JVM)
-
-```bash
-./gradlew build
-./gradlew test
-```
 
 ### Run locally
 
@@ -121,9 +99,11 @@ task start:runner
 
 ### Acceptance tests
 
-`testacc/` drives the runners' Go code in process against a live meshStack: run-controller's
-registration and a claim on an empty queue, for a runner the suite creates with the hosted-runner
-API key. A whole meshStack only exists in the meshcloud-internal mono repo `meshfed-release`, so CI
+`internal/testacc/` builds `cmd/runner` with coverage and starts it once per test against a live
+meshStack, as a private runner that the test bootstraps with OpenTofu and the meshStack provider of
+`../terraform-provider-meshstack`, or of the registry when that checkout is missing. The runner
+claims with the hosted-runner API key, the harness uses the provider's acceptance key, and each test
+asserts the runner's JSON log and what meshStack shows of the run. A whole meshStack only exists in the meshcloud-internal mono repo `meshfed-release`, so CI
 here does not run the suite. `.github/workflows/test-acceptance.yml` asks that repository for the
 run, and `meshstack-satellite.gradle` is everything the run reads from here. The workflow also
 requests the terraform provider's suite against the same branch, which drives real terraform and
@@ -135,10 +115,12 @@ skill); `./gradlew :building-block-runner:satelliteEnv` there writes
 
 ```bash
 set -a; . ../.env-testacc-building-block-runner; set +a
-go test ./testacc/... -run TestAcc
+go test -count=1 -timeout 60m ./internal/testacc/ -run TestAcc
 ```
 
-Without `BUILDING_BLOCK_RUNNER_TEST_ACC=1`, which that file sets, the suite skips.
+Without `BUILDING_BLOCK_RUNNER_TEST_ACC=1`, which that file sets, the suite skips. With
+`RUNNER_TESTACC_KEEP=1` it keeps the objects in meshStack and the dirs of each test.
+`task test:acc:coverage` runs the unit tests and the suite and reports their merged coverage.
 
 See the individual module READMEs for module-specific instructions:
 

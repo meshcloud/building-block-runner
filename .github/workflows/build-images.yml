@@ -27,16 +27,17 @@ jobs:
           - app: tf-block-runner
             dockerfile: tf-block-runner/Dockerfile
           - app: manual-block-runner
-            dockerfile: manual-block-runner/Dockerfile
+            dockerfile: containers/go.Dockerfile
+            tags: manual
           - app: github-block-runner
-            dockerfile: containers/jvm.Dockerfile
-            runner-module: github-block-runner
+            dockerfile: containers/go.Dockerfile
+            tags: github
           - app: gitlab-block-runner
-            dockerfile: containers/jvm.Dockerfile
-            runner-module: gitlab-block-runner
+            dockerfile: containers/go.Dockerfile
+            tags: gitlab
           - app: azure-devops-block-runner
-            dockerfile: containers/jvm.Dockerfile
-            runner-module: azure-devops-block-runner
+            dockerfile: containers/go.Dockerfile
+            tags: azuredevops
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -73,4 +74,4 @@ jobs:
             ${{ env.DOCKERHUB_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:latest
           build-args: |
             VERSION=${{ inputs.version }}
-            RUNNER_MODULE=${{ matrix.runner-module }}
+            TAGS=${{ matrix.tags }}

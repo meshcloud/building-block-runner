@@ -2,7 +2,6 @@ runnerUuid: "79090ca8-94f8-4e56-b382-6d7db52b7e59"
 timeoutMins: 60
 wsTimeoutMins: 5
 initTimeoutMins: 3
-workingDir: /tmp/runner/wd
 tfInstallDir: /tmp/runner/tfbin
 api:
   url: http://localhost:8300

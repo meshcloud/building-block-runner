@@ -2,6 +2,7 @@ version: '3'
 
 vars:
   PACKAGES: ./...
+  BUILD_TAGS: ['', k8s, tf, manual, gitlab, azuredevops, github]
 
 env:
   CGO_ENABLED: "0" # like the images, so building needs no C compiler
@@ -12,43 +13,53 @@ tasks:
       - task --list
 
   test:
-    desc: Run the Go tests. Set PACKAGES to test fewer.
+    desc: Run the Go tests for each build tag an image or `start:runner` uses. Set PACKAGES to test fewer.
     env:
       CGO_ENABLED: "1" # the race detector needs cgo
     cmds:
-      - go test -race -tags inprocess {{.CLI_ARGS}} {{.PACKAGES}}
+      - for: { var: BUILD_TAGS }
+        cmd: go test -race -tags '{{.ITEM}}' {{.CLI_ARGS}} {{.PACKAGES}}
 
-  test:keycloak:
-    desc: Test the meshStack WIF token against a real Keycloak in Docker. Set KEYCLOAK_VERSION to test another version.
-    env:
-      KEYCLOAK_VERSION: '{{.KEYCLOAK_VERSION}}'
+  test:acc:coverage:
+    desc: Run the unit tests and the acceptance tests against the local stack, and report their merged coverage. Source ../.env-testacc-building-block-runner first.
+    vars:
+      COVERAGE: '{{.ROOT_DIR}}/bin/coverage'
     cmds:
-      - go test -tags keycloak -count=1 -run Test_Keycloak ./run-controller/keycloakwif/
+      - rm -rf {{.COVERAGE}} && mkdir -p {{.COVERAGE}}/unit {{.COVERAGE}}/acc {{.COVERAGE}}/merged
+      - env -u BUILDING_BLOCK_RUNNER_TEST_ACC go test -cover -coverpkg=./... ./... -args -test.gocoverdir={{.COVERAGE}}/unit
+      - go test -count=1 -timeout 60m -coverpkg=./... -run TestAcc ./internal/testacc/ -args -test.gocoverdir={{.COVERAGE}}/acc
+      - go tool covdata merge -i={{.COVERAGE}}/unit,{{.COVERAGE}}/acc -o={{.COVERAGE}}/merged
+      - go tool covdata textfmt -i={{.COVERAGE}}/merged -o={{.COVERAGE}}/merged.out
+      - go tool covdata percent -i={{.COVERAGE}}/merged
 
   lint:
-    desc: Run golangci-lint. Set PACKAGES to lint fewer, `-- --fix` to fix.
+    # Also formats, with the go/format of the Go release that `go tool` builds the linter with.
+    desc: Run golangci-lint for each build tag an image or `start:runner` uses. Set PACKAGES to lint fewer, `-- --fix` to fix.
     cmds:
-      - 'go tool golangci-lint run --build-tags inprocess {{.CLI_ARGS}} {{.PACKAGES}}'
-
-  fmt:
-    desc: Format the Go code
-    cmds:
-      - 'go tool golangci-lint fmt ./...'
+      - for: { var: BUILD_TAGS }
+        cmd: go tool golangci-lint run --build-tags '{{.ITEM}}' {{.CLI_ARGS}} {{.PACKAGES}}
 
   tidy:
     desc: Tidy go.mod and go.sum
     cmds:
       - go mod tidy
 
+  debug:minikube:
+    desc: Run the k8s dispatcher on this machine against the local stack, starting each run as a Job in minikube.
+    env:
+      RUNNER_CONFIG_FILE: run-controller/runner-config.yml
+    cmds:
+      - minikube start
+      - kubectl config use-context minikube
+      - go run -tags k8s ./cmd/runner {{.CLI_ARGS}}
+
   start:runner:
-    # The goal is to support every run type in process.
     desc: Run the ALL runner from source. Currently supports TERRAFORM and MANUAL and fails other runs immediately.
     env:
-      RUNCONTROLLER_CONFIG_FILE: run-controller/runner-config.yml
-      RUNCONTROLLER_DISPATCHER: inprocess
-      RUNNER_API_URL: http://127.0.0.1:8080
+      RUNNER_CONFIG_FILE: run-controller/local/runner-config.yml
+      RUNNER_METRICS_PORT: "2112"
     vars:
       COVER_ARGS: '{{if .GOCOVERDIR}}-cover -coverpkg=./...{{end}}'
     cmds:
-      - go build -tags inprocess {{.COVER_ARGS}} -o bin/run-controller ./run-controller
-      - bin/run-controller {{.CLI_ARGS}}
+      - go build {{.COVER_ARGS}} -o bin/runner ./cmd/runner
+      - bin/runner {{.CLI_ARGS}}

@@ -1,15 +1,4 @@
-.gradle
-.kotlin/
-
-# The Go modules have build packages.
-**/build/*
-!**/build/*.go
-
-out/
 .DS_Store
-.settings
-.project
-.classpath
 bin/
 
 
@@ -41,3 +30,7 @@ override.tf.json
 # CLI configuration files
 .terraformrc
 terraform.rc
+
+# Per-developer direnv setup, e.g. "use flake" with nix-direnv
+.envrc
+.direnv/

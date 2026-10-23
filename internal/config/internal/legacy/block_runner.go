@@ -5,7 +5,7 @@ import (
 
 	"github.com/goccy/go-yaml/ast"
 
-	"github.com/meshcloud/building-block-runner/internal/crypto"
+	"github.com/meshcloud/building-block-runner/v2/internal/crypto"
 )
 
 // BlockRunner binds the blockrunner keys of a Kotlin runner's Spring config, lowercased and without '-' and '_'.

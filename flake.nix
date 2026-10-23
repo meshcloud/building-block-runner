@@ -27,15 +27,8 @@
           pkgsUnstable.go_1_27
           # No golangci-lint here: the Taskfile builds it with the Go that go.mod asks for.
           pkgs.go-task
-          pkgs.jdk21_headless
           pkgs.opentofu
           pkgs.minikube
-
-          # kotlin linter
-          # Keep this version in sync with the ktlint { version } block in build.gradle
-          # and the ktlint --format hook in .claude/settings.json.
-          # nixos-25.11 stable only ships 1.7.1; unstable currently provides 1.8.0.
-          pkgsUnstable.ktlint
         ];
       in
       {

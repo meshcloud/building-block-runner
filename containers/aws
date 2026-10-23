@@ -1,0 +1,4 @@
+#!/bin/sh
+set -e
+nix profile add nixpkgs#awscli2 >&2
+exec "$HOME/.nix-profile/bin/aws" "$@"

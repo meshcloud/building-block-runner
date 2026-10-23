@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/meshcloud/building-block-runner/internal/crypto"
+	"github.com/meshcloud/building-block-runner/v2/internal/crypto"
 )
 
 const (

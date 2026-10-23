@@ -7,9 +7,9 @@ import (
 
 	"github.com/meshcloud/meshstack-cli/pkg/setting"
 
-	"github.com/meshcloud/building-block-runner/internal/config"
-	"github.com/meshcloud/building-block-runner/internal/dispatcher"
-	"github.com/meshcloud/building-block-runner/internal/executor"
+	"github.com/meshcloud/building-block-runner/v2/internal/config"
+	"github.com/meshcloud/building-block-runner/v2/internal/dispatcher"
+	"github.com/meshcloud/building-block-runner/v2/internal/executor"
 )
 
 var systemEnv = slices.Concat(executor.InheritedEnv, []string{"RUNNER_LOG_LEVEL", "RUNNER_LOG_FORMAT", "GOCOVERDIR"})

@@ -2,4 +2,4 @@
 
 package main
 
-import _ "github.com/meshcloud/building-block-runner/internal/executor/manual"
+import _ "github.com/meshcloud/building-block-runner/v2/internal/executor/manual"

@@ -39,8 +39,8 @@ k8s:
               - name: runner
                 image: ghcr.io/meshcloud/tf-block-runner:main
                 env:
-                  - name: EXECUTION_MODE
-                    value: single-run
+                  - name: SSH_KNOWN_HOSTS
+                    value: /app/ssh/known_hosts
     manual: # runner type names match in any case, so MANUAL works too
       spec:
         template:
@@ -48,9 +48,6 @@ k8s:
             containers:
               - name: runner
                 image: ghcr.io/meshcloud/manual-block-runner:main
-                env:
-                  - name: SPRING_PROFILES_ACTIVE
-                    value: kubernetes
     github:
       spec:
         template:
@@ -58,9 +55,6 @@ k8s:
             containers:
               - name: runner
                 image: ghcr.io/meshcloud/github-block-runner:main
-                env:
-                  - name: SPRING_PROFILES_ACTIVE
-                    value: kubernetes
     gitlab:
       spec:
         template:
@@ -68,9 +62,6 @@ k8s:
             containers:
               - name: runner
                 image: ghcr.io/meshcloud/gitlab-block-runner:main
-                env:
-                  - name: SPRING_PROFILES_ACTIVE
-                    value: kubernetes
     azureDevOps:
       spec:
         template:
@@ -78,9 +69,6 @@ k8s:
             containers:
               - name: runner
                 image: ghcr.io/meshcloud/azure-devops-block-runner:main
-                env:
-                  - name: SPRING_PROFILES_ACTIVE
-                    value: kubernetes
 
 dispatcher:
   # exactly one of tf, manual, github, gitlab, azureDevOps, ALL / '*', also the names of the meshStack API like TERRAFORM

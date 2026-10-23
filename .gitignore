@@ -1,15 +1,4 @@
-.gradle
-.kotlin/
-
-# The Go modules have build packages.
-**/build/*
-!**/build/*.go
-
-out/
 .DS_Store
-.settings
-.project
-.classpath
 bin/
 
 

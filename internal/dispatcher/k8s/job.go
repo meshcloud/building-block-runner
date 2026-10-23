@@ -15,10 +15,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/meshcloud/building-block-runner/internal/build"
-	"github.com/meshcloud/building-block-runner/internal/config"
-	"github.com/meshcloud/building-block-runner/internal/dispatcher"
-	"github.com/meshcloud/building-block-runner/internal/executor"
+	"github.com/meshcloud/building-block-runner/v2/internal/build"
+	"github.com/meshcloud/building-block-runner/v2/internal/config"
+	"github.com/meshcloud/building-block-runner/v2/internal/dispatcher"
+	"github.com/meshcloud/building-block-runner/v2/internal/executor"
 )
 
 const (

@@ -12,21 +12,21 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/meshcloud/building-block-runner/internal/config/tf"
-	"github.com/meshcloud/building-block-runner/internal/config/xtime"
-	"github.com/meshcloud/building-block-runner/internal/crypto"
+	"github.com/meshcloud/building-block-runner/v2/internal/config/tf"
+	"github.com/meshcloud/building-block-runner/v2/internal/config/xtime"
+	"github.com/meshcloud/building-block-runner/v2/internal/crypto"
 )
 
 var (
-	springProfileKubernetes = corev1.EnvVar{Name: "SPRING_PROFILES_ACTIVE", Value: "kubernetes"}
-	logLevelDebug           = corev1.EnvVar{Name: "RUNNER_LOG_LEVEL", Value: "debug"}
-	spotToleration          = corev1.Toleration{Key: "spot", Operator: corev1.TolerationOpEqual, Value: "true", Effect: corev1.TaintEffectNoSchedule}
-	typeTemplates           = JobSpecTemplates{
-		RunnerTypeTf:          runnerContainerTemplate("ghcr.io/meshcloud/tf-block-runner:main", corev1.EnvVar{Name: "EXECUTION_MODE", Value: "single-run"}),
-		RunnerTypeManual:      runnerContainerTemplate("ghcr.io/meshcloud/manual-block-runner:main", springProfileKubernetes),
-		RunnerTypeGitHub:      runnerContainerTemplate("ghcr.io/meshcloud/github-block-runner:main", springProfileKubernetes),
-		RunnerTypeGitLab:      runnerContainerTemplate("ghcr.io/meshcloud/gitlab-block-runner:main", springProfileKubernetes),
-		RunnerTypeAzureDevOps: runnerContainerTemplate("ghcr.io/meshcloud/azure-devops-block-runner:main", springProfileKubernetes),
+	sshKnownHosts  = corev1.EnvVar{Name: "SSH_KNOWN_HOSTS", Value: "/app/ssh/known_hosts"}
+	logLevelDebug  = corev1.EnvVar{Name: "RUNNER_LOG_LEVEL", Value: "debug"}
+	spotToleration = corev1.Toleration{Key: "spot", Operator: corev1.TolerationOpEqual, Value: "true", Effect: corev1.TaintEffectNoSchedule}
+	typeTemplates  = JobSpecTemplates{
+		RunnerTypeTf:          runnerContainerTemplate("ghcr.io/meshcloud/tf-block-runner:main", sshKnownHosts),
+		RunnerTypeManual:      runnerContainerTemplate("ghcr.io/meshcloud/manual-block-runner:main"),
+		RunnerTypeGitHub:      runnerContainerTemplate("ghcr.io/meshcloud/github-block-runner:main"),
+		RunnerTypeGitLab:      runnerContainerTemplate("ghcr.io/meshcloud/gitlab-block-runner:main"),
+		RunnerTypeAzureDevOps: runnerContainerTemplate("ghcr.io/meshcloud/azure-devops-block-runner:main"),
 	}
 )
 
@@ -97,14 +97,14 @@ func Test_JobSpecTemplates_MergeTheRunnerTypeIntoAll(t *testing.T) {
 	manual := typeTemplates[RunnerTypeManual]
 
 	t.Run("GetFor merges the type into all", func(t *testing.T) {
-		merged, err := JobSpecTemplates{RunnerTypeAll: all, RunnerTypeManual: manual}.GetFor(RunnerTypeManual)
+		merged, err := JobSpecTemplates{RunnerTypeAll: all, RunnerTypeTf: typeTemplates[RunnerTypeTf]}.GetFor(RunnerTypeTf)
 		require.NoError(t, err)
 		assert.Equal(t, podSpecTemplate(corev1.PodSpec{
 			Tolerations: []corev1.Toleration{spotToleration},
 			Containers: []corev1.Container{{
 				Name:  "runner",
-				Image: "ghcr.io/meshcloud/manual-block-runner:main",
-				Env:   []corev1.EnvVar{springProfileKubernetes, logLevelDebug},
+				Image: "ghcr.io/meshcloud/tf-block-runner:main",
+				Env:   []corev1.EnvVar{sshKnownHosts, logLevelDebug},
 			}},
 		}), merged)
 	})

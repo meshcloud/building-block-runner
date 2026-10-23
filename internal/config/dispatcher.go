@@ -3,7 +3,7 @@ package config
 import (
 	"github.com/meshcloud/meshstack-cli/client/types/xurl"
 
-	"github.com/meshcloud/building-block-runner/internal/config/xtime"
+	"github.com/meshcloud/building-block-runner/v2/internal/config/xtime"
 )
 
 type Dispatcher struct {

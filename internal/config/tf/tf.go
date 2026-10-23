@@ -3,7 +3,7 @@ package tf
 import (
 	"errors"
 
-	"github.com/meshcloud/building-block-runner/internal/config/xtime"
+	"github.com/meshcloud/building-block-runner/v2/internal/config/xtime"
 )
 
 type Config struct {

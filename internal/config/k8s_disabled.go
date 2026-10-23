@@ -5,7 +5,7 @@ package config
 import (
 	"errors"
 
-	"github.com/meshcloud/building-block-runner/internal/config/internal/legacy"
+	"github.com/meshcloud/building-block-runner/v2/internal/config/internal/legacy"
 )
 
 var errNoK8sSupport = errors.New("k8s needs a binary built with -tags k8s")

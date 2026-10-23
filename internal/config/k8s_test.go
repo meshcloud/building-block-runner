@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/meshcloud/building-block-runner/internal/build"
-	"github.com/meshcloud/building-block-runner/internal/config/xtime"
+	"github.com/meshcloud/building-block-runner/v2/internal/build"
+	"github.com/meshcloud/building-block-runner/v2/internal/config/xtime"
 )
 
 func Test_ApplyK8sDefaults_TakesTheNamespaceOfThePod(t *testing.T) {

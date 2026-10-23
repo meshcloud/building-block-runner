@@ -14,8 +14,8 @@ One Go module at the repository root builds one binary, `cmd/runner`.
   deliver its status.
 - `internal/dispatcher/process` (default) starts the binary again for each run, with the run JSON in `RUNNER_RUN_JSON`, an
   allowlisted env and stdin as lifeline. On a timeout it writes the reason to stdin and closes it.
-- `internal/dispatcher/k8s` (`-tags k8s`) starts a Job per run on the runner image of its type, with the run mounted
-  from a Secret. It reads the exit code from the Job conditions.
+- `internal/dispatcher/k8s` (`-tags k8s`) starts a Job per run on the building-block-runner image, or the image of
+  its type's Job template, with the run mounted from a Secret. It reads the exit code from the Job conditions.
 - `internal/executor` runs the run in `RUNNER_RUN_JSON` in this process, builds its meshStack client with
   `auth.ResolveClient` from the run token in its env, and reports through the `Step`s it declares on a
   `Reporter`, also after it registered; `Step.Run` sets a step's status and fails the run on an error, `Step.SetStatus` sets it
@@ -23,14 +23,18 @@ One Go module at the repository root builds one binary, `cmd/runner`.
   delivered FAILED, and anything else otherwise. The run logs through `slog.Default()` with the run's attributes; the
   poller adds the run to its context with `dispatcher.WithRun`.
 - `internal/testmeshstack` isolates that client in tests and answers the status calls of a run process.
-- `internal/build` holds the version, set with `-ldflags -X`.
+- `internal/build` reads the module version and the git revision from the Go build info, which needs a build in a git
+  checkout with its tags; the module path is `github.com/meshcloud/building-block-runner/v2`, so Go takes `v2.x.y` tags.
+  `ImageTag` is the tag CI pushes the images of the build with.
 - `internal/executor/tf`, `internal/executor/manual`, `internal/executor/gitlab`, `internal/executor/azuredevops` and
   `internal/executor/github` are the executors. Each registers itself with `executor.Register`, linked by
   `cmd/runner/executor_<type>.go` behind its build tag; a build without an executor tag links all of them.
   The pipeline executors call their service with meshstack-cli's `http.Client` and `http.WithoutRedirects()`.
 
-All images build `./cmd/runner`: run-controller with `-tags k8s` (no executor), tf with `-tags tf`, manual with
-`-tags manual`. `cmd/runner/deps_test.go` pins what each build links.
+`containers/Dockerfile` builds every image from `./cmd/runner`: run-controller with `-tags k8s` (no executor),
+building-block-runner without a tag (every executor), every other image with the tag of its executor.
+`task container:build` builds the binary on the host and passes `BINARY=prebuilt`, so the image takes `bin/runner-linux-<arch>`.
+`cmd/runner/deps_test.go` pins what each build links.
 
 ## Companion Files
 

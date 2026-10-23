@@ -35,14 +35,10 @@ variable "main_required_status_checks" {
   description = "Status check contexts required for merging into main"
   type        = list(string)
   default = [
-    "block-runner-core - check",
-    "github-block-runner - check",
-    "gitlab-block-runner - check",
-    "azure-devops-block-runner - check",
-
     "github-block-runner - image",
     "gitlab-block-runner - image",
     "azure-devops-block-runner - image",
+    "building-block-runner - image",
 
     "go - test",
 

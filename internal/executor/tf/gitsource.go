@@ -18,8 +18,8 @@ import (
 	"github.com/cenkalti/backoff/v5"
 	"github.com/meshcloud/meshstack-cli/client"
 
-	tfconfig "github.com/meshcloud/building-block-runner/internal/config/tf"
-	"github.com/meshcloud/building-block-runner/internal/executor"
+	tfconfig "github.com/meshcloud/building-block-runner/v2/internal/config/tf"
+	"github.com/meshcloud/building-block-runner/v2/internal/executor"
 )
 
 const (

@@ -1,6 +1,6 @@
 package legacy
 
-import "github.com/meshcloud/building-block-runner/internal/crypto"
+import "github.com/meshcloud/building-block-runner/v2/internal/crypto"
 
 type TfRunner struct {
 	RunnerUuid       string                `yaml:"runnerUuid"`

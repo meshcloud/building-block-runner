@@ -13,12 +13,12 @@ import (
 	"slices"
 	"syscall"
 
-	"github.com/meshcloud/building-block-runner/internal/build"
-	"github.com/meshcloud/building-block-runner/internal/config"
-	"github.com/meshcloud/building-block-runner/internal/dispatcher"
-	"github.com/meshcloud/building-block-runner/internal/executor"
-	"github.com/meshcloud/building-block-runner/internal/metrics"
-	"github.com/meshcloud/building-block-runner/internal/poller"
+	"github.com/meshcloud/building-block-runner/v2/internal/build"
+	"github.com/meshcloud/building-block-runner/v2/internal/config"
+	"github.com/meshcloud/building-block-runner/v2/internal/dispatcher"
+	"github.com/meshcloud/building-block-runner/v2/internal/executor"
+	"github.com/meshcloud/building-block-runner/v2/internal/metrics"
+	"github.com/meshcloud/building-block-runner/v2/internal/poller"
 )
 
 const (

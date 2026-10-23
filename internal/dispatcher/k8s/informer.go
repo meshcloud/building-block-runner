@@ -17,9 +17,9 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 
-	"github.com/meshcloud/building-block-runner/internal/config"
-	"github.com/meshcloud/building-block-runner/internal/dispatcher"
-	"github.com/meshcloud/building-block-runner/internal/executor"
+	"github.com/meshcloud/building-block-runner/v2/internal/config"
+	"github.com/meshcloud/building-block-runner/v2/internal/dispatcher"
+	"github.com/meshcloud/building-block-runner/v2/internal/executor"
 )
 
 // annotationFailureReported keeps a later process from reporting a failed Job again.

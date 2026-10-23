@@ -7,8 +7,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
-	"github.com/meshcloud/building-block-runner/internal/build"
-	"github.com/meshcloud/building-block-runner/internal/config"
+	"github.com/meshcloud/building-block-runner/v2/internal/build"
+	"github.com/meshcloud/building-block-runner/v2/internal/config"
 )
 
 const (

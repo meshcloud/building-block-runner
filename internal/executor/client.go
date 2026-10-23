@@ -9,7 +9,7 @@ import (
 	"github.com/meshcloud/meshstack-cli/client/http"
 	"github.com/meshcloud/meshstack-cli/client/types/xurl"
 
-	"github.com/meshcloud/building-block-runner/internal/build"
+	"github.com/meshcloud/building-block-runner/v2/internal/build"
 )
 
 var userAgent = http.UserAgent{GitHubRepo: "meshcloud/building-block-runner", Version: build.Version}

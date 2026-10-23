@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	tfconfig "github.com/meshcloud/building-block-runner/internal/config/tf"
+	tfconfig "github.com/meshcloud/building-block-runner/v2/internal/config/tf"
 )
 
 type fakeWorkspaces struct {

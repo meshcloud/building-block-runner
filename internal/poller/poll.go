@@ -6,8 +6,8 @@ import (
 
 	"github.com/meshcloud/meshstack-cli/pkg/setting"
 
-	"github.com/meshcloud/building-block-runner/internal/config"
-	"github.com/meshcloud/building-block-runner/internal/dispatcher"
+	"github.com/meshcloud/building-block-runner/v2/internal/config"
+	"github.com/meshcloud/building-block-runner/v2/internal/dispatcher"
 )
 
 func Poll(ctx context.Context, cfg config.Config) error {

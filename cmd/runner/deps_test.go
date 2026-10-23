@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const module = "github.com/meshcloud/building-block-runner/"
+const module = "github.com/meshcloud/building-block-runner/v2/"
 
 func Test_EachImageBuild_LinksOnlyWhatItRuns(t *testing.T) {
 	t.Parallel()

@@ -15,10 +15,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/meshcloud/building-block-runner/internal/build"
-	"github.com/meshcloud/building-block-runner/internal/config"
-	"github.com/meshcloud/building-block-runner/internal/dispatcher"
-	"github.com/meshcloud/building-block-runner/internal/executor"
+	"github.com/meshcloud/building-block-runner/v2/internal/build"
+	"github.com/meshcloud/building-block-runner/v2/internal/config"
+	"github.com/meshcloud/building-block-runner/v2/internal/dispatcher"
+	"github.com/meshcloud/building-block-runner/v2/internal/executor"
 )
 
 const (
@@ -206,13 +206,10 @@ func (d *Dispatcher) env(run dispatcher.Run, runnerType config.RunnerType, secre
 	if err != nil {
 		return nil, fmt.Errorf("encode the %s config: %w", runnerType, err)
 	}
-	runPath := runDir + "/" + runFile
 	env := []corev1.EnvVar{
-		{Name: executor.EnvRunYml, Value: runPath},
-		{Name: "RUN_JSON_FILE_PATH", Value: runPath},
+		{Name: executor.EnvRunYml, Value: runDir + "/" + runFile},
 		{Name: executor.EnvConfig, Value: executorConfig},
 		{Name: executor.EnvRunnerUuid, Value: d.cfg.Uuid.String()},
-		{Name: "RUNNER_API_URL", Value: d.cfg.Api.Url.String()},
 		{Name: setting.Endpoint.EnvKey(), Value: dispatcher.MeshStackEndpoint(d.cfg, run)},
 		{Name: setting.ApiToken.EnvKey(), ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{Name: secret.Name, Key: runTokenKey}}},
 	}

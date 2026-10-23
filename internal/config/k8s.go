@@ -16,9 +16,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 
-	"github.com/meshcloud/building-block-runner/internal/build"
-	"github.com/meshcloud/building-block-runner/internal/config/internal/legacy"
-	"github.com/meshcloud/building-block-runner/internal/config/xtime"
+	"github.com/meshcloud/building-block-runner/v2/internal/build"
+	"github.com/meshcloud/building-block-runner/v2/internal/config/internal/legacy"
+	"github.com/meshcloud/building-block-runner/v2/internal/config/xtime"
 )
 
 type K8s struct {

@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/meshcloud/building-block-runner/internal/config"
-	"github.com/meshcloud/building-block-runner/internal/poller"
+	"github.com/meshcloud/building-block-runner/v2/internal/config"
+	"github.com/meshcloud/building-block-runner/v2/internal/poller"
 )
 
 // One every local stack has: the dev dump's ALL runner belongs to it.
@@ -40,7 +40,7 @@ func TestAccRunner(t *testing.T) {
 func (s localStack) createRunner(t *testing.T) config.Config {
 	t.Helper()
 	// meshStack accepts the key that the dev dump holds for the ALL runner.
-	cfg, err := config.LoadFile(t.Context(), "../run-controller/runner-config.yml")
+	cfg, err := config.LoadFile(t.Context(), "../dev/local.yml")
 	require.NoError(t, err)
 	publicKey, err := cfg.Crypto.FirstPublicKey()
 	require.NoError(t, err)

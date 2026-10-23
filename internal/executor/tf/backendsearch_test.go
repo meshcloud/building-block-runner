@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/meshcloud/building-block-runner/internal/executor/tf"
+	"github.com/meshcloud/building-block-runner/v2/internal/executor/tf"
 )
 
 //go:embed testdata/backendsearch

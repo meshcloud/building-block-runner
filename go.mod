@@ -1,4 +1,4 @@
-module github.com/meshcloud/building-block-runner
+module github.com/meshcloud/building-block-runner/v2
 
 go 1.27
 

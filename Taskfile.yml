@@ -35,16 +35,30 @@ tasks:
   debug:minikube:
     desc: Run the k8s dispatcher on this machine against the local stack, starting each run as a Job in minikube.
     env:
-      RUNNER_CONFIG_FILE: run-controller/runner-config.yml
+      RUNNER_CONFIG_FILE: dev/minikube.yml
     cmds:
       - minikube start
       - kubectl config use-context minikube
       - go run -tags k8s ./cmd/runner {{.CLI_ARGS}}
 
+  image:build:
+    desc: Build the image TARGET (runner or tf) as IMAGE from this working tree, uncommitted changes included, with TAGS and FOR_TYPES. MINIKUBE=1 loads it into minikube.
+    requires:
+      vars: [IMAGE]
+    vars:
+      TARGET: '{{.TARGET | default "runner"}}'
+      ARCH:
+        sh: go env GOARCH
+    cmds:
+      - GOOS=linux GOARCH={{.ARCH}} go build -buildvcs=true -tags '{{.TAGS}}' -trimpath -ldflags '-s -w' -o bin/runner-linux-{{.ARCH}} ./cmd/runner
+      - docker build --platform linux/{{.ARCH}} --build-arg BINARY=prebuilt --build-arg FOR_TYPES='{{.FOR_TYPES}}' --target {{.TARGET}} -t {{.IMAGE}} -f containers/Dockerfile .
+      - '{{if .MINIKUBE}}minikube image load {{.IMAGE}}{{end}}'
+
   start:runner:
     desc: Run the ALL runner from source.
     env:
-      RUNNER_CONFIG_FILE: run-controller/local/runner-config.yml
+      RUNNER_CONFIG_FILE: dev/local.yml
+      MESHSTACK_ENDPOINT: http://localhost:8080
       RUNNER_METRICS_PORT: "2112"
     vars:
       COVER_ARGS: '{{if .GOCOVERDIR}}-cover -coverpkg=./...{{end}}'

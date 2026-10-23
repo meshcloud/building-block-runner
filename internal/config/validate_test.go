@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/meshcloud/building-block-runner/internal/config/xtime"
-	"github.com/meshcloud/building-block-runner/internal/crypto"
+	"github.com/meshcloud/building-block-runner/v2/internal/config/xtime"
+	"github.com/meshcloud/building-block-runner/v2/internal/crypto"
 )
 
 func Test_Validate_ReportsEveryMissingSetting(t *testing.T) {

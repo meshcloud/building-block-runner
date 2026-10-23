@@ -90,7 +90,8 @@ k8s:
                     cpu: 10m
                     memory: 16Mi
     # Build the :dev images into minikube first: minikube image build -t tf-block-runner:dev -f tf-block-runner/Dockerfile .
-    # and minikube image build -t manual-block-runner:dev -f manual-block-runner/Dockerfile .
+    # and for the other images, with their build tag from the README:
+    # minikube image build -t manual-block-runner:dev -f containers/go.Dockerfile --build-opt=build-arg=TAGS=manual .
     tf:
       spec:
         template:
@@ -113,27 +114,21 @@ k8s:
           spec:
             containers:
               - name: runner
-                image: ghcr.io/meshcloud/github-block-runner:main
-                env:
-                  - name: SPRING_PROFILES_ACTIVE
-                    value: kubernetes
+                image: github-block-runner:dev
+                imagePullPolicy: Never
     gitlab:
       spec:
         template:
           spec:
             containers:
               - name: runner
-                image: ghcr.io/meshcloud/gitlab-block-runner:main
-                env:
-                  - name: SPRING_PROFILES_ACTIVE
-                    value: kubernetes
+                image: gitlab-block-runner:dev
+                imagePullPolicy: Never
     azureDevOps:
       spec:
         template:
           spec:
             containers:
               - name: runner
-                image: ghcr.io/meshcloud/azure-devops-block-runner:main
-                env:
-                  - name: SPRING_PROFILES_ACTIVE
-                    value: kubernetes
+                image: azure-devops-block-runner:dev
+                imagePullPolicy: Never

@@ -1,7 +1,0 @@
-# Test profile 1: Kubernetes mode
-# Run is expected to be fetched via env variable and run tokens should be used.
-# In kubernetes mode api.url is not required — the run object carries its own self-link.
-blockrunner:
-  version: test-version-kubernetes
-  uuid: test-kubernetes-run-token
-  # No auth block provided - run token from the run object is used instead

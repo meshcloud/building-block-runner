@@ -80,7 +80,7 @@ func startTestDispatcher(t *testing.T, ctx context.Context, cfg config.Config, j
 func Test_Dispatch_CreatesAJobWithItsRunInASecret(t *testing.T) {
 	template := runnerTemplate(corev1.Container{
 		Image:           "ghcr.io/meshcloud/tf-block-runner:main",
-		Env:             []corev1.EnvVar{{Name: "EXECUTION_MODE", Value: "single-run"}, {Name: executor.EnvRunYml, Value: "/elsewhere"}},
+		Env:             []corev1.EnvVar{{Name: "TF_LOG", Value: "DEBUG"}, {Name: executor.EnvRunYml, Value: "/elsewhere"}},
 		SecurityContext: &corev1.SecurityContext{Privileged: new(true)},
 		Resources:       corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("2Gi")}},
 	}, corev1.PodSpec{
@@ -137,9 +137,8 @@ func Test_Dispatch_CreatesAJobWithItsRunInASecret(t *testing.T) {
 		for _, envVar := range container.Env {
 			env[envVar.Name] = envVar
 		}
-		assert.Equal(t, "single-run", env["EXECUTION_MODE"].Value)
+		assert.Equal(t, "DEBUG", env["TF_LOG"].Value)
 		assert.Equal(t, "/var/run/secrets/meshstack/run.json", env[executor.EnvRunYml].Value)
-		assert.Equal(t, "/var/run/secrets/meshstack/run.json", env["RUN_JSON_FILE_PATH"].Value)
 		assert.JSONEq(t, `{"cacheDir":"","insecureHostKeys":false,"wsTimeout":"0s","initTimeout":"0s","gitCloneAttempts":0,"registryRetries":0,"stopGrace":"0s"}`, env[executor.EnvConfig].Value)
 		assert.Equal(t, "https://meshstack.example.com", env[setting.Endpoint.EnvKey()].Value)
 		assert.Equal(t, corev1.EnvVar{

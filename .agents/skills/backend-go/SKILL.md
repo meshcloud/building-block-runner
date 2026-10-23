@@ -27,8 +27,8 @@ One Go module at the repository root builds one binary, `cmd/runner`.
   `cmd/runner/executor_<type>.go` behind its build tag; a build without an executor tag links all of them.
   `executor.NewPipelineClient` builds the HTTP client of the pipeline executors on meshstack-cli's `client/http`.
 
-All images build `./cmd/runner`: run-controller with `-tags k8s` (no executor), tf with `-tags tf`, manual with
-`-tags manual`. `cmd/runner/deps_test.go` pins what each build links.
+All images build `./cmd/runner`: run-controller with `-tags k8s` (no executor), every other image with the tag of its
+executor. `cmd/runner/deps_test.go` pins what each build links.
 
 ## Companion Files
 

@@ -7,7 +7,6 @@ satellite {
     command 'task', 'start:runner'
     environment RUNNER_API_CLIENT_ID: fromBackendConfig('auth.openid.apiKeys.meshcloud-hosted-runner.clientId'),
                 RUNNER_API_CLIENT_SECRET: fromBackendConfig('auth.openid.apiKeys.meshcloud-hosted-runner.clientSecret'),
-                RUNNER_API_URL: 'http://127.0.0.1:8080',
                 GOCOVERDIR: coverageDir()
     health 'http://127.0.0.1:2112/healthz'
     // The task compiles the runner first, and a cold go build cache takes minutes.

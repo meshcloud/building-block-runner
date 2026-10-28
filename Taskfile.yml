@@ -47,8 +47,20 @@ tasks:
       RUNCONTROLLER_CONFIG_FILE: run-controller/runner-config.yml
       RUNCONTROLLER_DISPATCHER: inprocess
       RUNNER_API_URL: http://127.0.0.1:8080
+      RUNNER_API_CLIENT_ID: '{{.CLIENT_ID}}'
+      RUNNER_API_CLIENT_SECRET: '{{.CLIENT_SECRET}}'
     vars:
       COVER_ARGS: '{{if .GOCOVERDIR}}-cover -coverpkg=./...{{end}}'
+      # Logs in with the API key of the local meshStack next to this repo, unless the environment sets one.
+      # Found from the main checkout, so that it also works in a git worktree.
+      MAIN_CHECKOUT:
+        sh: 'dirname "$(git rev-parse --path-format=absolute --git-common-dir)"'
+      MESHFED_API_CONFIG: '{{.MAIN_CHECKOUT}}/../meshfed-release/meshfed/api/build/resources/main/application-default.yml'
+      LOCAL_API_KEY: '{{.ROOT_DIR}}/run-controller/local-api-key.sh {{.MESHFED_API_CONFIG}}'
+      CLIENT_ID:
+        sh: '[ -n "$RUNNER_API_CLIENT_ID" ] && echo "$RUNNER_API_CLIENT_ID" || {{.LOCAL_API_KEY}} clientId'
+      CLIENT_SECRET:
+        sh: '[ -n "$RUNNER_API_CLIENT_SECRET" ] && echo "$RUNNER_API_CLIENT_SECRET" || {{.LOCAL_API_KEY}} clientSecret'
     cmds:
       - go build -tags inprocess {{.COVER_ARGS}} -o bin/run-controller ./run-controller
       - bin/run-controller {{.CLI_ARGS}}

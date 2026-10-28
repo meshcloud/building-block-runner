@@ -11,11 +11,9 @@ namespace: default
 # 127.0.0.1 host.minikube.internal
 api:
   url: http://host.minikube.internal:8080
-  # Option 1: Basic auth credentials (deprecated, prefer API key auth)
-  user: bb-api
-  password: guest
-  # Option 2: API key auth. Uncomment and set the credentials for this controller, or provide them via the
+  # API key auth. Uncomment and set the credentials for this controller, or provide them via the
   # RUNNER_API_CLIENT_ID / RUNNER_API_CLIENT_SECRET environment variables (which take precedence).
+  # `task start:runner` sets them from a local meshStack checkout.
   # clientId: your-client-id
   # clientSecret: your-client-secret
 

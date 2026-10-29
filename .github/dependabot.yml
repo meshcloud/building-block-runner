@@ -1,22 +1,67 @@
+# https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference
 version: 2
-
 updates:
-  - package-ecosystem: github-actions
+  - package-ecosystem: gomod
     directory: /
-
     schedule:
-      interval: monthly
-
+      interval: daily
     # Most compromised releases are pulled within a week.
     cooldown:
       default-days: 7
-
     groups:
-      actions:
+      go-modules:
         patterns:
           - "*"
+    commit-message:
+      prefix: build
 
-    open-pull-requests-limit: 1
-
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+          - major
     commit-message:
       prefix: ci
+
+  - package-ecosystem: nix
+    directories:
+      - /
+      - /containers/nix
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      nix:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: build
+
+  - package-ecosystem: docker
+    directory: /containers
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    # The golang builder image moves with the go directive in go.mod.
+    ignore:
+      - dependency-name: golang
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
+    groups:
+      docker:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: build

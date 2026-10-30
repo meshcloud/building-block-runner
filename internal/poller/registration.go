@@ -15,16 +15,6 @@ import (
 	"github.com/meshcloud/building-block-runner/v2/internal/metrics"
 )
 
-// Register updates the registration of a runner without workload identity.
-func Register(ctx context.Context, cfg config.Config) error {
-	settings := setting.SingleSource(cfg.Api)
-	meshStack, err := newClient(ctx, settings)
-	if err != nil {
-		return err
-	}
-	return register(ctx, cfg, settings, meshStack.BuildingBlockRunner, nil)
-}
-
 func register(ctx context.Context, cfg config.Config, settings setting.Sources, runners client.MeshBuildingBlockRunnerClient, workloadIdentity *client.MeshRunnerWorkloadIdentityFed) error {
 	workspace, err := auth.ResolveWorkspace(ctx, clientOptions(settings))
 	if err != nil {

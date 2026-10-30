@@ -85,7 +85,7 @@ linters:
       - linters:
           - gosec
         text: G304|G703
-      # testacc launches the binary it built and waits for its health endpoint.
+      # testacc launches the binaries it built and waits for meshStack.
       - path: testacc/
         linters:
           - forbidigo
@@ -188,3 +188,10 @@ linters:
               desc: Use encoding/json/v2
             - pkg: log$
               desc: Use log/slog instead
+        testacc:
+          files:
+            - "!$test"
+            - "!**/internal/testacc/**"
+          deny:
+            - pkg: github.com/meshcloud/building-block-runner/v2/internal/testacc
+              desc: The acceptance test harness is for tests only

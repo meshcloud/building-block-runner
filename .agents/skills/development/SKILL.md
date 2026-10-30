@@ -1,6 +1,6 @@
 ---
-name: backend-go
-description: Go development conventions for the Go runner — load when working with any Go code in this repository
+name: development
+description: How the runner's Go code is laid out and written - packages, values and pointers, modern Go idioms and the checks after every change. Use when writing, changing or reviewing Go code in this repository.
 ---
 ## Layout
 
@@ -33,6 +33,30 @@ One Go module at the repository root builds one binary, `cmd/runner`.
 building-block-runner without a tag (every executor), every other image with the tag of its executor.
 `task image:build` builds the binary on the host and passes `BINARY=prebuilt`, so the image takes `bin/runner-linux-<arch>`.
 `cmd/runner/deps_test.go` pins what each build links.
+
+## Modern Go
+
+Follow the `use-modern-go` skill of the `modern-go-guidelines` plugin, which `.claude/settings.json` enables. `go.mod`
+pins the Go version it applies to. On top of it:
+
+- A generic method needs a receiver with real state, such as `Deployment.Output[T]`. Otherwise write a generic
+  function.
+- `new(expression)` makes an inline pointer: `new("run-1")`, `new(int64(1))`. Do not add a `ptr`-style helper or a
+  variable that only exists to take its address.
+- Write the struct literal at the call site. A constructor that only fills defaults hides which fields a caller sets.
+
+## Values, pointers and receivers
+
+**A method takes a value receiver by default.** A value cannot be nil, so the method needs no nil check, and a caller
+can pass a zero value. Take a pointer receiver only when the method changes its receiver, when the type must not be
+copied (it holds a mutex or a lock file, say), or when a nil receiver means something. `recvcheck` keeps all methods
+of a type on one kind of receiver, so one such method makes them all pointers.
+
+**A constructor returns a value** unless one of these reasons applies. Values that share mutable state hold one
+pointer to that state and stay values themselves.
+
+**A field is a plain value** unless a caller must tell null from the zero value: `K8s.JobTtl` is nil until the
+defaults apply, because 0 deletes a finished Job at once.
 
 ## Companion Files
 

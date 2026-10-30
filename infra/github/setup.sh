@@ -68,7 +68,6 @@ _setup_vault_portforward || return 1
 _run_setup
 _setup_rc=$?
 
-# Always stop the port-forward and clean up.
 [[ -o monitor ]] && _restore_monitor=1 && set +m
 kill "$_VAULT_PF_PID" 2>/dev/null && wait "$_VAULT_PF_PID" 2>/dev/null
 [[ -n "${_restore_monitor:-}" ]] && set -m

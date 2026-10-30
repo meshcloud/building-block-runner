@@ -54,11 +54,9 @@ jobs:
           repositories: meshfed-release
           permission-actions: write
 
-      # meshfed-release pairs a satellite branch with a same-named branch of its own, so the
-      # dispatch names that branch rather than always `develop`: a `workflow_dispatch` reads the
-      # workflow file from the ref it is given, and `develop` would run the orchestration that is
-      # already merged. This token may dispatch workflows there and read nothing, so trying the
-      # dispatch is the only branch lookup available.
+      # A workflow_dispatch reads the workflow file from the ref it is given, so the dispatch tries
+      # the meshfed-release branch of the same name first. The token can only dispatch, so trying is
+      # the only branch lookup.
       #
       # `$SATELLITE_REF` reaches the script through the environment, never as a `${{ }}` expression
       # GitHub substitutes into the script text: a branch named `$(id)` would otherwise run as a
@@ -84,7 +82,6 @@ jobs:
             request develop
             orchestrated_from=develop
           fi
-          # The provider suite drives real terraform and manual runs through these runners, which our
-          # own suite does not.
+          # The provider suite drives terraform and manual runs through these runners too.
           request "$orchestrated_from" terraform-provider-meshstack
           echo "::notice::Requested acceptance runs for $SATELLITE_REF, orchestrated from meshfed-release $orchestrated_from. The results arrive as the \"Acceptance Tests (meshStack backend)\" and \"Acceptance Tests (meshStack backend, terraform-provider-meshstack)\" checks."

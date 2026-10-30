@@ -38,9 +38,8 @@ jobs:
             GOOS="$goos" go build ./...
           done
 
-      # Built here rather than downloaded by the action below: golangci-lint's formatters use the
-      # go/format compiled into the binary, so the formatting they enforce comes from the Go release
-      # that built the linter. The tool directive in go.mod is the single pin.
+      # golangci-lint's formatters use the go/format compiled into the binary, so this step builds
+      # it with the Go of go.mod. The tool directive in go.mod is the single pin.
       - name: Build the pinned golangci-lint
         run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint
 
@@ -92,9 +91,8 @@ jobs:
         run: |
           echo "::error::Linting or formatting issues detected. Run 'task lint -- --fix' locally to automatically fix these issues, then commit the changes."
 
-      # Binary coverage data (GOCOVERDIR format) rather than a text profile, because only the binary
-      # form merges with the acceptance run's coverage. `-coverpkg=./...` matches what meshfed-release
-      # instruments, so both figures share one denominator.
+      # Only the GOCOVERDIR format merges with the acceptance run's coverage. `-coverpkg=./...`
+      # matches what meshfed-release instruments, so both figures share one denominator.
       - name: Test
         run: |
           mkdir -p covdata/unit
@@ -178,7 +176,6 @@ jobs:
               echo "${hub}:main"
               echo "${hub}:${GITHUB_SHA}"
             else
-              # PRs build but never push (see `push:` below); a local buildx tag name only.
               echo "${img}:pr-${PR_NUMBER}"
             fi
             echo "EOF"

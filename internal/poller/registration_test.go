@@ -36,7 +36,7 @@ func Test_Register_NeedsAWorkspaceAndAddsTheWorkloadIdentity(t *testing.T) {
 		cfg := cfg
 		cfg.Api.Url = xurl.MustParsef("%s", server.URL)
 
-		err := Register(t.Context(), cfg)
+		err := register(t.Context(), cfg, setting.SingleSource(cfg.Api), nil, nil)
 
 		assert.EqualError(t, err, "dispatcher.register needs a workspace: set api.auth.workspace, MESHSTACK_WORKSPACE or the default workspace of the profile")
 	})

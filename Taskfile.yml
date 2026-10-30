@@ -20,6 +20,18 @@ tasks:
       - for: { var: BUILD_TAGS }
         cmd: go test -race -tags '{{.ITEM}}' {{.CLI_ARGS}} {{.PACKAGES}}
 
+  test:acc:coverage:
+    desc: Run the unit tests and the acceptance tests against the local stack, and report their merged coverage. Source ../.env-testacc-building-block-runner first.
+    vars:
+      COVERAGE: '{{.ROOT_DIR}}/bin/coverage'
+    cmds:
+      - rm -rf {{.COVERAGE}} && mkdir -p {{.COVERAGE}}/unit {{.COVERAGE}}/acc {{.COVERAGE}}/merged
+      - env -u BUILDING_BLOCK_RUNNER_TEST_ACC go test -cover -coverpkg=./... ./... -args -test.gocoverdir={{.COVERAGE}}/unit
+      - go test -count=1 -timeout 60m -coverpkg=./... -run TestAcc ./internal/testacc/ -args -test.gocoverdir={{.COVERAGE}}/acc
+      - go tool covdata merge -i={{.COVERAGE}}/unit,{{.COVERAGE}}/acc -o={{.COVERAGE}}/merged
+      - go tool covdata textfmt -i={{.COVERAGE}}/merged -o={{.COVERAGE}}/merged.out
+      - go tool covdata percent -i={{.COVERAGE}}/merged
+
   lint:
     # Also formats, with the go/format of the Go release that `go tool` builds the linter with.
     desc: Run golangci-lint for each build tag an image or `start:runner` uses. Set PACKAGES to lint fewer, `-- --fix` to fix.

@@ -35,14 +35,10 @@ variable "main_required_status_checks" {
   description = "Status check contexts required for merging into main"
   type        = list(string)
   default = [
-    "block-runner-core - check",
-    "github-block-runner - check",
-    "gitlab-block-runner - check",
-    "azure-devops-block-runner - check",
-
     "github-block-runner - image",
     "gitlab-block-runner - image",
     "azure-devops-block-runner - image",
+    "building-block-runner - image",
 
     "go - test",
 
@@ -96,14 +92,12 @@ resource "github_repository_ruleset" "main" {
   rules {
     non_fast_forward = true
 
-    # No direct push to main, require PR with one approval.
     pull_request {
       required_approving_review_count   = 1
       allowed_merge_methods             = ["rebase"]
       required_review_thread_resolution = true
     }
 
-    # Require CI jobs to pass before merge.
     required_status_checks {
       strict_required_status_checks_policy = true
 
@@ -130,7 +124,6 @@ resource "github_repository_ruleset" "tags" {
     }
   }
 
-  # Allow maintainers/admins to manage protected tags.
   bypass_actors {
     actor_type  = "RepositoryRole"
     actor_id    = 2 # maintain

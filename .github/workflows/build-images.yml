@@ -23,23 +23,36 @@ jobs:
       matrix:
         include:
           - app: run-controller
-            dockerfile: run-controller/Dockerfile
+            target: runner
+            tags: k8s
           - app: tf-block-runner
-            dockerfile: tf-block-runner/Dockerfile
+            target: tf
+            tags: tf
+            for_types: tf
           - app: manual-block-runner
-            dockerfile: manual-block-runner/Dockerfile
+            target: runner
+            tags: manual
+            for_types: manual
           - app: github-block-runner
-            dockerfile: containers/jvm.Dockerfile
-            runner-module: github-block-runner
+            target: runner
+            tags: github
+            for_types: github
           - app: gitlab-block-runner
-            dockerfile: containers/jvm.Dockerfile
-            runner-module: gitlab-block-runner
+            target: runner
+            tags: gitlab
+            for_types: gitlab
           - app: azure-devops-block-runner
-            dockerfile: containers/jvm.Dockerfile
-            runner-module: azure-devops-block-runner
+            target: runner
+            tags: azuredevops
+            for_types: azuredevops
+          - app: building-block-runner
+            target: tf
+            tags: ""
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # go build derives the version from the tags
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -63,7 +76,8 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: containers/Dockerfile
+          target: ${{ matrix.target }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
@@ -72,5 +86,5 @@ jobs:
             ${{ env.DOCKERHUB_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:${{ inputs.version }}
             ${{ env.DOCKERHUB_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.app }}:latest
           build-args: |
-            VERSION=${{ inputs.version }}
-            RUNNER_MODULE=${{ matrix.runner-module }}
+            TAGS=${{ matrix.tags }}
+            FOR_TYPES=${{ matrix.for_types }}

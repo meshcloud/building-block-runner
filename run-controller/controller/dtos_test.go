@@ -168,7 +168,7 @@ func TestRegisteredWif_KeycloakSetForEveryCloud(t *testing.T) {
 		{wif.Aws.Audience, wif.Aws.TokenPath},
 		{wif.Azure.Audience, wif.Azure.TokenPath},
 	} {
-		assert.Equal(t, "meshstack-wif", cloud.audience)
+		assert.Equal(t, "external-platform", cloud.audience)
 		assert.Equal(t, "/var/run/secrets/workload-identity/meshstack/token", cloud.tokenPath)
 	}
 }

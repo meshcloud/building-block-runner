@@ -21,7 +21,7 @@ import (
 
 // Audience is the value of the aud claim and of the azp claim. Keycloak always sets azp, normally to the client ID, and
 // AWS checks azp instead of aud when a token has azp. So createClient sets azp to the audience as well.
-const Audience = "meshstack-wif"
+const Audience = "external-platform"
 
 const (
 	clientIdPrefix         = "bb-run-"

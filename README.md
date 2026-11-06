@@ -125,7 +125,7 @@ task start:runner
 registration and a claim on an empty queue, for a runner the suite creates with the hosted-runner
 API key. A whole meshStack only exists in the meshcloud-internal mono repo `meshfed-release`, so CI
 here does not run the suite. `.github/workflows/test-acceptance.yml` asks that repository for the
-run, and `meshstack-satellite.gradle` is everything the run reads from here. The workflow also
+run, and `.github/meshstack-satellite.gradle` is everything the run reads from here. The workflow also
 requests the terraform provider's suite against the same branch, which drives real terraform and
 manual runs through the runners.
 

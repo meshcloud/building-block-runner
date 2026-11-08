@@ -152,6 +152,12 @@ jobs:
       - name: Build
         run: go build ./...
 
+      - name: Check that go.mod and go.sum are tidy
+        run: |
+          go mod tidy
+          git diff --compact-summary --exit-code -- go.mod go.sum || \
+            (echo "::error::go mod tidy changed go.mod or go.sum. Run 'task tidy' and commit the result."; exit 1)
+
       - name: Check for known vulnerabilities
         run: go tool govulncheck -tags inprocess ./...
 

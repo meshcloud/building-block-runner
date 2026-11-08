@@ -152,6 +152,9 @@ jobs:
       - name: Build
         run: go build ./...
 
+      - name: Check for known vulnerabilities
+        run: go tool govulncheck -tags inprocess ./...
+
       # Built here rather than downloaded by the action below: golangci-lint's formatters use the
       # go/format compiled into the binary, so the formatting they enforce comes from the Go release
       # that built the linter. The tool directive in go.mod is the single pin.

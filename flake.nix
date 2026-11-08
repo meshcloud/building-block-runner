@@ -13,14 +13,18 @@
         pkgs = import nixpkgs { inherit system; };
         pkgsUnstable = import nixpkgs-unstable { inherit system; };
 
-        shell_hook =
-          if pkgs.stdenv.isDarwin then ''
-            # getting rid of "warning: unhandled Platform key FamilyDisplayName" on macOS
-            unset DEVELOPER_DIR
-          '' else "";
+        shell_hook = ''
+          export GOROOT="${pkgsUnstable.go_1_27}/share/go"
+          # With auto, a newer go line in go.mod would download and run another Go than this one.
+          export GOTOOLCHAIN=local
+        '' + (if pkgs.stdenv.isDarwin then ''
+          # getting rid of "warning: unhandled Platform key FamilyDisplayName" on macOS
+          unset DEVELOPER_DIR
+        '' else "");
 
         core_packages = [
-          pkgs.go
+          # Keep in step with the go line in go.mod and the golang images of the Dockerfiles.
+          pkgsUnstable.go_1_27
           # No golangci-lint here: the Taskfile builds it with the Go that go.mod asks for.
           pkgs.go-task
           pkgs.jdk21_headless

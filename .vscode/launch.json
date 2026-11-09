@@ -10,6 +10,8 @@
       "program": "${workspaceFolder}/run-controller",
       "buildFlags": "-tags=inprocess",
       "cwd": "${workspaceFolder}",
+      // Holds the API key of the local meshStack. Gitignored, create it as described in the README.
+      "envFile": "${workspaceFolder}/.vscode/local.env",
       "env": {
         "CGO_ENABLED": "0",
         "RUNCONTROLLER_CONFIG_FILE": "run-controller/runner-config.yml",

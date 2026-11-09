@@ -119,6 +119,10 @@ CI runs the equivalent plain `go` commands rather than these tasks.
 task start:runner
 ```
 
+In VS Code, pick a configuration in Run and Debug and press F5. The `run-controller` configuration reads
+its API key from the gitignored `.vscode/local.env`. Create it with `RUNNER_API_CLIENT_ID` and
+`RUNNER_API_CLIENT_SECRET` of your meshStack.
+
 ### Acceptance tests
 
 `testacc/` drives the runners' Go code in process against a live meshStack: run-controller's

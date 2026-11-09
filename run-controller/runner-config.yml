@@ -12,7 +12,7 @@ namespace: default
 api:
   url: http://host.minikube.internal:8080
   # Option 1: Basic auth credentials (deprecated, prefer API key auth)
-  user: bb-api
+  username: bb-api
   password: guest
   # Option 2: API key auth. Uncomment and set the credentials for this controller, or provide them via the
   # RUNNER_API_CLIENT_ID / RUNNER_API_CLIENT_SECRET environment variables (which take precedence).

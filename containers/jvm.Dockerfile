@@ -1,11 +1,12 @@
 # shared Dockerfile used for JVM runners
-FROM --platform=$BUILDPLATFORM gradle:8.13.0-jdk21 AS builder
+# Keep in sync with distributionUrl in gradle/wrapper/gradle-wrapper.properties.
+FROM --platform=$BUILDPLATFORM gradle:8.14.0-jdk21 AS builder
 
 WORKDIR /workspace
 COPY . .
 
 ARG RUNNER_MODULE
-RUN ./gradlew --no-daemon :${RUNNER_MODULE}:bootJar
+RUN gradle --no-daemon :${RUNNER_MODULE}:bootJar
 
 FROM eclipse-temurin:21-jre
 

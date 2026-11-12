@@ -2,43 +2,12 @@
   "version": "0.2.0",
   "configurations": [
     {
-      // Same as `task start:runner`: runs TERRAFORM and MANUAL runs in process.
-      "name": "run-controller (in process)",
+      "name": "runner",
       "type": "go",
       "request": "launch",
       "mode": "auto",
-      "program": "${workspaceFolder}/run-controller",
-      "buildFlags": "-tags=inprocess",
+      "program": "${workspaceFolder}/cmd/runner",
       "cwd": "${workspaceFolder}",
-      // Holds the API key of the local meshStack. Gitignored, create it as described in the README.
-      "envFile": "${workspaceFolder}/.vscode/local.env",
-      "env": {
-        "CGO_ENABLED": "0",
-        "RUNCONTROLLER_CONFIG_FILE": "run-controller/runner-config.yml",
-        "RUNCONTROLLER_DISPATCHER": "inprocess",
-        "RUNNER_API_URL": "http://127.0.0.1:8080"
-      }
-    },
-    {
-      // Reads tf-block-runner/runner-config.yml. Listens on port 8100 by default.
-      "name": "tf-block-runner",
-      "type": "go",
-      "request": "launch",
-      "mode": "auto",
-      "program": "${workspaceFolder}/tf-block-runner",
-      "cwd": "${workspaceFolder}/tf-block-runner",
-      "env": {
-        "CGO_ENABLED": "0"
-      }
-    },
-    {
-      // Needs a runner-config.yml in manual-block-runner/ or RUNNER_CONFIG_FILE pointing to one.
-      "name": "manual-block-runner",
-      "type": "go",
-      "request": "launch",
-      "mode": "auto",
-      "program": "${workspaceFolder}/manual-block-runner",
-      "cwd": "${workspaceFolder}/manual-block-runner",
       "env": {
         "CGO_ENABLED": "0"
       }

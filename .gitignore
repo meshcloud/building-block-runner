@@ -34,6 +34,3 @@ terraform.rc
 # Per-developer direnv setup, e.g. "use flake" with nix-direnv
 .envrc
 .direnv/
-
-# Local API key for the VS Code launch configs, see .vscode/launch.json
-.vscode/local.env

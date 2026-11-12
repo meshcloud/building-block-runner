@@ -48,7 +48,7 @@ jobs:
             (echo "::error::go mod tidy changed go.mod or go.sum. Run 'task tidy' and commit the result."; exit 1)
 
       - name: Check for known vulnerabilities
-        run: go tool govulncheck -tags inprocess ./...
+        run: go tool govulncheck ./...
 
       # golangci-lint's formatters use the go/format compiled into the binary, so this step builds
       # it with the Go of go.mod. The tool directive in go.mod is the single pin.

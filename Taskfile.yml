@@ -42,7 +42,7 @@ tasks:
   vuln:
     desc: Check for known vulnerabilities with govulncheck
     cmds:
-      - go tool govulncheck -tags inprocess {{.CLI_ARGS}} {{.PACKAGES}}
+      - go tool govulncheck {{.CLI_ARGS}} {{.PACKAGES}}
 
   tidy:
     desc: Tidy go.mod and go.sum

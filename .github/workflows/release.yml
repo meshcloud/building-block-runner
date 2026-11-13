@@ -15,11 +15,8 @@ jobs:
         with:
           fetch-depth: 0 # git-cliff needs the previous tags
 
-      # Install git-cliff from its official GitHub release, pinned to an exact
-      # version and verified against a SHA-512 hard-coded here (and reviewed in
-      # this repo). We deliberately do NOT use a third-party Action wrapper:
-      # the only code that runs is this step plus the verified git-cliff binary,
-      # and a tampered upstream artifact fails the checksum and aborts the build.
+      # The release job runs no third-party action: git-cliff comes from its release and must match
+      # the SHA-512 below.
       - name: Install git-cliff (pinned + checksum-verified)
         env:
           GIT_CLIFF_VERSION: "2.13.1"
@@ -31,7 +28,6 @@ jobs:
           tarball="git-cliff-${GIT_CLIFF_VERSION}-${target}.tar.gz"
           url="https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/${tarball}"
 
-          # release runs are infrequent; retry to tolerate transient network errors
           for attempt in 1 2 3; do
             curl -fsSL -o "$tarball" "$url" && break
             echo "git-cliff download attempt ${attempt} failed; retrying in 5s..." >&2

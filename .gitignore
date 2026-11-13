@@ -1,15 +1,4 @@
-.gradle
-.kotlin/
-
-# The Go modules have build packages.
-**/build/*
-!**/build/*.go
-
-out/
 .DS_Store
-.settings
-.project
-.classpath
 bin/
 
 
@@ -45,6 +34,3 @@ terraform.rc
 # Per-developer direnv setup, e.g. "use flake" with nix-direnv
 .envrc
 .direnv/
-
-# Local API key for the VS Code launch configs, see .vscode/launch.json
-.vscode/local.env

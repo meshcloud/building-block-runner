@@ -2,6 +2,8 @@ module github.com/meshcloud/building-block-runner
 
 go 1.27.0
 
+toolchain go1.27.4
+
 require (
 	github.com/PaesslerAG/jsonpath v0.1.1
 	github.com/cenkalti/backoff/v5 v5.0.3

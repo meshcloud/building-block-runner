@@ -1,8 +1,6 @@
 module github.com/meshcloud/building-block-runner/v2
 
-go 1.27.1
-
-toolchain go1.27.4
+go 1.27.0
 
 require (
 	github.com/Shopify/toxiproxy/v2 v2.13.0

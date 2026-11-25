@@ -2,19 +2,17 @@
   description = "A Nix flake for the building-block-runner developer shell";
 
   inputs = {
-    nixpkgs.url = "nixpkgs/nixos-25.11";
-    nixpkgs-unstable.url = "nixpkgs/nixpkgs-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, nixpkgs-unstable, flake-utils }:
+  outputs = { self, nixpkgs, flake-utils }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
-        pkgsUnstable = import nixpkgs-unstable { inherit system; };
 
         shell_hook = ''
-          export GOROOT="${pkgsUnstable.go_1_27}/share/go"
+          export GOROOT="${pkgs.go_1_27}/share/go"
           # With auto, a newer go line in go.mod would download and run another Go than this one.
           export GOTOOLCHAIN=local
         '' + (if pkgs.stdenv.isDarwin then ''
@@ -23,9 +21,9 @@
         '' else "");
 
         core_packages = [
-          # Keep in step with the go line in go.mod and the golang images of the Dockerfiles.
-          pkgsUnstable.go_1_27
-          # No golangci-lint here: the Taskfile builds it with the Go that go.mod asks for.
+          # CI builds with this Go. Keep it in step with the go line in go.mod and the golang image of the Dockerfile.
+          pkgs.go_1_27
+          # No golangci-lint here: it is a tool directive in go.mod, built by `task lint`.
           pkgs.go-task
           pkgs.opentofu
           pkgs.minikube

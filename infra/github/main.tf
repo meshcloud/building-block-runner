@@ -94,8 +94,6 @@ resource "github_repository_ruleset" "main" {
   }
 
   rules {
-    non_fast_forward = true
-
     # No direct push to main, require PR with one approval.
     pull_request {
       required_approving_review_count   = 1
@@ -114,6 +112,27 @@ resource "github_repository_ruleset" "main" {
         }
       }
     }
+  }
+}
+
+# A bypass actor skips every rule of a ruleset, so the rules that bind everyone have their own.
+resource "github_repository_ruleset" "main_linear" {
+  repository  = data.github_repository.current.name
+  name        = "main-linear"
+  target      = "branch"
+  enforcement = "active"
+
+  conditions {
+    ref_name {
+      include = ["~DEFAULT_BRANCH"]
+      exclude = []
+    }
+  }
+
+  rules {
+    deletion                = true
+    non_fast_forward        = true
+    required_linear_history = true
   }
 }
 

@@ -50,7 +50,7 @@ func (s localStack) createRunner(t *testing.T) string {
 		Spec: client.MeshBuildingBlockRunnerSpec{
 			DisplayName:        "building-block-runner TestAcc",
 			PublicKey:          runControllerConfig.Crypto.PublicKey,
-			ImplementationType: string(client.MeshBuildingBlockRunnerImplementationTypeAll),
+			ImplementationType: client.MeshBuildingBlockRunnerImplementationTypeAll,
 			Restriction:        new("PRIVATE"),
 		},
 	})

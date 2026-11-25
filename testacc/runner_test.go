@@ -81,7 +81,7 @@ func registrationUpdatesTheRunner(s localStack, runnerUuid string) func(*testing
 		after, err := s.api.BuildingBlockRunner.Read(t.Context(), runnerUuid)
 		require.NoError(t, err)
 		assert.Equal(t, "building-block-runner TestAcc, registered", after.Spec.DisplayName)
-		assert.Equal(t, string(client.MeshBuildingBlockRunnerImplementationTypeAll), after.Spec.ImplementationType)
+		assert.Equal(t, client.MeshBuildingBlockRunnerImplementationTypeAll, after.Spec.ImplementationType)
 	}
 }
 

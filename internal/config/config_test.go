@@ -273,6 +273,12 @@ func Test_Load_FailsNamingTheProblem(t *testing.T) {
 		assert.ErrorContains(t, err, "config file "+path+": new layout")
 	})
 
+	t.Run("shows no line of the file, which holds secrets", func(t *testing.T) {
+		_, err := Load(t.Context(), []byte("meshstack:\n  apiKey:\n    clientSecret: very-secret\nunknown: 1\n"))
+		require.ErrorContains(t, err, `unknown field "unknown"`)
+		assert.NotContains(t, err.Error(), "very-secret")
+	})
+
 	t.Run("names the line of an unset placeholder", func(t *testing.T) {
 		_, err := Load(t.Context(), []byte("workspace: ${WORKSPACE_UNSET}\ndisplayName: ${DISPLAY_UNSET}\n"))
 		require.ErrorContains(t, err, "line 1: environment variable WORKSPACE_UNSET")

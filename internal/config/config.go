@@ -69,7 +69,7 @@ func LoadFile(ctx context.Context, path string) (Config, error) {
 func Load(ctx context.Context, data []byte) (Config, error) {
 	file, err := parser.ParseBytes(data, 0)
 	if err != nil {
-		return Config{}, err
+		return Config{}, withoutSource(err)
 	}
 	if len(file.Docs) > 1 {
 		return Config{}, fmt.Errorf("config has %d yaml documents, expected one", len(file.Docs))
@@ -113,8 +113,13 @@ func (cfg *Config) decode(ctx context.Context, root ast.Node) error {
 	}
 	legacyConfig, legacyErr := legacy.Decode(root)
 	if legacyErr != nil {
-		return errors.Join(fmt.Errorf("new layout: %w", newErr), fmt.Errorf("legacy layout: %w", legacyErr))
+		return errors.Join(fmt.Errorf("new layout: %w", withoutSource(newErr)), fmt.Errorf("legacy layout: %w", withoutSource(legacyErr)))
 	}
 	slog.WarnContext(ctx, "the config has a legacy layout, move it to the layout that the README describes")
 	return cfg.applyLegacy(ctx, legacyConfig)
+}
+
+// withoutSource drops the excerpt of the config file from a yaml error, as the file holds the private key and the API secret.
+func withoutSource(err error) error {
+	return errors.New(yaml.FormatError(err, false, false))
 }

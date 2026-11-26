@@ -116,3 +116,32 @@ func withPodNamespaceFile(t *testing.T, file string) {
 	t.Cleanup(func() { podNamespaceFile = original })
 	podNamespaceFile = file
 }
+
+func Test_JobSpecTemplates_DecodeAsKubernetesReadsThem(t *testing.T) {
+	var templates JobSpecTemplates
+	require.NoError(t, templates.UnmarshalYAML([]byte(`
+ALL:
+  spec:
+    template:
+      spec:
+        containers:
+          - name: runner
+            resources:
+              limits:
+                memory: 2Gi
+            volumeMounts:
+              - name: trusted-certs
+                mountPath: /usr/local/share/ca-certificates
+        volumes:
+          - name: trusted-certs
+            configMap:
+              name: trusted-certs
+`)))
+	pod := templates[RunnerTypeAll].Spec.Template.Spec
+	require.Len(t, pod.Volumes, 1)
+	assert.Equal(t, "trusted-certs", pod.Volumes[0].ConfigMap.Name)
+	assert.Equal(t, "2Gi", pod.Containers[0].Resources.Limits.Memory().String())
+
+	err := templates.UnmarshalYAML([]byte("ALL:\n  spec:\n    template:\n      spec:\n        volumez: []\n"))
+	assert.ErrorContains(t, err, `unknown field "volumez"`)
+}

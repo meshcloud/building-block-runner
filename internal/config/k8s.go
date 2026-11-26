@@ -3,6 +3,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json" //nolint:depguard // strategicpatch merges the encoding/json form of the Kubernetes types
 	"errors"
 	"fmt"
@@ -41,9 +42,16 @@ type JobSpecTemplates map[RunnerType]JobSpecTemplate
 type JobSpecTemplate = batchv1.JobTemplateSpec
 
 func (ts *JobSpecTemplates) UnmarshalYAML(data []byte) error {
-	var byName map[string]JobSpecTemplate
-	if err := yaml.UnmarshalWithOptions(data, &byName, yaml.UseJSONUnmarshaler(), yaml.DisallowUnknownField()); err != nil {
+	// The Kubernetes types decode from JSON only: a yaml decoder knows neither their inlined structs nor their quantities.
+	asJson, err := yaml.YAMLToJSON(data)
+	if err != nil {
 		return err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(asJson))
+	decoder.DisallowUnknownFields()
+	var byName map[string]JobSpecTemplate
+	if err := decoder.Decode(&byName); err != nil {
+		return fmt.Errorf("job spec templates: %w", err)
 	}
 	*ts = make(JobSpecTemplates, len(byName))
 	for name, template := range byName {

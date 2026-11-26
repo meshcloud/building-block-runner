@@ -91,9 +91,25 @@ Push a semver tag on `main`, for example:
 git push origin main:refs/tags/v1.2.3
 ```
 
-The [Release](.github/workflows/release.yml) workflow publishes a **GitHub Release** with notes generated from the
-conventional commits since the previous tag, and then builds and pushes the Docker images. A tag that does not match
-`vX.Y.Z` starts no release.
+The [Release](.github/workflows/release.yml) workflow publishes a **GitHub Release** and then builds and pushes the
+Docker images. A tag that does not match `vX.Y.Z` starts no release. The repository has no changelog file:
+[`tools/releaser`](tools/releaser/) builds the release notes from the commits on `main` since the previous tag. Every
+`feat` commit, every `fix` commit and every commit with `!` gets an entry, and the text of the entry is a leading
+blockquote in the pull request description. Preview the notes and the next version with
 
-The quality of the release notes depends on [Conventional Commits](https://www.conventionalcommits.org/), so keep using
-`feat:`, `fix:`, `chore:`, etc. The grouping is configured in [cliff.toml](cliff.toml).
+```bash
+GOWORK=off go run ./tools/releaser "$(git describe --tags --abbrev=0 HEAD^)..HEAD"
+```
+
+The notes go to stdout, the warnings and the next version go to stderr. The releaser needs a token in `GITHUB_TOKEN`
+or `GH_TOKEN`, for example from `export GH_TOKEN=$(gh auth token)`. The `Release Notes Preview` workflow shows the same
+on every push to `main`. The [`release-notes`](.agents/skills/release-notes/SKILL.md) skill describes how to write an
+entry, how to link an issue that the change closes and how to pick the version.
+
+Commit titles follow [Conventional Commits](https://www.conventionalcommits.org/), as the
+[`commit-messages`](.agents/skills/commit-messages/SKILL.md) skill describes. Pull requests are rebase-merged, so every
+commit title lands on `main`. A ruleset on `main` accepts only commit titles that match
+
+```text
+^(feat|fix|docs|test|ci|chore|refactor|build|perf|revert)(\([^)]+\))?!?: .+
+```

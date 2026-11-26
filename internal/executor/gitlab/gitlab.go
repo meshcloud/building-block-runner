@@ -91,7 +91,7 @@ func triggerForm(ctx context.Context, run executor.Run, implementation client.Me
 		"variables[MESHSTACK_RUN]":      string(run.Json),
 	}
 	for _, input := range run.Spec.BuildingBlock.Spec.Inputs {
-		value, err := formValue(input.Value)
+		value, err := executor.InputText(input.Value)
 		if err != nil {
 			return nil, fmt.Errorf("encode input %s: %w", input.Key, err)
 		}
@@ -114,15 +114,6 @@ func triggerForm(ctx context.Context, run executor.Run, implementation client.Me
 		form["variables["+name+"]"] = href
 	}
 	return form, nil
-}
-
-// formValue renders JSON text, which GitLab parses into the type of a number, boolean or array input.
-func formValue(value any) (string, error) {
-	if text, isString := value.(string); isString {
-		return text, nil
-	}
-	encoded, err := json.Marshal(value)
-	return string(encoded), err
 }
 
 func triggerError(projectId string, httpErr http.Error) error {

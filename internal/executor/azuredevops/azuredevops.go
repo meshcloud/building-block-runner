@@ -2,7 +2,6 @@ package azuredevops
 
 import (
 	"context"
-	"encoding/json/v2"
 	"errors"
 	"fmt"
 
@@ -72,7 +71,7 @@ func templateParameters(run client.MeshBuildingBlockRun) (map[string]string, err
 		if input.Env {
 			continue
 		}
-		value, err := parameterValue(input.Value)
+		value, err := executor.InputText(input.Value)
 		if err != nil {
 			return nil, fmt.Errorf("input %s: %w", input.Key, err)
 		}
@@ -80,15 +79,4 @@ func templateParameters(run client.MeshBuildingBlockRun) (map[string]string, err
 	}
 	params["MESHSTACK_BEHAVIOR"] = run.Spec.Behavior
 	return params, nil
-}
-
-func parameterValue(value any) (string, error) {
-	switch v := value.(type) {
-	case nil:
-		return "", nil
-	case string:
-		return v, nil
-	}
-	encoded, err := json.Marshal(value)
-	return string(encoded), err
 }

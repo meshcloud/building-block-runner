@@ -98,7 +98,10 @@ func (w *workflow) dispatch(ctx context.Context, run executor.Run) (int64, error
 		return 0, err
 	}
 	w.file = file
-	inputs := workflowInputs(run, w.impl.OmitRunObjectInput)
+	inputs, err := workflowInputs(run, w.impl.OmitRunObjectInput)
+	if err != nil {
+		return 0, err
+	}
 	if w.app, err = newApi(w.impl.GithubBaseUrl); err != nil {
 		return 0, err
 	}
@@ -149,14 +152,18 @@ func workflowFile(impl client.MeshBuildingBlockRunGithubImplementation, behavior
 	return *impl.DestroyWorkflow, nil
 }
 
-func workflowInputs(run executor.Run, omitRunObjectInput bool) map[string]string {
+func workflowInputs(run executor.Run, omitRunObjectInput bool) (map[string]string, error) {
 	if !omitRunObjectInput {
-		return map[string]string{inputRun: base64.StdEncoding.EncodeToString(run.Json)}
+		return map[string]string{inputRun: base64.StdEncoding.EncodeToString(run.Json)}, nil
 	}
 	inputs := map[string]string{inputRunUrl: run.Links["self"].Href}
 	values := map[string]string{}
 	for _, input := range run.Spec.BuildingBlock.Spec.Inputs {
-		values[input.Key] = fmt.Sprint(input.Value)
+		value, err := executor.InputText(input.Value)
+		if err != nil {
+			return nil, fmt.Errorf("input %s: %w", input.Key, err)
+		}
+		values[input.Key] = value
 	}
 	for _, key := range []string{inputApiToken, inputRunToken} {
 		if value, found := values[key]; found {
@@ -166,7 +173,7 @@ func workflowInputs(run executor.Run, omitRunObjectInput bool) map[string]string
 	if endpoint, found := values[inputEndpoint]; found && inputs[inputApiToken] != "" {
 		inputs[inputEndpoint] = endpoint
 	}
-	return inputs
+	return inputs, nil
 }
 
 type unexpectedInputsError struct {

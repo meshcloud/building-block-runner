@@ -90,6 +90,12 @@ resource "github_repository_ruleset" "main" {
   }
 
   rules {
+    commit_message_pattern {
+      name     = "Conventional commit title"
+      operator = "regex"
+      pattern  = "^(feat|fix|docs|test|ci|chore|refactor|build|perf|revert)(\\([^)]+\\))?!?: .+"
+    }
+
     pull_request {
       required_approving_review_count   = 1
       allowed_merge_methods             = ["rebase"]

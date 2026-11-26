@@ -1,4 +1,4 @@
-name: Release Notes Preview
+name: Release notes
 
 on:
   push:
@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   preview:
-    name: Release Notes Preview
+    name: Preview
     runs-on: ubuntu-latest
     permissions:
       contents: read

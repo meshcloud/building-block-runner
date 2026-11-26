@@ -102,7 +102,7 @@ GOWORK=off go run ./tools/releaser "$(git describe --tags --abbrev=0 HEAD^)..HEA
 ```
 
 The notes go to stdout, the warnings and the next version go to stderr. The releaser needs a token in `GITHUB_TOKEN`
-or `GH_TOKEN`, for example from `export GH_TOKEN=$(gh auth token)`. The `Release Notes Preview` workflow shows the same
+or `GH_TOKEN`, for example from `export GH_TOKEN=$(gh auth token)`. The `Release notes` workflow shows the same
 on every push to `main`. The [`release-notes`](.agents/skills/release-notes/SKILL.md) skill describes how to write an
 entry, how to link an issue that the change closes and how to pick the version.
 

@@ -24,7 +24,7 @@ COPY bin/runner-linux-${TARGETARCH} /app/runner
 
 FROM ${BINARY} AS binary
 
-FROM alpine:3.22.4@sha256:310c62b5e7ca5b08167e4384c68db0fd2905dd9c7493756d356e893909057601 AS base
+FROM alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS base
 
 RUN apk upgrade --no-cache && \
     apk add --no-cache ca-certificates bash

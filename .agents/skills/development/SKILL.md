@@ -22,6 +22,9 @@ One Go module at the repository root builds one binary, `cmd/runner`.
   alone, and a step's log goes to meshStack and to slog at debug. Its exit code is 0 when it delivered a final or handed-over status, 3 when it
   delivered FAILED, and anything else otherwise. The run logs through `slog.Default()` with the run's attributes; the
   poller adds the run to its context with `dispatcher.WithRun`.
+- Decide on a meshStack answer by its HTTP status only. meshStack's `errorCode` values are not a stable API, so never
+  branch on one. A 4xx on a status report means meshStack keeps the status it has: log it and count the run as
+  delivered, as nothing the runner resends changes it.
 - `internal/testmeshstack` isolates that client in tests and answers the status calls of a run process.
 - `internal/build` reads the module version and the git revision from the Go build info, which needs a build in a git
   checkout with its tags; the module path is `github.com/meshcloud/building-block-runner/v2`, so Go takes `v2.x.y` tags.

@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/meshcloud/meshstack-cli/client"
 )
@@ -13,6 +14,15 @@ const (
 )
 
 func ReportFailure(ctx context.Context, api client.MeshBuildingBlockRunClient, runUuid, sourceId, message string) error {
+	err := reportFailure(ctx, api, runUuid, sourceId, message)
+	if refusedByMeshStack(err) {
+		slog.WarnContext(ctx, "meshStack refused the failure report, it keeps the status it has", "error", err)
+		return nil
+	}
+	return err
+}
+
+func reportFailure(ctx context.Context, api client.MeshBuildingBlockRunClient, runUuid, sourceId, message string) error {
 	err := api.RegisterSource(ctx, runUuid, client.MeshBuildingBlockRunSourceRegistration{
 		Source: client.MeshBuildingBlockRunSource{Id: sourceId},
 		Steps:  []client.MeshBuildingBlockRunStepRegistration{{Id: failureStepId, DisplayName: failureStepDisplayName}},

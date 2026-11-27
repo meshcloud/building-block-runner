@@ -26,9 +26,10 @@ const (
 
 type Options struct {
 	// Outcome is the final status of a run, and empty for a run that stays in progress.
-	Outcome     executor.Status
-	Async       bool
-	ReportDelay time.Duration
+	Outcome         executor.Status
+	Async           bool
+	ReportDelay     time.Duration
+	ReportInTrigger bool
 }
 
 type Trigger struct {
@@ -62,20 +63,21 @@ func New(t *testing.T, meshStack client.Client, options Options) *Pipeline {
 }
 
 func (p *Pipeline) Start(ctx context.Context, trigger Trigger, run client.MeshBuildingBlockRun, runErr error) Run {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.triggers = append(p.triggers, trigger)
-	started := Run{Id: int64(len(p.runs) + 1), Created: time.Now().UTC(), outcome: p.Outcome}
-	p.runs = append(p.runs, started)
-	if p.Async {
-		// The pipeline outlives the request that triggered it.
-		ctx = context.WithoutCancel(ctx)
-		go func() {
-			if err := errors.Join(runErr, p.listBuildingBlocks(ctx, trigger.Params), p.report(ctx, run)); err != nil {
-				p.failures <- err
-			}
-		}()
+	started := p.record(trigger)
+	if !p.Async {
+		return started
 	}
+	work := func(ctx context.Context) {
+		if err := errors.Join(runErr, p.listBuildingBlocks(ctx, trigger.Params), p.report(ctx, run)); err != nil {
+			p.failures <- err
+		}
+	}
+	if p.ReportInTrigger {
+		work(ctx)
+		return started
+	}
+	// The pipeline outlives the request that triggered it.
+	go work(context.WithoutCancel(ctx))
 	return started
 }
 
@@ -115,6 +117,15 @@ func (p *Pipeline) AwaitPoll(t *testing.T, timeout, interval time.Duration) {
 		defer p.mu.Unlock()
 		return slices.ContainsFunc(p.runs, func(run Run) bool { return run.Polls > 0 })
 	}, timeout, interval, "the runner did not poll the pipeline run")
+}
+
+func (p *Pipeline) record(trigger Trigger) Run {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.triggers = append(p.triggers, trigger)
+	started := Run{Id: int64(len(p.runs) + 1), Created: time.Now().UTC(), outcome: p.Outcome}
+	p.runs = append(p.runs, started)
+	return started
 }
 
 func (p *Pipeline) report(ctx context.Context, run client.MeshBuildingBlockRun) error {

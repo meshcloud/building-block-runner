@@ -50,17 +50,7 @@ func TestAccAsyncTf(t *testing.T) {
 			t.Parallel()
 			p, triggerUrl, triggerToken := tc.start(t)
 
-			pc := newPipelineCase(t, harness.Deploy(t, s, harness.Case{
-				Files:              caseFiles(t),
-				Bootstrap:          tfblockBootstrap(t),
-				ImplementationType: "TERRAFORM",
-				Runner:             runnerproc.Options{ForType: "tf"},
-				Vars: map[string]any{
-					"async":                          true,
-					"use_mesh_http_backend_fallback": false,
-					"static_inputs":                  map[string]string{"pipeline": tc.pipeline, "trigger_url": triggerUrl, "trigger_token": triggerToken},
-				},
-			}))
+			pc := newPipelineCase(t, harness.Deploy(t, s, asyncTfCase(t, tc.pipeline, triggerUrl, triggerToken)))
 
 			pc.requireAction(t, client.BuildingBlockActionNoAction)
 			assert.Contains(t, pc.runLog, "## Prepare Run "+succeeded)
@@ -79,5 +69,32 @@ func TestAccAsyncTf(t *testing.T) {
 			assert.NotEqual(t, trigger.Params[tc.runUrlParam], destroy.Params[tc.runUrlParam],
 				"the apply of the DESTROY run triggers the pipeline with the deletion run")
 		})
+	}
+}
+
+func TestAccAsyncTfEndedByThePipelineBeforeTheHandOver(t *testing.T) {
+	t.Parallel()
+	s := requireSuite(t)
+	p := mockazuredevops.New(t, s.Api, mockpipeline.Options{Outcome: executor.StatusSucceeded, Async: true, ReportInTrigger: true})
+
+	pc := newPipelineCase(t, harness.Deploy(t, s, asyncTfCase(t, "azuredevops", p.RunsUrl(t), p.Pat)))
+
+	pc.requireAction(t, client.BuildingBlockActionNoAction)
+	pc.assertMockStep(t, executor.StatusSucceeded)
+	pc.assertHandedOver(t)
+}
+
+func asyncTfCase(t *testing.T, pipeline, triggerUrl, triggerToken string) harness.Case {
+	t.Helper()
+	return harness.Case{
+		Files:              caseFiles(t),
+		Bootstrap:          tfblockBootstrap(t),
+		ImplementationType: "TERRAFORM",
+		Runner:             runnerproc.Options{ForType: "tf"},
+		Vars: map[string]any{
+			"async":                          true,
+			"use_mesh_http_backend_fallback": false,
+			"static_inputs":                  map[string]string{"pipeline": pipeline, "trigger_url": triggerUrl, "trigger_token": triggerToken},
+		},
 	}
 }

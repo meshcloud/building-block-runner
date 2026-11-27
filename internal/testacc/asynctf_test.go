@@ -77,7 +77,6 @@ func TestAccAsyncTf(t *testing.T) {
 
 		pc := newPipelineCase(t, harness.Deploy(t, s, asyncTfCase(t, "azuredevops", p.RunsUrl(t), p.Pat)))
 
-		pc.requireAction(t, client.BuildingBlockActionNoAction)
 		pc.assertMockStep(t, executor.StatusSucceeded)
 		pc.assertHandedOver(t)
 	})

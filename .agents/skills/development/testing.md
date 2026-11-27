@@ -14,7 +14,10 @@
 
 - Assertions: `github.com/stretchr/testify/assert` + `require`
 - Snapshot tests: `github.com/sebdah/goldie/v2` — for complex expected outputs; golden files live in `testdata/`, regenerate with `go test ./<package>/... -update`
-- Fakes: hand-rolled, such as the `client.MeshBuildingBlockRunClient` fakes in `internal/executor` — do NOT introduce mock libraries
+- Fakes: hand-rolled — do NOT introduce mock libraries
+- Do NOT write a fake `client.MeshBuildingBlockRunClient` that scripts meshStack's answers to a run, such as an error on a
+  status update. How a run talks to meshStack is tested in `internal/testacc` against a real meshStack; a mock pipeline
+  there forces an order of events, as `mockpipeline.Options.ReportInTrigger` ends the run before the hand-over.
 
 ## Running Tests
 

@@ -70,18 +70,17 @@ func TestAccAsyncTf(t *testing.T) {
 				"the apply of the DESTROY run triggers the pipeline with the deletion run")
 		})
 	}
-}
 
-func TestAccAsyncTfEndedByThePipelineBeforeTheHandOver(t *testing.T) {
-	t.Parallel()
-	s := requireSuite(t)
-	p := mockazuredevops.New(t, s.Api, mockpipeline.Options{Outcome: executor.StatusSucceeded, Async: true, ReportInTrigger: true})
+	t.Run("ended by the pipeline before the hand-over", func(t *testing.T) {
+		t.Parallel()
+		p := mockazuredevops.New(t, s.Api, mockpipeline.Options{Outcome: executor.StatusSucceeded, Async: true, ReportInTrigger: true})
 
-	pc := newPipelineCase(t, harness.Deploy(t, s, asyncTfCase(t, "azuredevops", p.RunsUrl(t), p.Pat)))
+		pc := newPipelineCase(t, harness.Deploy(t, s, asyncTfCase(t, "azuredevops", p.RunsUrl(t), p.Pat)))
 
-	pc.requireAction(t, client.BuildingBlockActionNoAction)
-	pc.assertMockStep(t, executor.StatusSucceeded)
-	pc.assertHandedOver(t)
+		pc.requireAction(t, client.BuildingBlockActionNoAction)
+		pc.assertMockStep(t, executor.StatusSucceeded)
+		pc.assertHandedOver(t)
+	})
 }
 
 func asyncTfCase(t *testing.T, pipeline, triggerUrl, triggerToken string) harness.Case {

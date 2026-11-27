@@ -107,12 +107,11 @@ func (r *Reporter) Finish(ctx context.Context) (Status, error) {
 
 	slog.InfoContext(ctx, "sending the final status", "status", status)
 	_, err := r.api.UpdateSourceSteps(ctx, r.runUuid, r.sourceId, update)
-	httpErr, isHttpErr := errors.AsType[client.HttpError](err)
 	switch {
 	case err == nil:
 		return status, nil
-	case status == StatusAborted && isHttpErr && httpErr.IsClientError():
-		slog.InfoContext(ctx, "meshStack refused ABORTED, as it already ended the aborted run", "error", err)
+	case refusedByMeshStack(err):
+		slog.WarnContext(ctx, "meshStack refused the final status, it keeps the status it has", "status", status, "error", err)
 		return status, nil
 	}
 	return status, fmt.Errorf("send the final status %s: %w", status, err)
@@ -192,6 +191,11 @@ func (r *Reporter) markSent(update client.MeshBuildingBlockRunStatusUpdate) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.lastSent, r.lastSentAt = update, time.Now()
+}
+
+func refusedByMeshStack(err error) bool {
+	httpErr, ok := errors.AsType[client.HttpError](err)
+	return ok && httpErr.IsClientError()
 }
 
 func (r *Reporter) requestAbort() (first bool) {
